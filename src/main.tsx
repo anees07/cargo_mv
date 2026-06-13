@@ -4,6 +4,15 @@ import "./index.css";
 import App from "./App";
 import { getFirebaseFirestore, getFirebaseProjectId, isFirebaseConfigured } from "./lib/firebase";
 
+const syncAppHeight = () => {
+  const height = window.visualViewport?.height ?? window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${height}px`);
+};
+
+syncAppHeight();
+window.visualViewport?.addEventListener("resize", syncAppHeight);
+window.addEventListener("resize", syncAppHeight);
+
 if (isFirebaseConfigured) {
   getFirebaseFirestore();
   console.info(`Firebase Firestore configured for project ${getFirebaseProjectId()}`);

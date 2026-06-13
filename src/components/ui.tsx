@@ -243,12 +243,12 @@ export function Toast({ toasts, onDismiss }: { toasts: { id: string; title: stri
     info: "bg-ocean-700 text-white",
   };
   return (
-    <div className="pointer-events-none fixed left-0 right-0 z-50 flex flex-col items-center gap-2 px-4 safe-toast-bottom safe-x sm:bottom-4 sm:right-4 sm:left-auto sm:items-end">
+    <div className="pointer-events-none fixed left-0 right-0 z-50 flex flex-col items-center gap-2 px-4 safe-toast-top safe-x sm:right-4 sm:left-auto sm:items-end">
       {toasts.map(t => (
         <div
           key={t.id}
           onClick={() => onDismiss(t.id)}
-          className={cn("pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl px-4 py-3 shadow-lg animate-slide-up", variants[t.variant])}
+          className={cn("pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl px-4 py-3 shadow-lg animate-slide-down", variants[t.variant])}
         >
           <div className="flex-1">
             <p className="break-words text-sm font-semibold">{t.title}</p>

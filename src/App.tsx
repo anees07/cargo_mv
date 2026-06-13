@@ -31,7 +31,7 @@ function BottomTab({ onDrawerOpen }: { onDrawerOpen: () => void }) {
   if (hideOn.includes(screen)) return null;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-lg no-print safe-bottom safe-x">
+    <div className="relative z-30 shrink-0 border-t border-slate-200 bg-white/95 backdrop-blur-lg no-print app-bottom-safe safe-x">
       <div className="mx-auto grid w-full max-w-screen-sm grid-cols-5">
         {tabs.map(t => {
           const isActive =
@@ -42,10 +42,10 @@ function BottomTab({ onDrawerOpen }: { onDrawerOpen: () => void }) {
             <button
               key={t.id}
               onClick={() => t.action ? t.action() : navigate(t.id as any)}
-              className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-2 pb-3"
+              className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5"
             >
               {t.id === "operation" ? (
-                <div className={`-mt-4 flex h-11 w-11 items-center justify-center rounded-xl shadow-md transition-all sm:h-12 sm:w-12 ${activeTripId ? "bg-gradient-to-br from-ocean-500 to-ocean-700 text-white" : "bg-slate-200 text-slate-500"}`}>
+                <div className={`-mt-2 flex h-10 w-10 items-center justify-center rounded-xl shadow-md transition-all sm:h-11 sm:w-11 ${activeTripId ? "bg-gradient-to-br from-ocean-500 to-ocean-700 text-white" : "bg-slate-200 text-slate-500"}`}>
                   <Icon name={t.icon} className="h-5 w-5" />
                 </div>
               ) : (
@@ -99,7 +99,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
   const isAuthScreen = ["splash", "welcome", "login", "register", "business_setup", "select_profile"].includes(screen);
   
   if (isAuthScreen) {
-    return <div className="flex h-dvh w-full items-center justify-center bg-slate-50 safe-area">{children}</div>;
+    return <div className="flex h-[var(--app-height)] w-full items-center justify-center bg-slate-50 safe-area">{children}</div>;
   }
 
   const navItems = [
@@ -183,7 +183,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Mobile Bottom Tab (Hidden on Desktop) */}
-      <div className="lg:hidden">
+      <div className="shrink-0 lg:hidden">
         <BottomTab onDrawerOpen={() => setDrawerOpen(true)} />
       </div>
     </AppShell>
