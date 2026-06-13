@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ocean-50: #f0f9ff;
+  --color-ocean-100: #e0f2fe;
+  --color-ocean-200: #bae6fd;
+  --color-ocean-500: #0ea5e9;
+  --color-ocean-600: #0284c7;
+  --color-ocean-700: #0369a1;
+  --color-ocean-800: #075985;
+  --color-ocean-900: #0c4a6e;
+  --color-ocean-950: #082f49;
+}
+
+html, body, #root {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up { animation: slideUp 0.3s ease-out; }
+
+@keyframes drawerIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-drawer-in { animation: drawerIn 0.28s cubic-bezier(0.4, 0, 0.2, 1); }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.animate-scale-in { animation: scaleIn 0.2s ease-out; }
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+}
+
+/* Fix for scrolling content behind bottom bar */
+.pb-tab {
+  padding-bottom: 5.5rem;
+}
+
+/* Subtle hover effects */
+@media (hover: hover) {
+  .hover-lift:hover {
+    transform: translateY(-1px);
+  }
+}
