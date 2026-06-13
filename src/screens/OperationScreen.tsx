@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
-import type { CatalogItem, Customer } from "../types";
+import type { CatalogItem, Customer, OperationItem } from "../types";
 
 // ============================================================================
 // Operation Screen — Loading & Offloading for the active trip
@@ -33,12 +33,72 @@ export function OperationScreen() {
     o.destinationId === selectedDestId &&
     o.customerId === selectedCustomerId
   );
+  const loadedItems = useMemo(
+    () => operations
+      .filter(o =>
+        o.tripId === activeTripId &&
+        o.operationType === "loading" &&
+        o.destinationId === selectedDestId &&
+        o.customerId === selectedCustomerId
+      )
+      .flatMap(o => o.items),
+    [operations, activeTripId, selectedDestId, selectedCustomerId]
+  );
+  const alreadyOffloadedItems = useMemo(
+    () => operations
+      .filter(o =>
+        o.tripId === activeTripId &&
+        o.operationType === "offloading" &&
+        o.destinationId === selectedDestId &&
+        o.customerId === selectedCustomerId
+      )
+      .flatMap(o => o.items),
+    [operations, activeTripId, selectedDestId, selectedCustomerId]
+  );
+  const offloadAvailability = useMemo(() => {
+    const loaded = new Map<string, OperationItem>();
+    const offloadedQty = new Map<string, number>();
+
+    for (const item of loadedItems) {
+      const existing = loaded.get(item.itemId);
+      if (existing) {
+        loaded.set(item.itemId, {
+          ...existing,
+          quantity: existing.quantity + item.quantity,
+          lineTotalTaxInclusive: existing.lineTotalTaxInclusive + item.lineTotalTaxInclusive,
+          taxAmount: existing.taxAmount + item.taxAmount,
+        });
+      } else {
+        loaded.set(item.itemId, item);
+      }
+    }
+
+    for (const item of alreadyOffloadedItems) {
+      offloadedQty.set(item.itemId, (offloadedQty.get(item.itemId) || 0) + item.quantity);
+    }
+
+    return Array.from(loaded.values()).reduce<Record<string, { remaining: number; source: OperationItem }>>((acc, item) => {
+      const remaining = Number((item.quantity - (offloadedQty.get(item.itemId) || 0)).toFixed(2));
+      if (remaining > 0) {
+        acc[item.itemId] = { remaining, source: item };
+      }
+      return acc;
+    }, {});
+  }, [loadedItems, alreadyOffloadedItems]);
+  const availableOffloadCatalogItems = useMemo(
+    () => catalogItems.filter(item => offloadAvailability[item.id]?.remaining > 0),
+    [catalogItems, offloadAvailability]
+  );
   const filteredCustomers = useMemo(
     () => customers.filter(c => !selectedDestId || c.defaultDestinationId === selectedDestId),
     [customers, selectedDestId]
   );
 
   const getItemPrice = (item: CatalogItem, cust?: Customer) => {
+    if (opType === "offloading") {
+      const loaded = offloadAvailability[item.id]?.source;
+      if (loaded) return loaded.unitPriceTaxInclusive;
+    }
     const level = cust?.defaultPriceLevelId || "standard";
     const rate = itemPriceRates.find((r) => r.itemId === item.id && r.priceLevel === level);
     return rate?.priceTaxInclusive || item.defaultTaxRate * 10; // fallback
@@ -55,6 +115,7 @@ export function OperationScreen() {
     addOperationItem({
       tripId: activeTrip.id,
       operationId: currentOp?.id || "pending",
+      operationType: opType,
       destinationId: selectedDestId,
       customerId: selectedCustomerId,
       itemId: item.id,
@@ -89,14 +150,14 @@ export function OperationScreen() {
         onBack={back}
         trailing={
           <div className="flex items-center gap-1.5">
-            <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> LIVE
             </span>
           </div>
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 pb-32 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-32 md:p-6 md:pb-32 lg:p-8 lg:pb-32 no-scrollbar">
         {/* Active trip banner */}
         <Card className="mb-3 border-l-4 border-l-emerald-500 p-3">
           <div className="flex items-center gap-2">
@@ -112,7 +173,7 @@ export function OperationScreen() {
 
         {/* Operation type selector */}
         <Section title="Operation type">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
             {[
               { id: "loading" as const, icon: "package", label: "Loading", color: "from-orange-500 to-orange-600" },
               { id: "offloading" as const, icon: "truck", label: "Offload", color: "from-rose-500 to-rose-600" },
@@ -187,15 +248,15 @@ export function OperationScreen() {
                           </div>
                           <p className="mt-0.5 text-xs text-slate-500">
                             {it.quantity} {it.unitType} × {MVR(it.unitPriceTaxInclusive)}
-                            {isOverridden && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">OVERRIDE</span>}
+                            {isOverridden && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">OVERRIDE</span>}
                           </p>
                           {isOverridden && (
-                            <p className="mt-1 text-[10px] text-amber-700">Original: {MVR(it.originalPrice!)} • {it.overrideReason}</p>
+                            <p className="mt-1 text-xs text-amber-700">Original: {MVR(it.originalPrice!)} • {it.overrideReason}</p>
                           )}
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-slate-900">{MVR(it.lineTotalTaxInclusive)}</p>
-                          <p className="text-[10px] text-slate-500">tax {MVR(it.taxAmount)}</p>
+                          <p className="text-xs text-slate-500">tax {MVR(it.taxAmount)}</p>
                           <button onClick={() => removeOperationItem(it.id)} className="mt-1 text-rose-600 hover:text-rose-700">
                             <Icon name="trash" className="h-3.5 w-3.5" />
                           </button>
@@ -224,15 +285,26 @@ export function OperationScreen() {
         )}
 
         {/* Add item button */}
+        {opType === "offloading" && selectedCustomerId && selectedDestId && availableOffloadCatalogItems.length === 0 && (
+          <Card className="mt-5 border-amber-200 bg-amber-50 p-3">
+            <div className="flex gap-2">
+              <Icon name="warning" className="mt-0.5 h-4 w-4 text-amber-700" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900">No cargo available to offload</p>
+                <p className="mt-0.5 text-xs text-amber-800">Select a customer and destination with loaded manifest items, or record loading first.</p>
+              </div>
+            </div>
+          </Card>
+        )}
         <div className="mt-5">
           <Btn
             fullWidth
             size="lg"
             icon="plus"
-            disabled={!selectedCustomerId || !selectedDestId}
+            disabled={!selectedCustomerId || !selectedDestId || (opType === "offloading" && availableOffloadCatalogItems.length === 0)}
             onClick={() => setShowItemPicker(true)}
           >
-            Add item
+            {opType === "offloading" ? "Offload item" : "Add item"}
           </Btn>
         </div>
       </div>
@@ -241,7 +313,7 @@ export function OperationScreen() {
       <div className="sticky bottom-0 border-t border-slate-200 bg-white p-3">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Operation total</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Operation total</p>
             <p className="text-lg font-bold text-slate-900">{MVR(currentOp?.totalTaxInclusive || 0)}</p>
           </div>
           {hasPermission(currentUser.role, "create_bill") && (
@@ -251,7 +323,7 @@ export function OperationScreen() {
               disabled={!currentOp || currentOp.items.length === 0}
               onClick={() => {
                 if (currentOp) {
-                  const bill = createBillFromOperation(currentOp.id, "credit");
+                  const bill = createBillFromOperation(currentOp.id, opType === "offloading" ? "offloading_bill" : "loading_bill");
                   if (bill) {
                     selectBill(bill.id);
                     navigate("invoice_preview");
@@ -330,9 +402,11 @@ export function OperationScreen() {
 
       <Modal open={showItemPicker} onClose={() => setShowItemPicker(false)} title="Pick catalog item">
         <ItemPicker
-          items={catalogItems}
+          items={opType === "offloading" ? availableOffloadCatalogItems : catalogItems}
           customer={customer}
           getPrice={getItemPrice}
+          operationType={opType}
+          availability={offloadAvailability}
           onPick={handleAddItem}
         />
       </Modal>
@@ -363,10 +437,12 @@ export function OperationScreen() {
   );
 }
 
-function ItemPicker({ items, customer, getPrice, onPick }: {
+function ItemPicker({ items, customer, getPrice, operationType, availability, onPick }: {
   items: CatalogItem[];
   customer?: Customer;
   getPrice: (item: CatalogItem, cust?: Customer) => number;
+  operationType: "loading" | "offloading" | "cargo_handling";
+  availability: Record<string, { remaining: number; source: OperationItem }>;
   onPick: (item: CatalogItem, qty: number, price: number) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -384,6 +460,8 @@ function ItemPicker({ items, customer, getPrice, onPick }: {
 
   if (selected) {
     const defaultPrice = getPrice(selected, customer);
+    const maxQty = operationType === "offloading" ? availability[selected.id]?.remaining || 0 : undefined;
+    const safeQty = maxQty ? Math.min(qty, maxQty) : qty;
     return (
       <div className="p-4">
         <button onClick={() => { setSelected(null); setPrice(0); }} className="mb-3 flex items-center gap-1 text-xs text-ocean-700 font-semibold">
@@ -397,16 +475,23 @@ function ItemPicker({ items, customer, getPrice, onPick }: {
             <p className="mt-1 text-xs font-semibold text-ocean-700">Default: {MVR(defaultPrice)} / {selected.unitType}</p>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-700">Quantity ({selected.unitType})</label>
             <input
               type="number"
               min={1}
-              value={qty}
-              onChange={e => setQty(Math.max(1, Number(e.target.value)))}
+              max={maxQty}
+              value={safeQty}
+              onChange={e => {
+                const next = Math.max(1, Number(e.target.value));
+                setQty(maxQty ? Math.min(next, maxQty) : next);
+              }}
               className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
             />
+            {maxQty !== undefined && (
+              <p className="mt-1 text-xs text-slate-500">Remaining to offload: {maxQty} {selected.unitType}</p>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-700">Unit price (tax-incl)</label>
@@ -419,16 +504,16 @@ function ItemPicker({ items, customer, getPrice, onPick }: {
               className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
             />
             {price !== defaultPrice && price > 0 && (
-              <p className="mt-1 text-[10px] text-amber-700">⚠ Price override (audit will be logged)</p>
+              <p className="mt-1 text-xs text-amber-700">⚠ Price override (audit will be logged)</p>
             )}
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-sm">
-          <div className="flex justify-between"><span className="text-slate-600">Line total (tax-incl)</span><span className="font-semibold text-ocean-700">{MVR(qty * (price || defaultPrice))}</span></div>
-          <div className="mt-1 flex justify-between text-xs text-slate-500"><span>GST extracted</span><span>{MVR((qty * (price || defaultPrice)) - (qty * (price || defaultPrice)) / 1.08)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-600">Line total (tax-incl)</span><span className="font-semibold text-ocean-700">{MVR(safeQty * (price || defaultPrice))}</span></div>
+          <div className="mt-1 flex justify-between text-xs text-slate-500"><span>GST extracted</span><span>{MVR((safeQty * (price || defaultPrice)) - (safeQty * (price || defaultPrice)) / 1.08)}</span></div>
         </div>
-        <Btn fullWidth size="lg" className="mt-4" icon="plus" onClick={() => onPick(selected, qty, price || defaultPrice)}>
-          Add to operation
+        <Btn fullWidth size="lg" className="mt-4" icon="plus" disabled={operationType === "offloading" && !maxQty} onClick={() => onPick(selected, safeQty, price || defaultPrice)}>
+          {operationType === "offloading" ? "Confirm offload" : "Add to operation"}
         </Btn>
       </div>
     );
@@ -477,6 +562,7 @@ function ItemPicker({ items, customer, getPrice, onPick }: {
       <div className="max-h-80 overflow-y-auto">
         {filtered.map(item => {
           const p = getPrice(item, customer);
+          const remaining = availability[item.id]?.remaining;
           return (
             <button
               key={item.id}
@@ -486,11 +572,13 @@ function ItemPicker({ items, customer, getPrice, onPick }: {
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-xl">{item.icon}</div>
               <div className="min-w-0 flex-1 text-left">
                 <p className="truncate text-sm font-semibold text-slate-900">{item.itemName}</p>
-                <p className="text-[11px] text-slate-500">{item.itemCode} • {item.unitType}</p>
+                <p className="text-xs text-slate-500">{item.itemCode} • {item.unitType}</p>
               </div>
               <div className="text-right">
                 <p className="text-sm font-semibold text-ocean-700">{MVR(p)}</p>
-                <p className="text-[10px] text-slate-500">{customer?.defaultPriceLevelId || "standard"}</p>
+                <p className="text-xs text-slate-500">
+                  {operationType === "offloading" && remaining !== undefined ? `${remaining} left` : customer?.defaultPriceLevelId || "standard"}
+                </p>
               </div>
             </button>
           );
@@ -516,7 +604,7 @@ function AddInstantCustomerForm({ destinationId, onAdd }: {
     creditLimit: 0,
   });
   return (
-    <div className="p-4 space-y-3">
+    <div className="p-4 md:p-6 space-y-3">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Display name *</label>
         <input
@@ -535,7 +623,7 @@ function AddInstantCustomerForm({ destinationId, onAdd }: {
       </div>
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Customer type</label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
           {(["business", "individual", "government", "walk_in"] as const).map(t => (
             <button
               key={t}
@@ -559,7 +647,7 @@ function AddInstantDestForm({ onAdd }: { onAdd: (d: { islandName: string; atoll:
   const [atoll, setAtoll] = useState("");
   const [code, setCode] = useState("");
   return (
-    <div className="p-4 space-y-3">
+    <div className="p-4 md:p-6 space-y-3">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Island name *</label>
         <input

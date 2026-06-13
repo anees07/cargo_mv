@@ -65,7 +65,7 @@ export function NotificationPanel({ onClose }: { onClose?: () => void }) {
                     {!n.read && <span className="h-2 w-2 shrink-0 rounded-full bg-ocean-500" />}
                   </div>
                   <p className="mt-0.5 text-xs text-slate-600">{n.body}</p>
-                  <p className="mt-1 text-[10px] text-slate-400">{relativeTime(n.createdAt)}</p>
+                  <p className="mt-1 text-xs text-slate-400">{relativeTime(n.createdAt)}</p>
                 </div>
               </button>
             );

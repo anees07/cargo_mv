@@ -60,17 +60,17 @@ export function CustomerDetailScreen() {
             </div>
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 text-center">
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[10px] uppercase opacity-70">Total billed</p>
+              <p className="text-xs uppercase opacity-70">Total billed</p>
               <p className="mt-0.5 text-sm font-bold">{MVRShort(totalBilled)}</p>
             </div>
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[10px] uppercase opacity-70">Paid</p>
+              <p className="text-xs uppercase opacity-70">Paid</p>
               <p className="mt-0.5 text-sm font-bold">{MVRShort(totalPaid)}</p>
             </div>
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[10px] uppercase opacity-70">Outstanding</p>
+              <p className="text-xs uppercase opacity-70">Outstanding</p>
               <p className="mt-0.5 text-sm font-bold">{MVRShort(customer.outstandingBalance)}</p>
             </div>
           </div>
@@ -79,21 +79,21 @@ export function CustomerDetailScreen() {
         {/* Info cards */}
         <div className="space-y-2 p-4">
           <Card className="p-3.5">
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-xs">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Phone</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Phone</p>
                 <p className="mt-0.5 font-semibold text-slate-900">{customer.phone}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Destination</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Destination</p>
                 <p className="mt-0.5 font-semibold text-slate-900">{dest?.islandName} ({dest?.destinationCode})</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Price level</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Price level</p>
                 <p className="mt-0.5 font-semibold text-slate-900 capitalize">{customer.defaultPriceLevelId}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Credit status</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Credit status</p>
                 <div className="mt-0.5 flex items-center gap-1">
                   {customer.creditAllowed ? (
                     <>
@@ -118,7 +118,7 @@ export function CustomerDetailScreen() {
                 <div>
                   <p className="text-xs font-semibold text-amber-900">Outstanding balance</p>
                   <p className="mt-0.5 text-lg font-bold text-amber-800">{MVR(customer.outstandingBalance)}</p>
-                  <p className="text-[10px] text-amber-700">
+                  <p className="text-xs text-amber-700">
                     {Math.round((customer.outstandingBalance / customer.creditLimit) * 100)}% of credit limit used
                   </p>
                 </div>
@@ -212,7 +212,7 @@ export function CustomerDetailScreen() {
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{p.paymentNumber}</p>
                       <p className="mt-0.5 text-xs text-slate-500 capitalize">{p.method.replace("_", " ")} · {formatDate(p.collectedAt)}</p>
-                      {p.reference && <p className="text-[10px] text-slate-400 font-mono">Ref: {p.reference}</p>}
+                      {p.reference && <p className="text-xs text-slate-400 font-mono">Ref: {p.reference}</p>}
                     </div>
                     <p className="text-sm font-bold text-emerald-700">{MVR(p.amount)}</p>
                   </div>
@@ -233,17 +233,17 @@ export function CustomerDetailScreen() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-slate-900">{MVR(op.totalTaxInclusive)}</p>
-                      <p className="text-[10px] text-slate-500">tax {MVR(op.totalTax)}</p>
+                      <p className="text-xs text-slate-500">tax {MVR(op.totalTax)}</p>
                     </div>
                   </div>
                   <div className="mt-2 border-t border-slate-100 pt-2 space-y-1">
                     {op.items.slice(0, 3).map(it => (
-                      <div key={it.id} className="flex justify-between text-[11px] text-slate-600">
+                      <div key={it.id} className="flex justify-between text-xs text-slate-600">
                         <span>{it.itemNameSnapshot} × {it.quantity}</span>
                         <span className="font-mono">{MVR(it.lineTotalTaxInclusive)}</span>
                       </div>
                     ))}
-                    {op.items.length > 3 && <p className="text-[10px] text-slate-400">+{op.items.length - 3} more items</p>}
+                    {op.items.length > 3 && <p className="text-xs text-slate-400">+{op.items.length - 3} more items</p>}
                   </div>
                 </Card>
               ))}
@@ -294,7 +294,7 @@ function EditCustomerForm({
   const [creditLimit, setCreditLimit] = useState(customer.creditLimit);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Display Name</label>
         <input
@@ -311,7 +311,7 @@ function EditCustomerForm({
           className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Phone</label>
           <input
@@ -339,7 +339,7 @@ function EditCustomerForm({
           {destinations.map(d => <option key={d.id} value={d.id}>{d.islandName} ({d.destinationCode})</option>)}
         </select>
       </div>
-      <div className="grid grid-cols-2 gap-3 pt-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 pt-1">
         <label className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-xs font-medium text-slate-700">
           <input type="checkbox" checked={creditAllowed} onChange={e => setCreditAllowed(e.target.checked)} />
           Credit allowed
@@ -410,23 +410,23 @@ export function DestinationDetailScreen() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 text-center">
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[10px] uppercase opacity-70">Customers</p>
+              <p className="text-xs uppercase opacity-70">Customers</p>
               <p className="mt-0.5 text-lg font-bold">{destCustomers.length}</p>
             </div>
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[10px] uppercase opacity-70">Cargo items</p>
+              <p className="text-xs uppercase opacity-70">Cargo items</p>
               <p className="mt-0.5 text-lg font-bold">{totalItems}</p>
             </div>
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[10px] uppercase opacity-70">Revenue</p>
+              <p className="text-xs uppercase opacity-70">Revenue</p>
               <p className="mt-0.5 text-lg font-bold">{MVRShort(totalRevenue)}</p>
             </div>
           </div>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 md:p-6 space-y-4">
           <Section title={`Customers (${destCustomers.length})`}>
             {destCustomers.length === 0 ? (
               <Card className="p-6 text-center text-sm text-slate-500">No customers registered at this destination.</Card>
@@ -445,7 +445,7 @@ export function DestinationDetailScreen() {
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{c.displayName}</p>
-                          <p className="text-[10px] text-slate-500 capitalize">{c.customerType.replace("_", " ")} · {c.defaultPriceLevelId}</p>
+                          <p className="text-xs text-slate-500 capitalize">{c.customerType.replace("_", " ")} · {c.defaultPriceLevelId}</p>
                         </div>
                       </div>
                       {c.outstandingBalance > 0 && (
@@ -521,7 +521,7 @@ function EditDestinationForm({
   const [sortOrder, setSortOrder] = useState(destination.sortOrder);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Island Name</label>
         <input
@@ -538,7 +538,7 @@ function EditDestinationForm({
           className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">3-Letter Code</label>
           <input
@@ -625,7 +625,7 @@ export function CreateTripScreen() {
             max={72}
             className="h-12 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
           />
-          <p className="mt-1 text-[10px] text-slate-500">
+          <p className="mt-1 text-xs text-slate-500">
             Arrival estimated at {new Date(Date.now() + hours * 3600000).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })} today
           </p>
         </div>
@@ -656,7 +656,7 @@ export function CreateTripScreen() {
         <Btn fullWidth size="lg" icon="check" onClick={handleCreate}>
           Create draft trip
         </Btn>
-        <p className="text-center text-[10px] text-slate-400">You can open the trip for loading after creation.</p>
+        <p className="text-center text-xs text-slate-400">You can open the trip for loading after creation.</p>
       </div>
     </div>
   );

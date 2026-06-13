@@ -1,0 +1,18 @@
+export const typography = {
+  pageTitle: "text-xl font-semibold tracking-tight text-slate-950 md:text-2xl lg:text-3xl",
+  sectionTitle: "text-base font-semibold text-slate-950 md:text-lg",
+  cardTitle: "text-sm font-semibold text-slate-950 md:text-base",
+  cardSubtitle: "text-xs leading-5 text-slate-500 md:text-sm",
+  body: "text-sm leading-6 text-slate-700 md:text-base",
+  bodySm: "text-xs leading-5 text-slate-600 md:text-sm",
+  muted: "text-xs leading-5 text-slate-500 md:text-sm",
+  label: "text-xs font-semibold leading-5 text-slate-700 md:text-sm",
+  input: "text-sm text-slate-950 placeholder:text-slate-400 md:text-base",
+  button: "text-sm font-semibold",
+  table: "text-xs leading-5 text-slate-700 md:text-sm",
+  badge: "text-xs font-semibold leading-4",
+  error: "text-xs font-medium leading-5 text-rose-600 md:text-sm",
+  helper: "text-xs leading-5 text-slate-500",
+  safe: "min-w-0 break-words",
+  truncate: "min-w-0 truncate",
+} as const;

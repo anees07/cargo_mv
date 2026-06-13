@@ -41,7 +41,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
   if (!open) return null;
 
   return (
-    <div className="absolute inset-0 z-50 flex">
+    <div className="absolute inset-0 z-50 flex lg:hidden">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] animate-fade-in"
@@ -49,11 +49,11 @@ export function Drawer({ open, onClose }: DrawerProps) {
       />
 
       {/* Drawer panel — slides from left */}
-      <div className="relative z-10 flex h-full w-[82%] max-w-[320px] flex-col bg-white shadow-2xl animate-drawer-in">
+      <div className="relative z-10 flex h-full w-80 max-w-full flex-col bg-white shadow-2xl animate-drawer-in">
         {/* ── Profile header ── */}
         <div className="bg-gradient-to-br from-ocean-800 via-ocean-900 to-ocean-950 px-5 pb-5 pt-8 text-white">
           <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 text-3xl backdrop-blur-sm shadow-inner">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/15 text-2xl backdrop-blur-sm shadow-inner sm:h-14 sm:w-14 sm:text-3xl">
               {businessProfile.logoEmoji}
             </div>
             <div className="min-w-0 flex-1">
@@ -72,9 +72,9 @@ export function Drawer({ open, onClose }: DrawerProps) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{currentUser.name}</p>
-              <p className="truncate text-[10px] text-ocean-200">{currentUser.email}</p>
+              <p className="truncate text-xs text-ocean-200">{currentUser.email}</p>
             </div>
-            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase ${roleColor(currentUser.role).replace("bg-", "bg-white/10 border-white/20 text-ocean-100 ")}`}>
+            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold uppercase ${roleColor(currentUser.role).replace("bg-", "bg-white/10 border-white/20 text-ocean-100 ")}`}>
               {roleLabel(currentUser.role)}
             </span>
           </button>
@@ -91,7 +91,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-semibold">{activeTrip.tripNumber}</p>
-                <p className="truncate text-[10px] text-emerald-200 capitalize">{activeTrip.status.replace("_", " ")}</p>
+                <p className="truncate text-xs text-emerald-200 capitalize">{activeTrip.status.replace("_", " ")}</p>
               </div>
               <Icon name="chevron_right" className="h-4 w-4 text-emerald-300" />
             </button>
@@ -102,7 +102,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
         <div className="flex-1 overflow-y-auto no-scrollbar">
           {/* Primary nav */}
           <div className="px-3 pt-4 pb-2">
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Navigation</p>
+            <p className="mb-2 px-3 text-xs font-bold uppercase tracking-widest text-slate-400">Navigation</p>
             <NavItem icon="home" label="Dashboard" onClick={() => goTo("dashboard")} />
             <NavItem icon="ship" label="Trips" badge={trips.filter(t => ["open","loading","sailing","offloading"].includes(t.status)).length || undefined} onClick={() => goTo("trips")} />
             <NavItem icon="package" label="Operation" color="text-orange-600" onClick={() => goTo("operation")} />
@@ -114,7 +114,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
 
           {/* Master data */}
           <div className="px-3 pt-3 pb-2">
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Master Data</p>
+            <p className="mb-2 px-3 text-xs font-bold uppercase tracking-widest text-slate-400">Master Data</p>
             <NavItem icon="island" label="Destinations" badge={destinations.length} onClick={() => goTo("destinations")} />
             <NavItem icon="users" label="Customers" badge={customers.length} onClick={() => goTo("customers")} />
             <NavItem icon="list" label="Catalog" onClick={() => goTo("catalog")} />
@@ -124,7 +124,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
 
           {/* Reports & settings */}
           <div className="px-3 pt-3 pb-2">
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Reports & Admin</p>
+            <p className="mb-2 px-3 text-xs font-bold uppercase tracking-widest text-slate-400">Reports & Admin</p>
             <NavItem icon="chart" label="Reports" onClick={() => goTo("reports")} />
             <NavItem icon="shield" label="Users & Roles" badge={users.length} onClick={() => goTo("users")} />
             <NavItem icon="log" label="Audit Log" onClick={() => goTo("audit_logs")} />
@@ -136,7 +136,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
 
           {/* Backend and production tools */}
           <div className="px-3 pt-3 pb-2">
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Production Tools</p>
+            <p className="mb-2 px-3 text-xs font-bold uppercase tracking-widest text-slate-400">Production Tools</p>
             <NavItem icon="database" label="Backend Console" onClick={() => goTo("backend")} />
             <NavItem icon="sync" label="Sync Conflicts" badge={2} badgeColor="bg-amber-100 text-amber-700" onClick={() => goTo("sync_conflicts")} />
             <NavItem icon="file" label="PDF Documents" onClick={() => goTo("pdf_documents")} />
@@ -146,13 +146,13 @@ export function Drawer({ open, onClose }: DrawerProps) {
 
           {/* Quick stats at bottom */}
           <div className="px-5 py-4">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
               <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-center">
-                <p className="text-[9px] uppercase tracking-wider text-slate-500">Outstanding</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Outstanding</p>
                 <p className="mt-0.5 text-sm font-bold text-rose-700">{MVR(outstanding)}</p>
               </div>
               <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-center">
-                <p className="text-[9px] uppercase tracking-wider text-slate-500">Islands</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Islands</p>
                 <p className="mt-0.5 text-sm font-bold text-ocean-700">{destinations.length}</p>
               </div>
             </div>
@@ -175,13 +175,13 @@ export function Drawer({ open, onClose }: DrawerProps) {
             </span>
             <span className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"}`} />
             {pendingSyncCount > 0 && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">
                 {pendingSyncCount}
               </span>
             )}
           </button>
 
-          <p className="mt-2 text-center text-[9px] text-slate-400">
+          <p className="mt-2 text-center text-xs text-slate-400">
             AtollCargo v1.0 • InsForge PostgreSQL + Edge Functions
           </p>
         </div>
@@ -209,12 +209,12 @@ function NavItem({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100 active:bg-slate-200 transition-colors"
+      className="flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-slate-100 active:bg-slate-200"
     >
-      <Icon name={icon} className={`h-[18px] w-[18px] ${color || "text-slate-500"}`} />
-      <span className="flex-1 text-[13px] font-medium text-slate-800">{label}</span>
+      <Icon name={icon} className={`h-5 w-5 shrink-0 ${color || "text-slate-500"}`} />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{label}</span>
       {badge !== undefined && (
-        <span className={`min-w-[20px] rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${badgeColor}`}>
+        <span className={`min-w-5 shrink-0 rounded-full px-1.5 py-0.5 text-center text-xs font-bold ${badgeColor}`}>
           {badge}
         </span>
       )}

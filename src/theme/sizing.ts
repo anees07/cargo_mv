@@ -1,0 +1,15 @@
+export const sizing = {
+  pageMax: "max-w-screen-2xl",
+  readable: "max-w-5xl",
+  form: "max-w-3xl",
+  sidebar: "w-72 xl:w-80",
+  topBar: "min-h-14 md:min-h-16",
+  bottomNav: "min-h-16",
+  iconXs: "h-3 w-3",
+  iconSm: "h-4 w-4",
+  iconMd: "h-5 w-5",
+  iconLg: "h-6 w-6",
+  controlSm: "h-9",
+  controlMd: "h-11",
+  controlLg: "h-12",
+} as const;

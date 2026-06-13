@@ -137,7 +137,7 @@ export function LoginScreen() {
       </div>
 
       <Modal open={showForgot} onClose={() => setShowForgot(false)} title="Reset Password">
-        <div className="space-y-4 p-4">
+        <div className="space-y-4 p-4 md:p-6 lg:p-8">
           <p className="text-sm text-slate-600">Enter your email address to receive a secure Firebase Auth password reset link.</p>
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700">Email address</label>
@@ -198,8 +198,8 @@ export function SelectProfileScreen() {
               <Icon name="chevron_right" className="h-5 w-5 text-slate-300" />
             </div>
             <div className="mt-3 border-t border-slate-100 pt-2 flex items-center justify-between">
-              <span className="rounded bg-ocean-100 px-2 py-0.5 text-[10px] font-bold text-ocean-700 uppercase tracking-widest">Owner</span>
-              <span className="text-[10px] text-slate-400">Default profile</span>
+              <span className="rounded bg-ocean-100 px-2 py-0.5 text-xs font-bold text-ocean-700 uppercase tracking-widest">Owner</span>
+              <span className="text-xs text-slate-400">Default profile</span>
             </div>
           </Card>
 
@@ -218,7 +218,7 @@ export function SelectProfileScreen() {
               <Icon name="chevron_right" className="h-5 w-5 text-slate-300" />
             </div>
             <div className="mt-3 border-t border-slate-100 pt-2 flex items-center justify-between">
-              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Manager</span>
+              <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700 uppercase tracking-widest">Manager</span>
             </div>
           </Card>
         </div>
@@ -327,7 +327,7 @@ export function RegisterScreen() {
                 placeholder="e.g. INV-MLE-9921"
                 className="h-12 w-full rounded-xl border border-ocean-300 bg-ocean-50/50 px-3 text-sm font-mono font-bold text-ocean-950 outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
               />
-              <p className="mt-1.5 text-[10px] text-slate-500">Ask your vessel Admin or Manager for your secure profile invitation code.</p>
+              <p className="mt-1.5 text-xs text-slate-500">Ask your vessel Admin or Manager for your secure profile invitation code.</p>
             </div>
           )}
         </div>

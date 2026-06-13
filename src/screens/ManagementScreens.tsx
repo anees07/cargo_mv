@@ -55,27 +55,27 @@ export function ReportsScreen() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
         {tab === "overview" && (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
               <Card className="p-4">
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Total billed</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Total billed</p>
                 <p className="mt-1 text-2xl font-bold text-slate-900">{MVRShort(totalBilled)}</p>
                 <p className="mt-1 text-xs text-slate-500">{bills.length} bills this period</p>
               </Card>
               <Card className="p-4">
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Collected</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Collected</p>
                 <p className="mt-1 text-2xl font-bold text-emerald-700">{MVRShort(totalCollected)}</p>
                 <p className="mt-1 text-xs text-slate-500">{payments.length} receipts</p>
               </Card>
               <Card className="p-4">
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Outstanding</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Outstanding</p>
                 <p className="mt-1 text-2xl font-bold text-rose-700">{MVRShort(totalOutstanding)}</p>
                 <p className="mt-1 text-xs text-slate-500">{customers.filter(c => c.outstandingBalance > 0).length} customers</p>
               </Card>
               <Card className="p-4">
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">Tax collected</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">Tax collected</p>
                 <p className="mt-1 text-2xl font-bold text-violet-700">{MVRShort(totalTax)}</p>
                 <p className="mt-1 text-xs text-slate-500">GST {businessProfile.defaultTaxRate}%</p>
               </Card>
@@ -103,7 +103,7 @@ export function ReportsScreen() {
 
         {tab === "destination" && (
           <Card className="p-0 overflow-hidden">
-            <div className="bg-slate-50 px-4 py-2.5 text-[10px] uppercase font-semibold tracking-wider text-slate-600 grid grid-cols-12 gap-2">
+            <div className="bg-slate-50 px-4 py-2.5 text-xs uppercase font-semibold tracking-wider text-slate-600 grid grid-cols-12 gap-2">
               <div className="col-span-6">Destination</div>
               <div className="col-span-2 text-right">Bills</div>
               <div className="col-span-4 text-right">Revenue</div>
@@ -112,10 +112,10 @@ export function ReportsScreen() {
               <div key={d.id} className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 last:border-0">
                 <div className="col-span-6 flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-slate-400">#{i + 1}</span>
+                    <span className="text-xs font-bold text-slate-400">#{i + 1}</span>
                     <p className="truncate text-sm font-semibold text-slate-900">{d.islandName}</p>
                   </div>
-                  <p className="text-[10px] text-slate-500">{d.atoll} • {d.destinationCode}</p>
+                  <p className="text-xs text-slate-500">{d.atoll} • {d.destinationCode}</p>
                 </div>
                 <div className="w-12 text-right text-sm text-slate-700">{d.billCount}</div>
                 <div className="w-28 text-right text-sm font-semibold text-slate-900">{MVR(d.revenue)}</div>
@@ -134,11 +134,11 @@ export function ReportsScreen() {
                   <div key={c.id} className="flex items-center justify-between p-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{c.displayName}</p>
-                      <p className="text-[10px] text-slate-500 capitalize">{c.customerType.replace("_", " ")} • {c.defaultPriceLevelId}</p>
+                      <p className="text-xs text-slate-500 capitalize">{c.customerType.replace("_", " ")} • {c.defaultPriceLevelId}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-rose-700">{MVR(c.outstandingBalance)}</p>
-                      <p className="text-[10px] text-slate-500">of {MVRShort(c.creditLimit)}</p>
+                      <p className="text-xs text-slate-500">of {MVRShort(c.creditLimit)}</p>
                     </div>
                   </div>
                 ))}
@@ -164,7 +164,7 @@ export function ReportsScreen() {
                     <div className="text-2xl">{m.icon}</div>
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{m.method}</p>
-                      <p className="text-[10px] text-slate-500">{m.count} receipts</p>
+                      <p className="text-xs text-slate-500">{m.count} receipts</p>
                     </div>
                   </div>
                   <p className="text-sm font-bold text-slate-900">{MVR(m.total)}</p>
@@ -226,10 +226,10 @@ function ExportAccountingForm({
   };
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <Card className="border-ocean-200 bg-ocean-50 p-3">
         <p className="text-xs font-semibold text-ocean-950">{businessName}</p>
-        <p className="mt-0.5 font-mono text-[10px] text-ocean-800">{gstNumber}</p>
+        <p className="mt-0.5 font-mono text-xs text-ocean-800">{gstNumber}</p>
       </Card>
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Accounting / filing format</label>
@@ -245,7 +245,7 @@ function ExportAccountingForm({
               </div>
               <div>
                 <p className={`text-xs font-semibold ${format === f.id ? "text-ocean-950" : "text-slate-900"}`}>{f.label}</p>
-                <p className="text-[10px] text-slate-500">{f.desc}</p>
+                <p className="text-xs text-slate-500">{f.desc}</p>
               </div>
             </button>
           ))}
@@ -298,12 +298,12 @@ function GstReportingSuite() {
       <Card className="border-0 bg-gradient-to-br from-violet-900 to-ocean-950 p-5 text-white">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300">Official MIRA GST Return Hub</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-violet-300">Official MIRA GST Return Hub</p>
             <h2 className="mt-1 text-xl font-bold">{businessProfile.businessName}</h2>
             <p className="mt-0.5 font-mono text-xs text-violet-200">GSTIN: {businessProfile.gstNumber}</p>
           </div>
           <div className="rounded-xl bg-white/10 p-2.5 text-center">
-            <p className="text-[9px] uppercase text-violet-200">Standard GST</p>
+            <p className="text-xs uppercase text-violet-200">Standard GST</p>
             <p className="text-base font-bold text-emerald-300">{businessProfile.defaultTaxRate}%</p>
           </div>
         </div>
@@ -312,7 +312,7 @@ function GstReportingSuite() {
       {/* Audit Period Selector */}
       <div className="space-y-2">
         <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Select GST Filing & Audit Period</label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
           {[
             { id: "3m" as const, label: "3 Months", desc: "Quarterly Filer" },
             { id: "6m" as const, label: "6 Months", desc: "Semi-Annual" },
@@ -324,7 +324,7 @@ function GstReportingSuite() {
               className={`rounded-xl border p-3 text-left transition-all ${periodSpan === p.id ? "border-violet-600 bg-violet-50 text-violet-950 shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
             >
               <p className="text-xs font-bold">{p.label}</p>
-              <p className="text-[10px] text-slate-500">{p.desc}</p>
+              <p className="text-xs text-slate-500">{p.desc}</p>
             </button>
           ))}
         </div>
@@ -342,7 +342,7 @@ function GstReportingSuite() {
       )}
 
       {/* Spectacular Breakdown Manifest */}
-      <Card className="p-4 space-y-3">
+      <Card className="p-4 md:p-6 space-y-3">
         <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Taxable Revenues Manifest Breakdown</p>
         
         <div className="space-y-2 text-xs">
@@ -419,7 +419,7 @@ export function SettingsScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar title="Settings" subtitle="Business profile" onBack={back} />
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar space-y-4">
         <Card className="p-4" onClick={() => setShowEdit(true)}>
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-ocean-500 to-ocean-700 text-3xl text-white shadow-inner">
@@ -447,7 +447,7 @@ export function SettingsScreen() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${t.activeStatus ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${t.activeStatus ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                     {t.activeStatus ? "ACTIVE" : "INACTIVE"}
                   </span>
                   <Icon name="chevron_right" className="h-4 w-4 text-slate-300" />
@@ -467,7 +467,7 @@ export function SettingsScreen() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-slate-500">Next: #{n.currentSequence + 1}</p>
-                  <p className="text-[10px] text-emerald-600">🔒 Server-locked</p>
+                  <p className="text-xs text-emerald-600">🔒 Server-locked</p>
                 </div>
               </div>
             ))}
@@ -584,14 +584,14 @@ function EditTaxSettingsForm({
   const [taxInclusiveEnabled, setTaxInclusiveEnabled] = useState(taxSetting.taxInclusiveEnabled);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <Card className="border-l-4 border-l-violet-500 bg-violet-50 p-3">
         <p className="text-xs font-semibold text-violet-950">Maldives Global Tax Compliance</p>
-        <p className="mt-0.5 text-[11px] text-violet-800">
+        <p className="mt-0.5 text-xs text-violet-800">
           Enforces standard Maldives tax extraction across all operational line items and cash invoices. Old finalized documents will remain completely unchanged.
         </p>
       </Card>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Tax Identifier</label>
           <input
@@ -617,7 +617,7 @@ function EditTaxSettingsForm({
         <input type="checkbox" checked={taxInclusiveEnabled} onChange={e => setTaxInclusiveEnabled(e.target.checked)} className="h-4 w-4" />
         <div>
           <p className="font-semibold text-slate-900">Tax-Inclusive Pricing Mode</p>
-          <p className="text-[10px] text-slate-500">Catalog item prices already embed GST. Tax will be cleanly extracted on invoice manifest generation.</p>
+          <p className="text-xs text-slate-500">Catalog item prices already embed GST. Tax will be cleanly extracted on invoice manifest generation.</p>
         </div>
       </label>
       <Btn
@@ -653,7 +653,7 @@ function EditBusinessProfileForm({
   });
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-3 p-4 md:p-6">
       <div className="grid grid-cols-[64px_1fr] gap-3">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Logo</label>
@@ -680,7 +680,7 @@ function EditBusinessProfileForm({
           className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Vessel reg #</label>
           <input
@@ -706,7 +706,7 @@ function EditBusinessProfileForm({
           className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Phone</label>
           <input
@@ -759,7 +759,7 @@ export function UsersScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar title="Users & roles" subtitle={`${users.length} members`} onBack={back} trailing={<Btn size="sm" icon="plus" onClick={() => setShowInvite(true)}>Invite</Btn>} />
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-2">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar space-y-2">
         {users.map(u => (
           <Card key={u.id} className="p-3.5" onClick={() => setEditingUserId(u.id)}>
             <div className="flex items-center gap-3">
@@ -772,14 +772,14 @@ export function UsersScreen() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-semibold text-slate-900">{u.name}</p>
-                  {u.id === currentUser.id && <span className="rounded bg-ocean-100 px-1.5 py-0.5 text-[9px] font-bold text-ocean-700">YOU</span>}
+                  {u.id === currentUser.id && <span className="rounded bg-ocean-100 px-1.5 py-0.5 text-xs font-bold text-ocean-700">YOU</span>}
                 </div>
-                <p className="text-[10px] text-slate-500">{u.email}</p>
+                <p className="text-xs text-slate-500">{u.email}</p>
                 <div className="mt-1.5 flex items-center gap-2">
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${roleColor(u.role)}`}>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${roleColor(u.role)}`}>
                     {roleLabel(u.role)}
                   </span>
-                  {u.online && <span className="text-[10px] text-emerald-600 font-medium">● online</span>}
+                  {u.online && <span className="text-xs text-emerald-600 font-medium">● online</span>}
                 </div>
               </div>
               <button className="rounded-lg p-2 hover:bg-slate-100">
@@ -792,7 +792,7 @@ export function UsersScreen() {
         <Card className="border-dashed bg-slate-50 p-4 mt-4">
           <p className="text-sm font-semibold text-slate-900">Role permissions matrix</p>
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-[10px]">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-500">
                   <th className="text-left">Action</th>
@@ -883,7 +883,7 @@ function EditUserRoleForm({
   ];
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Display name</label>
         <input
@@ -915,7 +915,7 @@ function EditUserRoleForm({
               </div>
               <div>
                 <p className={`text-xs font-semibold ${role === r.id ? "text-ocean-950" : "text-slate-900"}`}>{r.label}</p>
-                <p className="text-[10px] text-slate-500">{r.desc}</p>
+                <p className="text-xs text-slate-500">{r.desc}</p>
               </div>
             </button>
           ))}
@@ -956,7 +956,7 @@ function InviteCrewForm({
   ];
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-3 p-4 md:p-6">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Full name *</label>
         <input
@@ -990,7 +990,7 @@ function InviteCrewForm({
               </div>
               <div>
                 <p className={`text-xs font-semibold ${form.role === r.id ? "text-ocean-950" : "text-slate-900"}`}>{r.label}</p>
-                <p className="text-[10px] text-slate-500">{r.desc}</p>
+                <p className="text-xs text-slate-500">{r.desc}</p>
               </div>
             </button>
           ))}
@@ -1021,7 +1021,7 @@ export function AuditLogsScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar title="Audit log" subtitle={`${auditLogs.length} entries`} onBack={back} trailing={<Btn size="sm" icon="download" variant="outline">Export</Btn>} />
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
         <Card className="p-0 overflow-hidden">
           <div className="divide-y divide-slate-100">
             {auditLogs.map(log => {
@@ -1046,12 +1046,12 @@ export function AuditLogsScreen() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-slate-900">{actor?.name}</span>
-                        <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase ${actionColors[log.action] || "bg-slate-100 text-slate-700"}`}>
+                        <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold uppercase ${actionColors[log.action] || "bg-slate-100 text-slate-700"}`}>
                           {log.action}
                         </span>
                       </div>
                       <p className="mt-1 text-xs text-slate-600">{log.summary}</p>
-                      <p className="mt-1 text-[10px] text-slate-400 font-mono">
+                      <p className="mt-1 text-xs text-slate-400 font-mono">
                         {log.entityType}#{log.entityId} • {formatDate(log.createdAt)}
                       </p>
                     </div>
@@ -1125,23 +1125,23 @@ export function ProfileScreen() {
             <div className="min-w-0 flex-1">
               <p className="text-lg font-bold">{currentUser.name}</p>
               <p className="text-xs text-ocean-200">{currentUser.email}</p>
-              <span className={`mt-1.5 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider`}>
+              <span className={`mt-1.5 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider`}>
                 {roleLabel(currentUser.role)}
               </span>
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 text-center">
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[9px] uppercase text-ocean-200">Company</p>
+              <p className="text-xs uppercase text-ocean-200">Company</p>
               <p className="mt-0.5 truncate text-xs font-semibold">{businessProfile.companyName.split(" ").slice(0, 2).join(" ")}</p>
             </div>
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[9px] uppercase text-ocean-200">Vessel</p>
+              <p className="text-xs uppercase text-ocean-200">Vessel</p>
               <p className="mt-0.5 truncate text-xs font-semibold">{businessProfile.vesselName}</p>
             </div>
             <div className="rounded-lg bg-white/10 p-2">
-              <p className="text-[9px] uppercase text-ocean-200">GST</p>
+              <p className="text-xs uppercase text-ocean-200">GST</p>
               <p className="mt-0.5 truncate text-xs font-mono font-semibold">{businessProfile.gstNumber.split("-").pop()}</p>
             </div>
           </div>
@@ -1150,7 +1150,7 @@ export function ProfileScreen() {
         {/* Menu sections */}
         {menuSections.map(section => (
           <div key={section.title} className="px-4 pt-4">
-            <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{section.title}</p>
+            <p className="mb-2 px-1 text-xs font-bold uppercase tracking-widest text-slate-400">{section.title}</p>
             <Card className="p-0 overflow-hidden">
               {section.items.map((item, i) => (
                 <button
@@ -1159,14 +1159,14 @@ export function ProfileScreen() {
                   className={`flex w-full items-center gap-3 p-3 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors ${i !== section.items.length - 1 ? "border-b border-slate-100" : ""}`}
                 >
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                    <Icon name={item.icon} className="h-[18px] w-[18px]" />
+                    <Icon name={item.icon} className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-900">{item.label}</p>
-                    {item.desc && <p className="text-[10px] text-slate-500">{item.desc}</p>}
+                    {item.desc && <p className="text-xs text-slate-500">{item.desc}</p>}
                   </div>
                   {item.badge !== undefined && (
-                    <span className={`min-w-[20px] rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${item.badgeColor || "bg-slate-200 text-slate-700"}`}>
+                    <span className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs font-bold ${item.badgeColor || "bg-slate-200 text-slate-700"}`}>
                       {item.badge}
                     </span>
                   )}
@@ -1186,7 +1186,7 @@ export function ProfileScreen() {
             <Icon name={isOnline ? "wifi" : "wifi_off"} className={`h-5 w-5 ${isOnline ? "text-emerald-600" : "text-rose-500"}`} />
             <div className="flex-1 text-left">
               <p className="text-sm font-medium text-slate-900">{isOnline ? "Connected" : "Offline mode"}</p>
-              <p className="text-[10px] text-slate-500">{isOnline ? "InsForge realtime active" : "Tap to reconnect"}</p>
+              <p className="text-xs text-slate-500">{isOnline ? "InsForge realtime active" : "Tap to reconnect"}</p>
             </div>
             <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"}`} />
           </button>
@@ -1202,7 +1202,7 @@ export function ProfileScreen() {
           >
             Sign out
           </Btn>
-          <p className="mt-3 text-center text-[10px] text-slate-400">
+          <p className="mt-3 text-center text-xs text-slate-400">
             AtollCargo v1.0 • InsForge PostgreSQL + Edge Functions
           </p>
         </div>

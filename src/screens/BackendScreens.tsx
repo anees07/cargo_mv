@@ -85,16 +85,16 @@ const rlsPolicies = [
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 pb-24 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 lg:pb-24 no-scrollbar">
         <Card className="mb-4 border-0 bg-gradient-to-br from-slate-900 to-ocean-950 p-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-ocean-200">Business isolation key</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-ocean-200">Business isolation key</p>
               <p className="mt-1 font-mono text-sm font-bold">{businessProfile.id}</p>
               <p className="mt-1 text-xs text-ocean-100">Every table, query, storage path, realtime channel, PDF, and audit log is scoped by this value.</p>
             </div>
             <div className="rounded-xl bg-white/10 p-3 text-center">
-              <p className="text-[9px] uppercase text-ocean-200">JWT</p>
+              <p className="text-xs uppercase text-ocean-200">JWT</p>
               <p className="text-sm font-bold text-emerald-300">active</p>
             </div>
           </div>
@@ -102,7 +102,7 @@ const rlsPolicies = [
 
         {tab === "schema" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
               <Metric label="Tables" value="29" icon="database" />
               <Metric label="Users" value={String(users.length)} icon="users" />
               <Metric label="Operations" value={String(operations.length)} icon="package" />
@@ -118,7 +118,7 @@ const rlsPolicies = [
                         <Icon name="database" className="h-4 w-4 shrink-0 text-slate-400" />
                         <span className="truncate font-mono text-xs text-slate-800">{table}</span>
                       </div>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700">bp_id</span>
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">bp_id</span>
                     </div>
                   ))}
                 </Card>
@@ -131,7 +131,7 @@ const rlsPolicies = [
           <div className="space-y-4">
             <Card className="border-l-4 border-l-ocean-600 bg-ocean-50/50 p-3.5 leading-relaxed">
               <p className="text-xs font-bold text-ocean-950">🚀 Fully Production-Ready Flutter GoRouter Navigation Specification</p>
-              <p className="mt-1 text-[11px] text-ocean-900">
+              <p className="mt-1 text-xs text-ocean-900">
                 This exact Flutter Dart GoRouter configuration powers deep links and URL path routing across all 19 application screens, integrating Riverpod redirection guards to enforce strong tenancy rules (blocking unauthenticated access or ensuring active business setup).
               </p>
             </Card>
@@ -337,7 +337,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           <div className="space-y-4">
             <Card className="border-l-4 border-l-amber-500 bg-amber-50 p-3.5">
               <p className="text-xs font-bold text-amber-950">🔥 Multi-Tenant Firebase Cloud Firestore Schema</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-amber-900">
+              <p className="mt-1 text-xs leading-relaxed text-amber-900">
                 To power this application purely on Firebase while fulfilling the absolute guard rule — <em>“Everything belongs to a Business Profile”</em> — every root collection document must include an indexed <strong><code className="bg-amber-200/70 px-1 py-0.5 rounded">businessProfileId</code></strong> field, or sit as a subcollection under <strong><code className="bg-amber-200/70 px-1 py-0.5 rounded">/business_profiles/{businessProfile.id}/</code></strong>. Below is the production Cloud Firestore architecture.
               </p>
             </Card>
@@ -546,13 +546,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                     },
                   },
                 ].map(c => (
-                  <Card key={c.coll} className="p-4 space-y-2 border-slate-200">
+                  <Card key={c.coll} className="p-4 md:p-6 space-y-2 border-slate-200">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Icon name="database" className="h-4 w-4 text-amber-600" />
                         <span className="font-mono text-sm font-bold text-slate-900">/{c.coll}/{c.doc}</span>
                       </div>
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{c.desc}</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">{c.desc}</span>
                     </div>
                     <div className="rounded-xl bg-slate-900 p-3 font-mono text-xs text-slate-300 space-y-1">
                       {Object.entries(c.fields).map(([fieldName, typeInfo]) => (
@@ -769,7 +769,7 @@ exports.generateSafeNumber = functions.https.onCall(async (data, context) => {
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate font-mono text-xs font-bold text-slate-900">{fn.name}</p>
-                      <p className="mt-0.5 text-[10px] capitalize text-slate-500">risk: {fn.risk}</p>
+                      <p className="mt-0.5 text-xs capitalize text-slate-500">risk: {fn.risk}</p>
                     </div>
                     <StatusBadge status={fn.status === "ready" ? "paid" : "draft"} className="shrink-0" />
                   </div>
@@ -777,7 +777,7 @@ exports.generateSafeNumber = functions.https.onCall(async (data, context) => {
               ))}
             </div>
 
-            <Card className="bg-slate-900 p-3 text-[10px] text-slate-200">
+            <Card className="bg-slate-900 p-3 text-xs text-slate-200">
               <pre className="whitespace-pre-wrap font-mono">{`BEGIN;
 SELECT * FROM numbering_sequences
 WHERE business_profile_id = $1 AND number_type = $2
@@ -807,7 +807,7 @@ COMMIT;`}</pre>
             </Section>
 
             <Section title="Storage paths">
-              <Card className="space-y-2 bg-slate-900 p-3 font-mono text-[10px] text-slate-200">
+              <Card className="space-y-2 bg-slate-900 p-3 font-mono text-xs text-slate-200">
                 <p>/{businessProfile.id}/logos/current.png</p>
                 <p>/{businessProfile.id}/pdfs/invoices/INV-2025-01-000078.pdf</p>
                 <p>/{businessProfile.id}/attachments/trips/TRIP-2025-000142/</p>
@@ -881,10 +881,10 @@ export function SyncConflictsScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar title="Sync conflicts" subtitle={`${conflicts.length} conflicts need review`} onBack={back} />
 
-      <div className="flex-1 overflow-y-auto p-4 pb-24 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 lg:pb-24 no-scrollbar">
         <Card className="mb-4 border-l-4 border-l-amber-500 bg-amber-50 p-3">
           <p className="text-xs font-semibold text-amber-900">Offline safety rule</p>
-          <p className="mt-0.5 text-[11px] text-amber-800">Server validates active trip status before accepting queued drafts for {businessProfile.businessName}. Conflicted records cannot create bills until an Admin or Manager resolves them.</p>
+          <p className="mt-0.5 text-xs text-amber-800">Server validates active trip status before accepting queued drafts for {businessProfile.businessName}. Conflicted records cannot create bills until an Admin or Manager resolves them.</p>
         </Card>
 
         <div className="space-y-3">
@@ -894,17 +894,17 @@ export function SyncConflictsScreen() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="font-mono text-xs font-bold text-slate-900">{conflict.id}</p>
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold uppercase text-amber-700">{conflict.status.replace("_", " ")}</span>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold uppercase text-amber-700">{conflict.status.replace("_", " ")}</span>
                   </div>
                   <p className="mt-2 text-sm font-semibold text-slate-900">{conflict.reason}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{conflict.trip} • {conflict.device}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-slate-900">{MVR(conflict.amount)}</p>
-                  <p className="text-[10px] text-slate-500">{conflict.records} records</p>
+                  <p className="text-xs text-slate-500">{conflict.records} records</p>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
                 <Btn size="sm" variant="outline" icon="eye">Review</Btn>
                 <Btn size="sm" icon="check">Resolve</Btn>
               </div>
@@ -918,9 +918,9 @@ export function SyncConflictsScreen() {
               <div key={op.id} className={`flex items-center justify-between p-3 ${i !== 2 ? "border-b border-slate-100" : ""}`}>
                 <div>
                   <p className="text-sm font-semibold text-slate-900 capitalize">{op.operationType.replace("_", " ")}</p>
-                  <p className="text-[10px] text-slate-500">{formatDateTime(op.createdAt)}</p>
+                  <p className="text-xs text-slate-500">{formatDateTime(op.createdAt)}</p>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${op.synced ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{op.synced ? "SYNCED" : "QUEUED"}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${op.synced ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{op.synced ? "SYNCED" : "QUEUED"}</span>
               </div>
             ))}
           </Card>
@@ -946,10 +946,10 @@ export function PdfDocumentsScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar title="PDF documents" subtitle="A4 invoices, bills, receipts" onBack={back} trailing={<Btn size="sm" icon="printer" variant="outline">Print</Btn>} />
 
-      <div className="flex-1 overflow-y-auto p-4 pb-24 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 lg:pb-24 no-scrollbar">
         <Card className="mb-4 bg-ocean-50 border-ocean-200 p-3">
           <p className="text-xs font-semibold text-ocean-900">Storage isolation</p>
-          <p className="mt-0.5 break-all font-mono text-[10px] text-ocean-700">/{businessProfile.id}/pdfs/...</p>
+          <p className="mt-0.5 break-all font-mono text-xs text-ocean-700">/{businessProfile.id}/pdfs/...</p>
         </Card>
 
         <div className="space-y-2">
@@ -962,17 +962,17 @@ export function PdfDocumentsScreen() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="truncate font-mono text-xs font-bold text-slate-900">{doc.number}.pdf</p>
-                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">v{doc.version}</span>
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">v{doc.version}</span>
                   </div>
                   <p className="mt-0.5 text-xs text-slate-600">{doc.customer}</p>
-                  <p className="text-[10px] text-slate-400">{formatDateTime(doc.date)}</p>
+                  <p className="text-xs text-slate-400">{formatDateTime(doc.date)}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-slate-900">{MVR(doc.amount)}</p>
-                  <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold ${doc.stored ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{doc.stored ? "STORED" : "DRAFT"}</span>
+                  <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${doc.stored ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{doc.stored ? "STORED" : "DRAFT"}</span>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
                 <Btn size="sm" variant="outline" icon="eye">Preview</Btn>
                 <Btn size="sm" variant="outline" icon="share">Share</Btn>
                 <Btn size="sm" icon="download">Save</Btn>
@@ -993,7 +993,7 @@ function Metric({ label, value, icon }: { label: string; value: string; icon: st
           <Icon name={icon} className="h-4 w-4" />
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
+          <p className="text-xs uppercase tracking-wider text-slate-500">{label}</p>
           <p className="text-lg font-bold text-slate-900">{value}</p>
         </div>
       </div>
@@ -1004,7 +1004,7 @@ function Metric({ label, value, icon }: { label: string; value: string; icon: st
 function Summary({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-r border-slate-100 p-3 text-center even:border-r-0">
-      <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
+      <p className="text-xs uppercase tracking-wider text-slate-500">{label}</p>
       <p className="mt-1 text-xl font-bold text-slate-900">{value}</p>
     </div>
   );

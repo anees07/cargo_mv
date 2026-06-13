@@ -32,7 +32,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
             <button onClick={() => navigate("notifications")} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100 relative">
               <Icon name="bell" className="h-5 w-5" />
               {unreadNotifs > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white">
+                <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-xs font-bold leading-none text-white">
                   {unreadNotifs}
                 </span>
               )}
@@ -74,22 +74,22 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
                   <span className="font-medium">Addu City</span>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 text-center">
                   <div className="rounded-lg bg-white/10 p-2">
-                    <p className="text-[10px] uppercase text-ocean-100">Departure</p>
+                    <p className="text-xs uppercase text-ocean-100">Departure</p>
                     <p className="mt-0.5 text-xs font-semibold">{formatTime(activeTrip.actualDepartureAt || activeTrip.plannedDepartureAt)}</p>
                   </div>
                   <div className="rounded-lg bg-white/10 p-2">
-                    <p className="text-[10px] uppercase text-ocean-100">ETA</p>
+                    <p className="text-xs uppercase text-ocean-100">ETA</p>
                     <p className="mt-0.5 text-xs font-semibold">{formatTime(activeTrip.plannedArrivalAt)}</p>
                   </div>
                   <div className="rounded-lg bg-white/10 p-2">
-                    <p className="text-[10px] uppercase text-ocean-100">Crew</p>
+                    <p className="text-xs uppercase text-ocean-100">Crew</p>
                     <p className="mt-0.5 text-xs font-semibold">{onlineCount} online</p>
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
                   <Btn variant="secondary" size="sm" icon="package" onClick={() => navigate("operation")} className="!bg-white !text-ocean-900 hover:!bg-ocean-50">
                     Operation
                   </Btn>
@@ -103,7 +103,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
         )}
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-2 gap-3 px-4 pt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 px-4 pt-4">
           <Stat label="Today Revenue" value={MVRShort(todayRevenue)} sub="4 paid bills" icon="cash" color="emerald" />
           <Stat label="Outstanding" value={MVRShort(outstanding)} sub={`${customers.filter(c => c.outstandingBalance > 0).length} customers`} icon="receipt" color="amber" />
           <Stat label="Active Trip" value={activeTrip?.tripNumber.split("-").pop() || "—"} sub={activeTrip?.status.toUpperCase() || "—"} icon="ship" color="ocean" />
@@ -112,7 +112,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
 
         {/* Quick actions */}
         <Section title="Quick actions" className="mt-6 px-4">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
             {[
               { icon: "package", label: "Load", screen: "operation" as const, color: "bg-orange-100 text-orange-700", disabled: !activeTripId },
               { icon: "truck", label: "Offload", screen: "operation" as const, color: "bg-rose-100 text-rose-700", disabled: !activeTripId },
@@ -132,7 +132,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
                 <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${a.color}`}>
                   <Icon name={a.icon} className="h-5 w-5" />
                 </div>
-                <span className="text-[11px] font-medium text-slate-700">{a.label}</span>
+                <span className="text-xs font-medium text-slate-700">{a.label}</span>
               </button>
             ))}
           </div>
@@ -175,7 +175,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
                     <p className="text-xs text-slate-700">
                       <strong className="text-slate-900">{actor?.name}</strong> {log.summary.toLowerCase()}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">{relativeTime(log.createdAt)}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">{relativeTime(log.createdAt)}</p>
                   </div>
                 </div>
               );
@@ -202,18 +202,18 @@ export function TripsScreen() {
         trailing={<Btn size="sm" icon="plus" onClick={() => navigate("create_trip")}>New trip</Btn>}
       />
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
-        <div className="mb-3 grid grid-cols-3 gap-2">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
+        <div className="mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
           <Card className="p-3 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Active</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Active</p>
             <p className="mt-1 text-2xl font-bold text-ocean-700">{trips.filter(t => ["open", "loading", "sailing", "offloading"].includes(t.status)).length}</p>
           </Card>
           <Card className="p-3 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Ended</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Ended</p>
             <p className="mt-1 text-2xl font-bold text-slate-700">{trips.filter(t => t.status === "ended").length}</p>
           </Card>
           <Card className="p-3 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Closed</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Closed</p>
             <p className="mt-1 text-2xl font-bold text-slate-400">{trips.filter(t => t.status === "closed").length}</p>
           </Card>
         </div>
@@ -237,7 +237,7 @@ export function TripsScreen() {
                 </div>
                 <Icon name="chevron_right" className="h-5 w-5 shrink-0 text-slate-400" />
               </div>
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
                 <div className="flex items-center gap-1">
                   <Icon name="calendar" className="h-3 w-3" />
                   {formatDate(trip.createdAt)}
@@ -290,7 +290,7 @@ export function TripDetailScreen() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 pb-24 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 lg:pb-24 no-scrollbar">
         <Card className="overflow-hidden p-0 border-0 bg-gradient-to-br from-ocean-700 to-ocean-900 text-white cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowEditSpecs(true)}>
           <div className="p-5">
             <div className="flex justify-between items-start">
@@ -300,27 +300,27 @@ export function TripDetailScreen() {
             <h2 className="mt-1 text-xl font-semibold">{trip.tripNumber}</h2>
             <p className="mt-1 text-sm text-ocean-100">{trip.notes}</p>
 
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
               <div className="rounded-lg bg-white/10 p-2.5">
-                <p className="text-[10px] uppercase text-ocean-200">Departure</p>
+                <p className="text-xs uppercase text-ocean-200">Departure</p>
                 <p className="mt-0.5 text-xs font-semibold">{formatDateTime(trip.actualDepartureAt || trip.plannedDepartureAt)}</p>
               </div>
               <div className="rounded-lg bg-white/10 p-2.5">
-                <p className="text-[10px] uppercase text-ocean-200">Arrival</p>
+                <p className="text-xs uppercase text-ocean-200">Arrival</p>
                 <p className="mt-0.5 text-xs font-semibold">{formatDateTime(trip.actualArrivalAt || trip.plannedArrivalAt)}</p>
               </div>
             </div>
           </div>
         </Card>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
           <Stat label="Operations" value={String(tripOps.length)} sub={`${tripItems} items`} icon="package" />
           <Stat label="Bills" value={String(tripBills.length)} sub={`${tripBills.filter(b => b.paymentStatus === "paid").length} paid`} icon="receipt" color="emerald" />
           <Stat label="Revenue" value={MVRShort(tripRevenue)} sub="trip total" icon="cash" color="amber" />
         </div>
 
         {canOperate && hasPermission(currentUser.role, "manage_ops") && (
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
             <Btn variant="primary" size="lg" icon="package" onClick={() => navigate("operation")} fullWidth>
               Open Operation
             </Btn>
@@ -357,7 +357,7 @@ export function TripDetailScreen() {
           <div className="mt-4 space-y-2">
             <Card className="border-l-4 border-l-amber-500 bg-amber-50 p-3">
               <p className="text-xs font-semibold text-amber-900">Trip ended</p>
-              <p className="text-[10px] text-amber-700 mt-0.5">New loading/offloading and bills are blocked. Admin/Owner can still adjust existing bills — every change is audit-logged.</p>
+              <p className="text-xs text-amber-700 mt-0.5">New loading/offloading and bills are blocked. Admin/Owner can still adjust existing bills — every change is audit-logged.</p>
             </Card>
             <Btn variant="secondary" size="lg" fullWidth icon="save" onClick={() => {
               if (confirm("Close this trip for archive? This action is permanent.")) {
@@ -454,7 +454,7 @@ function EditTripSpecsForm({
   const [notes, setNotes] = useState(trip.notes);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <div>
         <label className="mb-1 block text-xs font-semibold text-slate-700">Trip Manifest Number</label>
         <input value={trip.tripNumber} disabled className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-mono font-bold text-slate-500 outline-none" />
@@ -512,7 +512,7 @@ function SwitchTripStatusForm({
         >
           <div>
             <p className={`text-xs font-bold capitalize ${currentStatus === s.id ? "text-ocean-900" : "text-slate-900"}`}>{s.label}</p>
-            <p className="text-[10px] text-slate-500">{s.desc}</p>
+            <p className="text-xs text-slate-500">{s.desc}</p>
           </div>
           {currentStatus === s.id && <Icon name="check" className="h-4 w-4 text-ocean-700 shrink-0" />}
         </button>

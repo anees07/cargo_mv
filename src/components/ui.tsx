@@ -1,6 +1,31 @@
 import type { ReactNode, ButtonHTMLAttributes, ReactElement } from "react";
 import { statusColor, statusLabel } from "../utils/format";
 import type { TripStatus, BillStatus } from "../types";
+import { cn } from "../lib/cn";
+import { typography } from "../theme/typography";
+import { spacing } from "../theme/spacing";
+
+export { AppLayout } from "./layout/AppLayout";
+export { AppShell } from "./layout/AppShell";
+export { PageContainer } from "./layout/PageContainer";
+export { PageHeader } from "./layout/PageHeader";
+export { ResponsiveForm } from "./layout/ResponsiveForm";
+export { ResponsiveGrid } from "./layout/ResponsiveGrid";
+export { ResponsiveStack } from "./layout/ResponsiveStack";
+export { SectionHeader } from "./layout/SectionHeader";
+export { AppSidebar } from "./navigation/AppSidebar";
+export { DesktopNav } from "./navigation/DesktopNav";
+export { MobileNav } from "./navigation/MobileNav";
+export { NavigationItem } from "./navigation/NavigationItem";
+export { NotificationButton, UserMenu } from "./navigation/TopBar";
+export { ActionCard, AppCard, InfoCard, ListCard, SummaryCard } from "./primitives/AppCard";
+export { AppBadge } from "./primitives/AppBadge";
+export { AppButton, IconButton } from "./primitives/AppButton";
+export { AppInput, AppSearchInput, AppSelect, AppTextarea, FieldLabel } from "./primitives/AppFormControls";
+export { AppTab, AppTabs } from "./primitives/AppTabs";
+export { AppTable, MobileCardTable } from "./primitives/AppTable";
+export { ConfirmDialog } from "./primitives/AppModal";
+export { EmptyState, ErrorState, LoadingState } from "./primitives/States";
 
 // ============================================================================
 // Reusable atomic UI components — modeled after Flutter Material widgets
@@ -71,9 +96,9 @@ export function Icon({ name, className = "h-5 w-5" }: { name: string; className?
 
 export function StatusBadge({ status, className = "" }: { status: TripStatus | BillStatus | string; className?: string }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize ${statusColor(status)} ${className}`}>
+    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize leading-5", statusColor(status), className)}>
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {statusLabel(status)}
+      <span className="truncate">{statusLabel(status)}</span>
     </span>
   );
 }
@@ -88,7 +113,7 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function Btn({ variant = "primary", size = "md", icon, iconRight, loading, fullWidth, className = "", children, ...rest }: BtnProps) {
-  const sizes = { sm: "h-9 px-3 text-sm", md: "h-11 px-4 text-sm", lg: "h-12 px-5 text-base" };
+  const sizes = { sm: "min-h-9 px-3 text-sm", md: "min-h-11 px-4 text-sm", lg: "min-h-12 px-5 text-base" };
   const variants = {
     primary: "bg-ocean-700 text-white hover:bg-ocean-800 active:bg-ocean-900 shadow-sm",
     secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200 active:bg-slate-300",
@@ -100,10 +125,10 @@ export function Btn({ variant = "primary", size = "md", icon, iconRight, loading
     <button
       {...rest}
       disabled={loading || rest.disabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${sizes[size]} ${variants[variant]} ${fullWidth ? "w-full" : ""} ${className}`}
+      className={cn("inline-flex min-w-0 items-center justify-center gap-2 rounded-xl font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean-500 focus-visible:ring-offset-2", sizes[size], variants[variant], fullWidth && "w-full", className)}
     >
       {loading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : icon ? <Icon name={icon} className="h-4 w-4" /> : null}
-      {children}
+      <span className="min-w-0 truncate">{children}</span>
       {iconRight ? <Icon name={iconRight} className="h-4 w-4" /> : null}
     </button>
   );
@@ -111,7 +136,7 @@ export function Btn({ variant = "primary", size = "md", icon, iconRight, loading
 
 export function Card({ children, className = "", onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
   return (
-    <div onClick={onClick} className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${onClick ? "cursor-pointer hover:shadow-md transition-shadow" : ""} ${className}`}>
+    <div onClick={onClick} className={cn("w-full min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm", onClick && "cursor-pointer transition-shadow hover:shadow-md", className)}>
       {children}
     </div>
   );
@@ -121,8 +146,8 @@ export function Section({ title, action, children, className = "" }: { title?: s
   return (
     <div className={className}>
       {title && (
-        <div className="mb-3 flex items-center justify-between px-1">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">{title}</h3>
+        <div className="mb-3 flex min-w-0 items-center justify-between gap-3 px-1">
+          <h3 className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-slate-500 md:text-sm">{title}</h3>
           {action}
         </div>
       )}
@@ -141,12 +166,12 @@ export function Stat({ label, value, sub, icon, color = "ocean" }: { label: stri
   };
   return (
     <Card className="overflow-hidden p-0">
-      <div className="p-4">
-        <div className="flex items-start justify-between">
-          <div>
+      <div className={cn(spacing.cardCompact)}>
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
-            {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
+            <p className="mt-2 break-words text-xl font-semibold text-slate-900 md:text-2xl">{value}</p>
+            {sub && <p className="mt-1 truncate text-xs text-slate-500 md:text-sm">{sub}</p>}
           </div>
           {icon && (
             <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${colors[color]} text-white shadow-sm`}>
@@ -161,29 +186,29 @@ export function Stat({ label, value, sub, icon, color = "ocean" }: { label: stri
 
 export function Empty({ icon = "package", title, hint }: { icon?: string; title: string; hint?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
-      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+    <div className="flex min-h-40 flex-col items-center justify-center px-4 py-10 text-center md:px-6 md:py-12">
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400 md:h-14 md:w-14">
         <Icon name={icon} className="h-7 w-7" />
       </div>
-      <p className="text-sm font-medium text-slate-700">{title}</p>
-      {hint && <p className="mt-1 text-xs text-slate-500 max-w-xs">{hint}</p>}
+      <p className={typography.cardTitle}>{title}</p>
+      {hint && <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500 md:text-sm">{hint}</p>}
     </div>
   );
 }
 
 export function TopBar({ title, subtitle, leading, trailing, onBack }: { title: string; subtitle?: string; leading?: ReactNode; trailing?: ReactNode; onBack?: () => void }) {
   return (
-    <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-3 backdrop-blur">
+    <div className="sticky top-0 z-30 flex min-h-14 items-center gap-3 border-b border-slate-200 bg-white/95 px-3 backdrop-blur safe-top md:min-h-16 md:px-4">
       {onBack ? (
-        <button onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100 active:bg-slate-200">
+        <button onClick={onBack} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-100 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean-500">
           <Icon name="back" className="h-5 w-5" />
         </button>
       ) : leading}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-base font-semibold text-slate-900">{title}</div>
-        {subtitle && <div className="truncate text-xs text-slate-500">{subtitle}</div>}
+        <div className="truncate text-base font-semibold text-slate-900 md:text-lg">{title}</div>
+        {subtitle && <div className="truncate text-xs text-slate-500 md:text-sm">{subtitle}</div>}
       </div>
-      {trailing}
+      {trailing && <div className="flex shrink-0 items-center gap-2">{trailing}</div>}
     </div>
   );
 }
@@ -191,18 +216,18 @@ export function TopBar({ title, subtitle, leading, trailing, onBack }: { title: 
 export function Modal({ open, onClose, title, children, full = false }: { open: boolean; onClose: () => void; title?: string; children: ReactNode; full?: boolean }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-end justify-center safe-modal sm:items-center animate-fade-in">
       <div className="absolute inset-0 bg-slate-900/50" onClick={onClose} />
-      <div className={`relative w-full ${full ? "sm:max-w-2xl" : "sm:max-w-md"} max-h-[92vh] overflow-hidden rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl animate-slide-up sm:animate-scale-in`}>
+      <div className={cn("relative max-h-[92dvh] w-full overflow-hidden rounded-t-2xl bg-white shadow-2xl animate-slide-up sm:mx-4 sm:rounded-2xl sm:animate-scale-in", full ? "sm:max-w-3xl" : "sm:max-w-lg")}>
         {title && (
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-            <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-slate-100">
+            <h3 className="min-w-0 truncate text-base font-semibold text-slate-900">{title}</h3>
+            <button onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-slate-100">
               <Icon name="x" className="h-4 w-4" />
             </button>
           </div>
         )}
-        <div className="overflow-y-auto max-h-[calc(92vh-56px)]">
+        <div className="max-h-[calc(92dvh-56px)] overflow-y-auto">
           {children}
         </div>
       </div>
@@ -218,15 +243,15 @@ export function Toast({ toasts, onDismiss }: { toasts: { id: string; title: stri
     info: "bg-ocean-700 text-white",
   };
   return (
-    <div className="pointer-events-none fixed bottom-20 left-0 right-0 z-50 flex flex-col items-center gap-2 px-4 sm:bottom-4 sm:right-4 sm:left-auto sm:items-end">
+    <div className="pointer-events-none fixed left-0 right-0 z-50 flex flex-col items-center gap-2 px-4 safe-toast-bottom safe-x sm:bottom-4 sm:right-4 sm:left-auto sm:items-end">
       {toasts.map(t => (
         <div
           key={t.id}
           onClick={() => onDismiss(t.id)}
-          className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl px-4 py-3 shadow-lg animate-slide-up ${variants[t.variant]}`}
+          className={cn("pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl px-4 py-3 shadow-lg animate-slide-up", variants[t.variant])}
         >
           <div className="flex-1">
-            <p className="text-sm font-semibold">{t.title}</p>
+            <p className="break-words text-sm font-semibold">{t.title}</p>
             {t.body && <p className="mt-0.5 text-xs opacity-90">{t.body}</p>}
           </div>
           <button onClick={() => onDismiss(t.id)} className="opacity-70 hover:opacity-100">
@@ -260,18 +285,18 @@ export function FirestoreListBuilder<T>({
 }) {
   if (data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-          <Icon name={icon} className="h-8 w-8" />
+      <div className="flex min-h-44 flex-col items-center justify-center px-4 py-12 text-center md:px-6 md:py-16">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400 md:h-16 md:w-16">
+          <Icon name={icon} className="h-7 w-7 md:h-8 md:w-8" />
         </div>
-        <p className="text-base font-semibold text-slate-900">{emptyTitle}</p>
-        {emptyHint && <p className="mt-1.5 text-sm text-slate-500 max-w-sm">{emptyHint}</p>}
+        <p className={typography.cardTitle}>{emptyTitle}</p>
+        {emptyHint && <p className="mt-1.5 max-w-sm text-sm text-slate-500">{emptyHint}</p>}
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 md:space-y-4">
       {data.map((item, index) => (
         <div key={keyExtractor(item)}>
           {renderItem(item, index)}

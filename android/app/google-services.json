@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "435750221707",
+    "project_id": "gen-lang-client-0890065584",
+    "storage_bucket": "gen-lang-client-0890065584.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:435750221707:android:107b7653a61f0643ba618e",
+        "android_client_info": {
+          "package_name": "com.maldives.cargo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4HjJFEhPUzYsaS4NO8gmIpvnNPyp-k0k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

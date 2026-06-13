@@ -62,19 +62,19 @@ export function BillingScreen() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
         <Card className="mb-3 p-4 bg-gradient-to-br from-ocean-700 to-ocean-900 text-white border-0">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-ocean-200">Billed</p>
+              <p className="text-xs uppercase tracking-wider text-ocean-200">Billed</p>
               <p className="mt-1 text-base font-bold">{MVR(totals.total)}</p>
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-ocean-200">Collected</p>
+              <p className="text-xs uppercase tracking-wider text-ocean-200">Collected</p>
               <p className="mt-1 text-base font-bold text-emerald-300">{MVR(totals.paid)}</p>
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-ocean-200">Outstanding</p>
+              <p className="text-xs uppercase tracking-wider text-ocean-200">Outstanding</p>
               <p className="mt-1 text-base font-bold text-amber-300">{MVR(totals.outstanding)}</p>
             </div>
           </div>
@@ -101,13 +101,13 @@ export function BillingScreen() {
                     <p className="mt-1 text-xs text-slate-600 flex items-center gap-2">
                       <span className="flex items-center gap-0.5"><Icon name="island" className="h-3 w-3" /> {d?.islandName}</span>
                       <span className="text-slate-300">•</span>
-                      <span className="font-mono text-[10px]">{t?.tripNumber}</span>
+                      <span className="font-mono text-xs">{t?.tripNumber}</span>
                     </p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-bold text-slate-900">{MVR(b.grandTotal)}</p>
-                    {due > 0 && <p className="text-[10px] font-semibold text-rose-600">Due {MVR(due)}</p>}
-                    <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(b.createdAt)}</p>
+                    {due > 0 && <p className="text-xs font-semibold text-rose-600">Due {MVR(due)}</p>}
+                    <p className="text-xs text-slate-400 mt-0.5">{formatDate(b.createdAt)}</p>
                   </div>
                 </div>
               </Card>
@@ -145,10 +145,10 @@ function GenerateBillForm({ onGenerate }: { onGenerate: (type: string, customerI
   const [tripId, setTripId] = useState(activeTripId || trips[0]?.id || "");
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bill type</label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
           {[
             { id: "instant_cash", label: "Instant cash bill" },
             { id: "credit", label: "Credit invoice" },
@@ -223,8 +223,8 @@ export function InvoicePreviewScreen() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
-        <div className="mx-auto max-w-2xl bg-white shadow-lg rounded-lg p-6 text-[11px] leading-relaxed">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 no-scrollbar">
+        <div className="mx-auto max-w-2xl bg-white shadow-lg rounded-lg p-6 text-xs leading-relaxed">
           {/* Letterhead */}
           <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4">
             <div className="flex items-start gap-3">
@@ -234,29 +234,29 @@ export function InvoicePreviewScreen() {
               <div>
                 <h1 className="text-base font-bold text-slate-900">{businessProfile.businessName}</h1>
                 <p className="text-slate-700">{businessProfile.vesselName}</p>
-                <p className="text-slate-500 text-[10px]">{businessProfile.address}</p>
-                <p className="text-slate-500 text-[10px]">GST: {businessProfile.gstNumber} • Reg: {businessProfile.vesselRegistrationNumber}</p>
+                <p className="text-slate-500 text-xs">{businessProfile.address}</p>
+                <p className="text-slate-500 text-xs">GST: {businessProfile.gstNumber} • Reg: {businessProfile.vesselRegistrationNumber}</p>
               </div>
             </div>
             <div className="text-right">
               <p className="text-2xl font-bold tracking-tight text-slate-900">{bill.billType === "credit" ? "TAX INVOICE" : "CASH BILL"}</p>
               <p className="text-slate-700 font-mono mt-1">{bill.billNumber}</p>
-              <p className="text-slate-500 text-[10px]">Date: {formatDate(bill.createdAt)}</p>
-              <p className="text-slate-500 text-[10px]">Trip: {trip?.tripNumber}</p>
+              <p className="text-slate-500 text-xs">Date: {formatDate(bill.createdAt)}</p>
+              <p className="text-slate-500 text-xs">Trip: {trip?.tripNumber}</p>
             </div>
           </div>
 
           {/* Bill to */}
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bill to</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Bill to</p>
               <p className="mt-1 text-sm font-semibold text-slate-900">{customer?.displayName}</p>
               <p className="text-slate-600">{customer?.legalName}</p>
               <p className="text-slate-500">Phone: {customer?.phone}</p>
               {customer?.gstNumber && <p className="text-slate-500">GST: {customer.gstNumber}</p>}
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Destination</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Destination</p>
               <p className="mt-1 text-sm font-semibold text-slate-900">{destination?.islandName}</p>
               <p className="text-slate-600">{destination?.atoll} Atoll</p>
               <p className="text-slate-500">{destination?.destinationCode}</p>
@@ -265,7 +265,7 @@ export function InvoicePreviewScreen() {
 
           {/* Line items table */}
           <div className="mt-5 border border-slate-300">
-            <table className="w-full text-[10px]">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="bg-slate-100 text-slate-700">
                   <th className="border-b border-slate-300 px-2 py-1.5 text-left">Item</th>
@@ -291,7 +291,7 @@ export function InvoicePreviewScreen() {
 
           {/* Totals */}
           <div className="mt-3 flex justify-end">
-            <div className="w-64 space-y-1 text-[11px]">
+            <div className="w-64 space-y-1 text-xs">
               <div className="flex justify-between"><span className="text-slate-600">Subtotal (excl. tax)</span><span className="font-mono">{MVR(subtotal)}</span></div>
               <div className="flex justify-between"><span className="text-slate-600">GST {taxRate}% (inclusive)</span><span className="font-mono">{MVR(bill.taxTotal)}</span></div>
               <div className="flex justify-between border-t-2 border-slate-900 pt-1 text-sm font-bold">
@@ -309,7 +309,7 @@ export function InvoicePreviewScreen() {
           </div>
 
           {/* Footer */}
-          <div className="mt-8 border-t-2 border-dashed border-slate-300 pt-3 text-[9px] text-slate-500">
+          <div className="mt-8 border-t-2 border-dashed border-slate-300 pt-3 text-xs text-slate-500">
             <p className="text-center">All prices are tax-inclusive. GST 8% included as per Maldives Tax Act.</p>
             <p className="text-center mt-1">Thank you for your business. Payment is due within 30 days. Late payments attract 2% monthly interest.</p>
             <p className="text-center mt-2 text-slate-400">{businessProfile.businessName} • {businessProfile.email} • {businessProfile.phone}</p>
@@ -371,7 +371,7 @@ function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: 
   const [ref, setRef] = useState("");
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Amount</label>
         <div className="relative">
@@ -385,11 +385,11 @@ function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: 
             className="h-11 w-full rounded-xl border border-slate-300 pl-12 pr-3 text-sm outline-none focus:border-ocean-500"
           />
         </div>
-        <p className="mt-1 text-[10px] text-slate-500">Max: {MVR(maxAmount)}</p>
+        <p className="mt-1 text-xs text-slate-500">Max: {MVR(maxAmount)}</p>
       </div>
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Method</label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
           {[
             { id: "cash", label: "Cash", icon: "💵" },
             { id: "bank_transfer", label: "Bank", icon: "🏦" },
@@ -437,10 +437,10 @@ function AlterBillForm({
   const [reason, setReason] = useState("");
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <Card className="border-l-4 border-l-rose-500 bg-rose-50 p-3">
         <p className="text-xs font-semibold text-rose-950">Legal document modification</p>
-        <p className="mt-0.5 text-[11px] text-rose-800">
+        <p className="mt-0.5 text-xs text-rose-800">
           Modifying a finalized bill after the trip has ended creates an immutable compliance entry in the official audit trail.
         </p>
       </Card>

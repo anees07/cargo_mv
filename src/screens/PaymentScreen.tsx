@@ -29,15 +29,15 @@ export function PaymentsScreen() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
-        <div className="grid grid-cols-2 gap-3">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
           <Card className="bg-gradient-to-br from-emerald-500 to-emerald-700 border-0 p-4 text-white">
-            <p className="text-[10px] uppercase tracking-wider text-emerald-100">Today collected</p>
+            <p className="text-xs uppercase tracking-wider text-emerald-100">Today collected</p>
             <p className="mt-1 text-2xl font-bold">{MVR(today)}</p>
             <p className="text-xs text-emerald-100 mt-0.5">Cashier closing in 6h</p>
           </Card>
           <Card className="bg-gradient-to-br from-ocean-600 to-ocean-800 border-0 p-4 text-white">
-            <p className="text-[10px] uppercase tracking-wider text-ocean-100">Period total</p>
+            <p className="text-xs uppercase tracking-wider text-ocean-100">Period total</p>
             <p className="mt-1 text-2xl font-bold">{MVR(total)}</p>
             <p className="text-xs text-ocean-100 mt-0.5">{filtered.length} receipts</p>
           </Card>
@@ -78,14 +78,14 @@ export function PaymentsScreen() {
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-slate-900">{p.paymentNumber}</p>
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">{methodLabel[p.method]}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{methodLabel[p.method]}</span>
                         </div>
                         <p className="mt-0.5 text-xs text-slate-500">{c?.displayName} • {bill?.billNumber}</p>
-                        {p.reference && <p className="text-[10px] text-slate-400 font-mono">Ref: {p.reference}</p>}
+                        {p.reference && <p className="text-xs text-slate-400 font-mono">Ref: {p.reference}</p>}
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-emerald-700">{MVR(p.amount)}</p>
-                        <p className="text-[10px] text-slate-400">{relativeTime(p.collectedAt)}</p>
+                        <p className="text-xs text-slate-400">{relativeTime(p.collectedAt)}</p>
                       </div>
                     </div>
                   </div>
@@ -146,7 +146,7 @@ function RecordStandalonePaymentForm({
   }
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-4 md:p-6 lg:p-8">
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Select outstanding bill / invoice *</label>
         <select
@@ -180,12 +180,12 @@ function RecordStandalonePaymentForm({
             className="h-11 w-full rounded-xl border border-slate-300 pl-12 pr-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500"
           />
         </div>
-        <p className="mt-1 text-[10px] text-slate-500">Balance outstanding: {MVR(maxDue)}</p>
+        <p className="mt-1 text-xs text-slate-500">Balance outstanding: {MVR(maxDue)}</p>
       </div>
 
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Payment method *</label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
           {[
             { id: "cash" as const, label: "Cash", icon: "💵" },
             { id: "bank_transfer" as const, label: "Bank", icon: "🏦" },

@@ -4,7 +4,7 @@ import { MVR } from "./utils/format";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate,
   Trip, Bill, Payment, TaxSetting, NumberingSequence, AuditLog,
-  OperationItem, Operation, AppNotification
+  OperationItem, Operation, AppNotification, OperationType
 } from "./types";
 
 // ============================================================================
@@ -75,14 +75,14 @@ interface AppActions {
   selectBill: (id: string) => void;
   selectCustomer: (id: string) => void;
   selectDestination: (id: string) => void;
-  addOperationItem: (item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive">) => void;
+  addOperationItem: (item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive"> & { operationType: OperationType }) => void;
   removeOperationItem: (itemId: string) => void;
   finalizeBill: (billId: string) => void;
   postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => void;
   createTrip: (originDestinationId: string, plannedArrivalAt: string, notes: string) => Trip;
   addDestination: (islandName: string, atoll: string, code: string) => Destination;
   addCustomer: (customer: Omit<Customer, "id" | "businessProfileId" | "outstandingBalance" | "activeStatus" | "createdAt">) => Customer;
-  addCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">) => CatalogItem;
+  addCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => CatalogItem;
   toast: (t: Omit<ToastMessage, "id">) => void;
   dismissToast: (id: string) => void;
   markNotificationRead: (id: string) => void;
@@ -268,20 +268,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return nextNumber;
   }, []);
 
-  const addOperationItem = useCallback((item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive">) => {
+  const addOperationItem = useCallback((item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive"> & { operationType: OperationType }) => {
     setState(s => {
-      const taxAmount = (item.unitPriceTaxInclusive * item.quantity) - (item.unitPriceTaxInclusive * item.quantity) / (1 + item.taxRate / 100);
-      const lineTotal = item.unitPriceTaxInclusive * item.quantity;
+      const { operationType, ...operationItem } = item;
+      const taxAmount = (operationItem.unitPriceTaxInclusive * operationItem.quantity) - (operationItem.unitPriceTaxInclusive * operationItem.quantity) / (1 + operationItem.taxRate / 100);
+      const lineTotal = operationItem.unitPriceTaxInclusive * operationItem.quantity;
+      const existingOp = s.operations.find(o =>
+        o.tripId === operationItem.tripId &&
+        o.operationType === operationType &&
+        o.destinationId === operationItem.destinationId &&
+        o.customerId === operationItem.customerId
+      );
       const newItem: OperationItem = {
-        ...item,
+        ...operationItem,
         id: id("oi"),
+        operationId: existingOp?.id || id("op"),
         businessProfileId: s.businessProfile.id,
         createdBy: s.currentUser.id,
         createdAt: new Date().toISOString(),
         taxAmount: Number(taxAmount.toFixed(2)),
         lineTotalTaxInclusive: Number(lineTotal.toFixed(2)),
       };
-      const existingOp = s.operations.find(o => o.tripId === item.tripId && o.destinationId === item.destinationId && o.customerId === item.customerId);
       if (existingOp) {
         return {
           ...s,
@@ -293,12 +300,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         };
       }
       const newOp: Operation = {
-        id: id("op"),
+        id: newItem.operationId,
         businessProfileId: s.businessProfile.id,
-        tripId: item.tripId,
-        operationType: "loading",
-        destinationId: item.destinationId,
-        customerId: item.customerId,
+        tripId: operationItem.tripId,
+        operationType,
+        destinationId: operationItem.destinationId,
+        customerId: operationItem.customerId,
         items: [newItem],
         totalTaxInclusive: newItem.lineTotalTaxInclusive,
         totalTax: newItem.taxAmount,
@@ -425,14 +432,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return newCustomer;
   }, [state.businessProfile]);
 
-  const addCatalogItem = useCallback((item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">): CatalogItem => {
+  const addCatalogItem = useCallback((item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number): CatalogItem => {
     const newItem: CatalogItem = {
       ...item,
       id: id("i"),
       businessProfileId: state.businessProfile.id,
       activeStatus: true,
     };
-    setState(s => ({ ...s, catalogItems: [...s.catalogItems, newItem] }));
+    const newRate: ItemPriceRate = {
+      id: id("p"),
+      businessProfileId: state.businessProfile.id,
+      itemId: newItem.id,
+      priceLevel: "standard",
+      priceTaxInclusive: standardPrice,
+    };
+    setState(s => ({
+      ...s,
+      catalogItems: [...s.catalogItems, newItem],
+      itemPriceRates: [...s.itemPriceRates, newRate],
+    }));
     return newItem;
   }, [state.businessProfile]);
 
@@ -750,21 +768,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateCatalogItem = useCallback((itemId: string, updates: Partial<CatalogItem>, newPrice?: number) => {
-    setState(s => ({
-      ...s,
-      catalogItems: s.catalogItems.map(i => i.id === itemId ? { ...i, ...updates } : i),
-      itemPriceRates: newPrice !== undefined ? s.itemPriceRates.map(r => r.itemId === itemId && r.priceLevel === "standard" ? { ...r, priceTaxInclusive: newPrice } : r) : s.itemPriceRates,
-      auditLogs: addAudit(s.auditLogs, {
-        actorUserId: s.currentUser.id, action: "catalog.update", entityType: "catalog_item", entityId: itemId, summary: `Updated catalog item ${updates.itemName || ""}`,
-      }),
-      toasts: [...s.toasts, { id: id("t"), title: "Catalog updated", body: "Item specs saved.", variant: "success" as const }],
-    }));
+    setState(s => {
+      const hasStandardRate = s.itemPriceRates.some(r => r.itemId === itemId && r.priceLevel === "standard");
+      const item = s.catalogItems.find(i => i.id === itemId);
+      const itemPriceRates = newPrice === undefined
+        ? s.itemPriceRates
+        : hasStandardRate
+          ? s.itemPriceRates.map(r => r.itemId === itemId && r.priceLevel === "standard" ? { ...r, priceTaxInclusive: newPrice } : r)
+          : [
+              ...s.itemPriceRates,
+              {
+                id: id("p"),
+                businessProfileId: item?.businessProfileId || s.businessProfile.id,
+                itemId,
+                priceLevel: "standard" as const,
+                priceTaxInclusive: newPrice,
+              },
+            ];
+
+      return {
+        ...s,
+        catalogItems: s.catalogItems.map(i => i.id === itemId ? { ...i, ...updates } : i),
+        itemPriceRates,
+        auditLogs: addAudit(s.auditLogs, {
+          actorUserId: s.currentUser.id, action: "catalog.update", entityType: "catalog_item", entityId: itemId, summary: `Updated catalog item ${updates.itemName || ""}`,
+        }),
+        toasts: [...s.toasts, { id: id("t"), title: "Catalog updated", body: "Item specs saved.", variant: "success" as const }],
+      };
+    });
   }, []);
 
   const deleteCatalogItem = useCallback((itemId: string) => {
     setState(s => ({
       ...s,
       catalogItems: s.catalogItems.filter(i => i.id !== itemId),
+      itemPriceRates: s.itemPriceRates.filter(r => r.itemId !== itemId),
       auditLogs: addAudit(s.auditLogs, {
         actorUserId: s.currentUser.id, action: "catalog.delete", entityType: "catalog_item", entityId: itemId, summary: `Removed cargo item from master catalog`,
       }),

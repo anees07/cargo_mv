@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from "react";
 import { AppProvider, useApp } from "./store";
-import { Icon, Toast } from "./components/ui";
+import { AppShell, DesktopNav, Icon, NavigationItem, Toast } from "./components/ui";
 import { Drawer } from "./components/Drawer";
 import { SplashScreen, WelcomeScreen, LoginScreen, RegisterScreen, BusinessSetupScreen, SelectProfileScreen } from "./screens/AuthScreens";
 import { DashboardScreen, TripsScreen, TripDetailScreen } from "./screens/DashboardScreens";
@@ -31,8 +31,8 @@ function BottomTab({ onDrawerOpen }: { onDrawerOpen: () => void }) {
   if (hideOn.includes(screen)) return null;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-lg no-print safe-bottom">
-      <div className="mx-auto grid max-w-md grid-cols-5">
+    <div className="absolute bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-lg no-print safe-bottom safe-x">
+      <div className="mx-auto grid w-full max-w-screen-sm grid-cols-5">
         {tabs.map(t => {
           const isActive =
             screen === t.id ||
@@ -42,10 +42,10 @@ function BottomTab({ onDrawerOpen }: { onDrawerOpen: () => void }) {
             <button
               key={t.id}
               onClick={() => t.action ? t.action() : navigate(t.id as any)}
-              className="relative flex flex-col items-center justify-center gap-0.5 py-2 pb-3"
+              className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-2 pb-3"
             >
               {t.id === "operation" ? (
-                <div className={`-mt-4 flex h-12 w-12 items-center justify-center rounded-2xl shadow-md transition-all ${activeTripId ? "bg-gradient-to-br from-ocean-500 to-ocean-700 text-white" : "bg-slate-200 text-slate-500"}`}>
+                <div className={`-mt-4 flex h-11 w-11 items-center justify-center rounded-xl shadow-md transition-all sm:h-12 sm:w-12 ${activeTripId ? "bg-gradient-to-br from-ocean-500 to-ocean-700 text-white" : "bg-slate-200 text-slate-500"}`}>
                   <Icon name={t.icon} className="h-5 w-5" />
                 </div>
               ) : (
@@ -54,7 +54,7 @@ function BottomTab({ onDrawerOpen }: { onDrawerOpen: () => void }) {
                   className={`h-5 w-5 transition-colors ${isActive ? "text-ocean-700" : "text-slate-400"}`}
                 />
               )}
-              <span className={`text-[10px] font-medium transition-colors ${isActive ? "text-ocean-700" : "text-slate-500"} ${t.id === "operation" ? "-mt-0.5" : ""}`}>
+              <span className={`max-w-full truncate text-xs font-medium leading-4 transition-colors ${isActive ? "text-ocean-700" : "text-slate-500"} ${t.id === "operation" ? "-mt-0.5" : ""}`}>
                 {t.label}
               </span>
               {isActive && t.id !== "operation" && t.id !== "drawer" && (
@@ -78,7 +78,7 @@ function ConnectivityBanner() {
   const { isOnline, pendingSyncCount } = useApp();
   if (isOnline && pendingSyncCount === 0) return null;
   return (
-    <div className={`flex items-center gap-2 px-4 py-2 text-xs font-medium ${isOnline ? "bg-amber-50 text-amber-800" : "bg-rose-50 text-rose-800"}`}>
+    <div className={`flex min-w-0 items-center gap-2 px-4 py-2 text-xs font-medium md:text-sm ${isOnline ? "bg-amber-50 text-amber-800" : "bg-rose-50 text-rose-800"}`}>
       <Icon name={isOnline ? "sync" : "wifi_off"} className="h-3.5 w-3.5" />
       {isOnline
         ? `${pendingSyncCount} operations pending sync…`
@@ -99,7 +99,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
   const isAuthScreen = ["splash", "welcome", "login", "register", "business_setup", "select_profile"].includes(screen);
   
   if (isAuthScreen) {
-    return <div className="flex h-screen w-full items-center justify-center bg-slate-50">{children}</div>;
+    return <div className="flex h-dvh w-full items-center justify-center bg-slate-50 safe-area">{children}</div>;
   }
 
   const navItems = [
@@ -130,30 +130,30 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-100">
-      {/* Desktop/Tablet Sidebar (Hidden on mobile) */}
-      <nav className="hidden w-64 flex-col bg-slate-900 text-white lg:flex">
-        <div className="flex h-16 items-center gap-3 px-5 shadow-sm">
+    <AppShell
+      sidebar={
+      <DesktopNav>
+        <div className="flex min-h-16 min-w-0 items-center gap-3 px-5 shadow-sm">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-ocean-600 text-lg">{businessProfile.logoEmoji}</div>
-          <span className="font-bold tracking-tight">AtollCargo</span>
+          <span className="min-w-0 truncate font-bold tracking-tight">AtollCargo</span>
         </div>
         
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 no-scrollbar">
+        <div className="flex-1 space-y-1 overflow-y-auto px-3 py-4 no-scrollbar">
           {navItems.map((group, groupIdx) => (
             <div key={group.group}>
               {groupIdx !== 0 && <div className="my-2 border-t border-white/10" />}
-              <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">{group.group}</p>
+              <p className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">{group.group}</p>
               {group.items.map(item => {
                 const isActive = screen === item.id || (item.id === "trips" && screen.startsWith("trip_")) || (item.id === "billing" && screen.startsWith("invoice_")) || (item.id === "customers" && screen === "customer_detail") || (item.id === "destinations" && screen === "destination_detail");
                 return (
-                  <button
+                  <NavigationItem
                     key={item.id}
+                    active={isActive}
                     onClick={() => navigate(item.id as any)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${isActive ? "bg-ocean-600 text-white shadow-sm" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
+                    icon={<Icon name={item.icon} className="h-4 w-4" />}
                   >
-                    <Icon name={item.icon} className="h-4 w-4" />
                     {item.label}
-                  </button>
+                  </NavigationItem>
                 );
               })}
             </div>
@@ -165,30 +165,28 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ocean-700 text-xs font-bold text-white">{currentUser.avatar}</div>
             <div className="flex-1 min-w-0 text-left">
               <p className="truncate text-sm font-medium text-white">{currentUser.name}</p>
-              <p className="truncate text-[10px] text-slate-400 capitalize">{currentUser.role.replace("_", " ")}</p>
+              <p className="truncate text-xs text-slate-400 capitalize">{currentUser.role.replace("_", " ")}</p>
             </div>
           </button>
         </div>
-      </nav>
+      </DesktopNav>
+      }
+      drawer={<Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />}
+    >
 
       {/* Main Content Area */}
-      <main className="relative flex h-full min-w-0 flex-1 flex-col bg-slate-50 md:border-l md:border-slate-200">
-        <ConnectivityBanner />
+      <ConnectivityBanner />
         
-        {/* Page Content */}
-        <div className="relative flex-1 overflow-hidden">
-          {children}
-        </div>
+      {/* Page Content */}
+      <div className="relative flex-1 overflow-hidden safe-x">
+        {children}
+      </div>
 
-        {/* Mobile Bottom Tab (Hidden on Desktop) */}
-        <div className="lg:hidden">
-          <BottomTab onDrawerOpen={() => setDrawerOpen(true)} />
-        </div>
-      </main>
-
-      {/* Mobile Navigation Drawer */}
-      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
-    </div>
+      {/* Mobile Bottom Tab (Hidden on Desktop) */}
+      <div className="lg:hidden">
+        <BottomTab onDrawerOpen={() => setDrawerOpen(true)} />
+      </div>
+    </AppShell>
   );
 }
 
@@ -234,7 +232,7 @@ function ScreenRouter() {
   };
 
   return (
-    <div className="relative h-full w-full max-w-5xl mx-auto bg-slate-50 md:shadow-lg md:border-x md:border-slate-200">
+    <div className="relative h-full w-full min-w-0 bg-slate-50">
       <div className="absolute inset-0 flex flex-col">
         {screenMap[screen] || <DashboardScreen onMenuOpen={() => {}} />}
       </div>
