@@ -12,6 +12,7 @@ import { ReportsScreen, SettingsScreen, UsersScreen, AuditLogsScreen, ProfileScr
 import { NotificationPanel } from "./screens/NotificationScreen";
 import { CustomerDetailScreen, DestinationDetailScreen, CreateTripScreen } from "./screens/DetailScreens";
 import { BackendScreen, PdfDocumentsScreen, SyncConflictsScreen } from "./screens/BackendScreens";
+import { APP_RELEASE_LABEL } from "./appVersion";
 
 // ============================================================================
 // Bottom Tab Bar — mirrors Flutter BottomNavigationBar
@@ -135,7 +136,10 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
       <DesktopNav>
         <div className="flex min-h-16 min-w-0 items-center gap-3 px-5 shadow-sm">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-ocean-600 text-lg">{businessProfile.logoEmoji}</div>
-          <span className="min-w-0 truncate font-bold tracking-tight">AtollCargo</span>
+          <div className="min-w-0">
+            <span className="block truncate font-bold tracking-tight">AtollCargo</span>
+            <span className="block truncate text-xs text-slate-400">{APP_RELEASE_LABEL}</span>
+          </div>
         </div>
         
         <div className="flex-1 space-y-1 overflow-y-auto px-3 py-4 no-scrollbar">
@@ -168,6 +172,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
               <p className="truncate text-xs text-slate-400 capitalize">{currentUser.role.replace("_", " ")}</p>
             </div>
           </button>
+          <p className="mt-3 text-center text-xs text-slate-500">{APP_RELEASE_LABEL} • Production</p>
         </div>
       </DesktopNav>
       }

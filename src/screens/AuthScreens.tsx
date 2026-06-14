@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, TopBar } from "../components/ui";
+import { APP_RELEASE_DETAIL } from "../appVersion";
 
 // ============================================================================
 // Splash Screen
@@ -15,7 +16,7 @@ export function SplashScreen() {
       <p className="mt-2 text-sm text-ocean-100">Maldives Cargo Logistics</p>
       <div className="absolute bottom-12 flex items-center gap-2 text-xs text-ocean-200">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        Connected to Firebase
+        <span>Connected to Firebase • {APP_RELEASE_DETAIL}</span>
       </div>
     </div>
   );
@@ -65,7 +66,7 @@ export function WelcomeScreen() {
           Create new account
         </Btn>
         <p className="mt-4 text-center text-xs text-slate-400">
-          Powered by Firebase Auth • Cloud Firestore
+          Firebase Auth • Cloud Firestore • {APP_RELEASE_DETAIL}
         </p>
       </div>
     </div>
@@ -137,6 +138,7 @@ export function LoginScreen() {
         <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
           <p className="text-xs font-semibold text-ocean-900">Demo Firebase account</p>
           <p className="mt-1 text-xs text-slate-600">The prefilled owner account is stored in Firebase Auth and loads live tenant data from Cloud Firestore.</p>
+          <p className="mt-2 text-xs font-medium text-ocean-800">{APP_RELEASE_DETAIL}</p>
         </Card>
       </div>
 

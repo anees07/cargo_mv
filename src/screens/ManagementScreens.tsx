@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, TopBar } from "../components/ui";
 import type { BusinessProfile, User, UserRole } from "../types";
 import { MVR, MVRShort, formatDate, roleColor, roleLabel } from "../utils/format";
+import { APP_RELEASE_DETAIL } from "../appVersion";
 
 // ============================================================================
 // Reports
@@ -1203,7 +1204,7 @@ export function ProfileScreen() {
             Sign out
           </Btn>
           <p className="mt-3 text-center text-xs text-slate-400">
-            AtollCargo v1.0 • Firebase Auth + Cloud Firestore
+            AtollCargo {APP_RELEASE_DETAIL} • Firebase Auth + Cloud Firestore
           </p>
         </div>
       </div>

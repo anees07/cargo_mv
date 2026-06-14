@@ -1,6 +1,7 @@
 import { useApp, type Screen } from "../store";
 import { Icon } from "./ui";
 import { MVR, roleLabel, roleColor } from "../utils/format";
+import { APP_RELEASE_DETAIL } from "../appVersion";
 
 // ============================================================================
 // Side Drawer — mirrors Flutter Drawer / NavigationDrawer
@@ -182,7 +183,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
           </button>
 
           <p className="mt-2 text-center text-xs text-slate-400">
-            AtollCargo v1.0 • Firebase Auth + Cloud Firestore
+            AtollCargo {APP_RELEASE_DETAIL} • Firebase Auth + Cloud Firestore
           </p>
         </div>
       </div>
