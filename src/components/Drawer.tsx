@@ -135,10 +135,8 @@ export function Drawer({ open, onClose }: DrawerProps) {
 
           <div className="mx-5 border-t border-slate-200" />
 
-          {/* Backend and production tools */}
           <div className="px-3 pt-3 pb-2">
-            <p className="mb-2 px-3 text-xs font-bold uppercase tracking-widest text-slate-400">Production Tools</p>
-            <NavItem icon="database" label="Backend Console" onClick={() => goTo("backend")} />
+            <p className="mb-2 px-3 text-xs font-bold uppercase tracking-widest text-slate-400">Tools</p>
             <NavItem icon="sync" label="Sync Conflicts" badge={2} badgeColor="bg-amber-100 text-amber-700" onClick={() => goTo("sync_conflicts")} />
             <NavItem icon="file" label="PDF Documents" onClick={() => goTo("pdf_documents")} />
           </div>
@@ -183,7 +181,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
           </button>
 
           <p className="mt-2 text-center text-xs text-slate-400">
-            AtollCargo {APP_RELEASE_DETAIL} • Firebase Auth + Cloud Firestore
+            AtollCargo • {APP_RELEASE_DETAIL}
           </p>
         </div>
       </div>

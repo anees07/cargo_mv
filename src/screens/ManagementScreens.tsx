@@ -186,8 +186,8 @@ export function ReportsScreen() {
           gstNumber={businessProfile.gstNumber}
           onExport={(format) => {
             toast({
-              title: "Report exported",
-              body: `Successfully generated ${format} for ${businessProfile.businessName}. Download started.`,
+              title: "Report ready",
+              body: "Download ready.",
               variant: "success",
             });
             setShowExport(false);
@@ -468,7 +468,7 @@ export function SettingsScreen() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-slate-500">Next: #{n.currentSequence + 1}</p>
-                  <p className="text-xs text-emerald-600">🔒 Server-locked</p>
+                  <p className="text-xs text-emerald-600">Locked</p>
                 </div>
               </div>
             ))}
@@ -541,7 +541,7 @@ export function SettingsScreen() {
         </Section>
 
         <Btn variant="danger" fullWidth icon="logout" onClick={() => {
-          toast({ title: "Signed out", body: "Goodbye, Ibrahim", variant: "info" });
+          toast({ title: "Signed out", variant: "info" });
           setTimeout(() => navigate("welcome"), 500);
         }}>
           Sign out
@@ -1103,11 +1103,10 @@ export function ProfileScreen() {
       ],
     },
     {
-      title: "Production Tools",
+      title: "Tools",
       items: [
-        { icon: "database", label: "Backend Console", screen: "backend", desc: "Schema, edge functions, RLS" },
         { icon: "sync", label: "Sync Conflicts", screen: "sync_conflicts", badge: 2, badgeColor: "bg-amber-100 text-amber-700", desc: "Offline queue review" },
-        { icon: "file", label: "PDF Documents", screen: "pdf_documents", desc: "Stored A4 invoices and receipts" },
+        { icon: "file", label: "PDF Documents", screen: "pdf_documents", desc: "Saved invoices and receipts" },
       ],
     },
   ];
@@ -1204,7 +1203,7 @@ export function ProfileScreen() {
             Sign out
           </Btn>
           <p className="mt-3 text-center text-xs text-slate-400">
-            AtollCargo {APP_RELEASE_DETAIL} • Firebase Auth + Cloud Firestore
+            AtollCargo • {APP_RELEASE_DETAIL}
           </p>
         </div>
       </div>

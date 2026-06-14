@@ -26,7 +26,7 @@ export type Screen =
   | "destinations" | "destination_detail" | "customers" | "customer_detail" | "catalog"
   | "billing" | "invoice_preview" | "payments"
   | "reports" | "settings" | "users" | "audit_logs" | "profile" | "notifications"
-  | "backend" | "sync_conflicts" | "pdf_documents";
+  | "sync_conflicts" | "pdf_documents";
 
 export interface ToastMessage {
   id: string;
@@ -722,7 +722,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           actorUserId: s.currentUser.id, action: "trip.open",
           entityType: "trip", entityId: tripId, summary: `Opened trip ${trip.tripNumber}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Trip opened", body: `${trip.tripNumber} is now in loading state.`, variant: "success" }],
+        toasts: [...s.toasts, { id: id("t"), title: "Trip opened", variant: "success" }],
       };
     });
   }, []);
@@ -735,7 +735,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         actorUserId: s.currentUser.id, action: "trip.end",
         entityType: "trip", entityId: tripId, summary: `Ended trip ${s.trips.find(t => t.id === tripId)?.tripNumber}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Trip ended", body: "New loading and bills are now blocked. Payments remain active.", variant: "info" }],
+      toasts: [...s.toasts, { id: id("t"), title: "Trip ended", variant: "info" }],
     }));
   }, []);
 
@@ -851,7 +851,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         entityType: "bill", entityId: billId,
         summary: `Finalized bill ${s.bills.find(b => b.id === billId)?.billNumber}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Bill finalized", body: "PDF generated and stored.", variant: "success" }],
+      toasts: [...s.toasts, { id: id("t"), title: "Bill finalized", variant: "success" }],
     }));
   }, []);
 
@@ -885,7 +885,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityType: "payment", entityId: newPayment.id,
           summary: `Posted MVR ${amount.toFixed(2)} payment — ${receiptNum}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Payment posted", body: `${receiptNum} • MVR ${amount.toLocaleString()}`, variant: "success" }],
+        toasts: [...s.toasts, { id: id("t"), title: "Payment posted", body: MVR(amount), variant: "success" }],
       };
     });
   }, []);
@@ -1027,7 +1027,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityId: newBill!.id,
           summary: `Created ${billType.replace("_", " ")} bill ${billNumber}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: `${billNumber} — draft ready to finalize`, variant: "success" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: billNumber, variant: "success" as const }],
       };
     });
     return newBill;
@@ -1040,7 +1040,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!trip || ["ended", "closed"].includes(trip.status)) {
         return {
           ...s,
-          toasts: [...s.toasts, { id: id("t"), title: "Trip not active", body: "Bills can only be created while a trip is active.", variant: "error" as const }],
+          toasts: [...s.toasts, { id: id("t"), title: "Trip not active", body: "Open a trip first.", variant: "error" as const }],
         };
       }
       const dest = s.destinations.find(d => d.id === input.destinationId);
@@ -1081,7 +1081,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityId: newBill!.id,
           summary: `Created draft bill ${billNumber}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: `${billNumber} is ready to review.`, variant: "success" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: billNumber, variant: "success" as const }],
       };
     });
     return newBill;
@@ -1098,7 +1098,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         entityId: tripId,
         summary: `Closed and archived trip ${s.trips.find(t => t.id === tripId)?.tripNumber}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Trip closed", body: "Archived for reporting and audit.", variant: "info" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Trip closed", variant: "info" as const }],
     }));
   }, []);
 
@@ -1109,7 +1109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toasts: [...s.toasts, {
         id: id("t"),
         title: !s.isOnline ? "Back online" : "Offline mode",
-        body: !s.isOnline ? "Syncing pending operations…" : "Draft operations will queue locally.",
+        body: !s.isOnline ? "Syncing now." : "Drafts will queue.",
         variant: !s.isOnline ? "success" as const : "warning" as const,
       }],
     }));
@@ -1128,7 +1128,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityId: updated.id,
           summary: `Updated business settings for ${updated.businessName}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Profile updated", body: "Settings saved successfully.", variant: "success" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Profile saved", variant: "success" as const }],
       };
     });
   }, []);
@@ -1152,7 +1152,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityId: created.id,
           summary: `Invited ${created.name} as ${created.role.replace("_", " ")}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "User invited", body: `An invite email was sent to ${created.email}.`, variant: "success" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Invite sent", variant: "success" as const }],
       };
     });
     return created || ({ ...newUser, id: "temp", businessProfileId: "bp", online: false });
@@ -1172,7 +1172,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityId: tripId,
           summary: `Changed trip ${trip.tripNumber} status to ${status}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Trip status updated", body: `${trip.tripNumber} is now ${status}.`, variant: "info" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Trip updated", body: status, variant: "info" as const }],
       };
     });
   }, []);
@@ -1185,7 +1185,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!["owner", "admin"].includes(s.currentUser.role)) {
         return {
           ...s,
-          toasts: [...s.toasts, { id: id("t"), title: "Permission denied", body: "Only Owner or Admin can alter existing bills after trip end.", variant: "error" as const }],
+          toasts: [...s.toasts, { id: id("t"), title: "Not allowed", body: "Owner or Admin only.", variant: "error" as const }],
         };
       }
       const oldTotal = bill.grandTotal;
@@ -1209,7 +1209,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityId: billId,
           summary: `Altered bill ${bill.billNumber} from MVR ${oldTotal} to MVR ${newTotal} (Trip ${trip?.tripNumber || "ended"}). Reason: ${reason}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill adjusted", body: `Legal audit trail recorded for ${bill.billNumber}.`, variant: "success" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Bill adjusted", body: bill.billNumber, variant: "success" as const }],
       };
     });
   }, []);
@@ -1221,7 +1221,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "user.update", entityType: "user", entityId: userId, summary: `Updated user settings for ${s.users.find(u => u.id === userId)?.name}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "User updated", body: "Changes applied successfully.", variant: "success" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "User saved", variant: "success" as const }],
     }));
   }, []);
 
@@ -1233,7 +1233,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "user.delete", entityType: "user", entityId: userId, summary: `Removed crew member from directory`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "User removed", body: "User was deleted.", variant: "info" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "User removed", variant: "info" as const }],
     }));
   }, [state.businessProfile.id]);
 
@@ -1244,7 +1244,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "destination.update", entityType: "destination", entityId: destId, summary: `Updated destination ${s.destinations.find(d => d.id === destId)?.islandName}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Destination updated", body: "Island settings updated.", variant: "success" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Island saved", variant: "success" as const }],
     }));
   }, []);
 
@@ -1256,7 +1256,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "destination.delete", entityType: "destination", entityId: destId, summary: `Removed island destination from operational scope`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Destination removed", body: "Island deleted.", variant: "info" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Island removed", variant: "info" as const }],
     }));
   }, [state.businessProfile.id]);
 
@@ -1267,7 +1267,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "customer.update", entityType: "customer", entityId: customerId, summary: `Updated customer settings for ${s.customers.find(c => c.id === customerId)?.displayName}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Customer updated", body: "Customer ledger settings updated.", variant: "success" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Customer saved", variant: "success" as const }],
     }));
   }, []);
 
@@ -1279,7 +1279,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "customer.delete", entityType: "customer", entityId: customerId, summary: `Removed customer profile`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Customer removed", body: "Customer deleted.", variant: "info" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Customer removed", variant: "info" as const }],
     }));
   }, [state.businessProfile.id]);
 
@@ -1309,7 +1309,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "catalog.update", entityType: "catalog_item", entityId: itemId, summary: `Updated catalog item ${updates.itemName || ""}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Catalog updated", body: "Item specs saved.", variant: "success" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Item saved", variant: "success" as const }],
       };
     });
   }, []);
@@ -1324,7 +1324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "catalog.delete", entityType: "catalog_item", entityId: itemId, summary: `Removed cargo item from master catalog`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Catalog item removed", body: "Cargo item deleted.", variant: "info" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Item removed", variant: "info" as const }],
     }));
   }, [state.businessProfile.id, state.itemPriceRates]);
 
@@ -1335,7 +1335,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "trip.update_notes", entityType: "trip", entityId: tripId, summary: `Updated trip notes for ${s.trips.find(t => t.id === tripId)?.tripNumber}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Trip notes saved", body: "Live manifest updated.", variant: "success" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Notes saved", variant: "success" as const }],
     }));
   }, []);
 
@@ -1347,7 +1347,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "trip.delete", entityType: "trip", entityId: tripId, summary: `Voided sailing journey manifest`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Trip voided", body: "Trip manifest deleted.", variant: "info" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Trip removed", variant: "info" as const }],
     }));
   }, [state.businessProfile.id]);
 
@@ -1361,7 +1361,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "billing.cancel", entityType: "bill", entityId: billId, summary: `Cancelled financial document ${bill.billNumber}. Reason: ${reason}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill cancelled", body: `${bill.billNumber} voided successfully.`, variant: "warning" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Bill cancelled", body: bill.billNumber, variant: "warning" as const }],
       };
     });
   }, []);
@@ -1383,7 +1383,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "payment.void", entityType: "payment", entityId: paymentId, summary: `Voided payment receipt ${pay.paymentNumber} (${MVR(pay.amount)}). Reason: ${reason}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Payment voided", body: `Receipt ${pay.paymentNumber} voided.`, variant: "warning" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Payment voided", body: pay.paymentNumber, variant: "warning" as const }],
       };
     });
   }, [state.businessProfile.id]);
@@ -1396,7 +1396,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "tax.update", entityType: "tax_setting", entityId: taxId, summary: `Adjusted global GST tax parameter`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Tax settings updated", body: "Master GST rules updated.", variant: "success" as const }],
+      toasts: [...s.toasts, { id: id("t"), title: "Tax saved", variant: "success" as const }],
     }));
   }, []);
 

@@ -69,7 +69,7 @@ export function DestinationsScreen() {
         <AddDestForm onAdd={(d) => {
           addDestination(d.islandName, d.atoll, d.code);
           setShowAdd(false);
-          toast({ title: "Destination saved", body: d.islandName, variant: "success" });
+          toast({ title: "Island saved", variant: "success" });
         }} />
       </Modal>
     </div>
@@ -206,7 +206,7 @@ export function CustomersScreen() {
           onAdd={(customer) => {
             const saved = addCustomer(customer);
             setShowAdd(false);
-            toast({ title: "Customer saved", body: saved.displayName, variant: "success" });
+            toast({ title: "Customer saved", variant: "success" });
           }}
         />
       </Modal>
@@ -393,7 +393,7 @@ export function CatalogScreen() {
           onAdd={(item, standardPrice) => {
             const saved = addCatalogItem(item, standardPrice);
             setShowAdd(false);
-            toast({ title: "Catalog item saved", body: saved.itemName, variant: "success" });
+            toast({ title: "Item saved", variant: "success" });
           }}
         />
       </Modal>

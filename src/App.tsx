@@ -11,7 +11,7 @@ import { DestinationsScreen, CustomersScreen, CatalogScreen } from "./screens/Ma
 import { ReportsScreen, SettingsScreen, UsersScreen, AuditLogsScreen, ProfileScreen } from "./screens/ManagementScreens";
 import { NotificationPanel } from "./screens/NotificationScreen";
 import { CustomerDetailScreen, DestinationDetailScreen, CreateTripScreen } from "./screens/DetailScreens";
-import { BackendScreen, PdfDocumentsScreen, SyncConflictsScreen } from "./screens/BackendScreens";
+import { PdfDocumentsScreen, SyncConflictsScreen } from "./screens/SystemScreens";
 import { APP_RELEASE_LABEL } from "./appVersion";
 
 // ============================================================================
@@ -123,8 +123,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
       { id: "notifications", label: "Notifications", icon: "bell" },
       { id: "settings", label: "Settings", icon: "settings" },
     ]},
-    { group: "Production Tools", items: [
-      { id: "backend", label: "Backend Console", icon: "database" },
+    { group: "Tools", items: [
       { id: "sync_conflicts", label: "Sync Conflicts", icon: "sync" },
       { id: "pdf_documents", label: "PDF Documents", icon: "file" },
     ]},
@@ -231,7 +230,6 @@ function ScreenRouter() {
     audit_logs: <AuditLogsScreen />,
     profile: <ProfileScreen />,
     notifications: <NotificationPanel onClose={() => {}} />,
-    backend: <BackendScreen />,
     sync_conflicts: <SyncConflictsScreen />,
     pdf_documents: <PdfDocumentsScreen />,
   };

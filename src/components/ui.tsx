@@ -252,7 +252,7 @@ export function Toast({ toasts, onDismiss }: { toasts: { id: string; title: stri
         >
           <div className="flex-1">
             <p className="break-words text-sm font-semibold">{t.title}</p>
-            {t.body && <p className="mt-0.5 text-xs opacity-90">{t.body}</p>}
+            {t.body && <p className="mt-0.5 truncate text-xs opacity-90">{t.body}</p>}
           </div>
           <button onClick={() => onDismiss(t.id)} className="opacity-70 hover:opacity-100">
             <Icon name="x" className="h-4 w-4" />

@@ -66,7 +66,7 @@ export function WelcomeScreen() {
           Create new account
         </Btn>
         <p className="mt-4 text-center text-xs text-slate-400">
-          Firebase Auth • Cloud Firestore • {APP_RELEASE_DETAIL}
+          Live sync • {APP_RELEASE_DETAIL}
         </p>
       </div>
     </div>
@@ -89,9 +89,9 @@ export function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email, password);
-      toast({ title: "Signed in", body: "Firebase Auth session is active.", variant: "success" });
+      toast({ title: "Signed in", variant: "success" });
     } catch (error) {
-      toast({ title: "Sign in failed", body: error instanceof Error ? error.message : "Check your email and password.", variant: "error" });
+      toast({ title: "Sign in failed", body: "Check details.", variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -137,14 +137,14 @@ export function LoginScreen() {
 
         <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
           <p className="text-xs font-semibold text-ocean-900">Demo Firebase account</p>
-          <p className="mt-1 text-xs text-slate-600">The prefilled owner account is stored in Firebase Auth and loads live tenant data from Cloud Firestore.</p>
+          <p className="mt-1 text-xs text-slate-600">The prefilled owner account loads live cargo data.</p>
           <p className="mt-2 text-xs font-medium text-ocean-800">{APP_RELEASE_DETAIL}</p>
         </Card>
       </div>
 
       <Modal open={showForgot} onClose={() => setShowForgot(false)} title="Reset Password">
         <div className="space-y-4 p-4 md:p-6 lg:p-8">
-          <p className="text-sm text-slate-600">Enter your email address to receive a secure Firebase Auth password reset link.</p>
+          <p className="text-sm text-slate-600">Enter your email to receive a reset link.</p>
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700">Email address</label>
             <input
@@ -163,10 +163,10 @@ export function LoginScreen() {
             onClick={async () => {
               try {
                 await sendPasswordReset(resetEmail);
-                toast({ title: "Reset link sent", body: `Instructions dispatched to ${resetEmail}.`, variant: "success" });
+                toast({ title: "Reset sent", variant: "success" });
                 setShowForgot(false);
               } catch (error) {
-                toast({ title: "Reset failed", body: error instanceof Error ? error.message : "Could not send reset email.", variant: "error" });
+                toast({ title: "Reset failed", body: "Try again.", variant: "error" });
               }
             }}
           >
@@ -190,13 +190,13 @@ export function SelectProfileScreen() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="text-center pb-2 pt-6">
           <h2 className="text-xl font-bold text-slate-900">Welcome back, Ibrahim</h2>
-          <p className="text-sm text-slate-500 mt-1">Select an active operational tenant to continue.</p>
+          <p className="text-sm text-slate-500 mt-1">Select an account to continue.</p>
         </div>
         
         <div className="space-y-3">
           <Card className="p-4 cursor-pointer hover:border-ocean-400 hover:shadow-md transition-all active:scale-[0.98]" onClick={() => {
             selectBusinessProfile("bp_001");
-            toast({ title: "Session active", body: "Connected to Atoll Marine Services.", variant: "success" });
+            toast({ title: "Account selected", variant: "success" });
           }}>
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-ocean-700 text-2xl text-white shadow-inner">
@@ -216,7 +216,7 @@ export function SelectProfileScreen() {
 
           <Card className="p-4 cursor-pointer hover:border-ocean-400 hover:shadow-md transition-all active:scale-[0.98]" onClick={() => {
             selectBusinessProfile("bp_002");
-            toast({ title: "Session active", body: "Connected to Island Builders Logistics.", variant: "success" });
+            toast({ title: "Account selected", variant: "success" });
           }}>
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-700 text-2xl text-white shadow-inner">
@@ -258,15 +258,15 @@ export function RegisterScreen() {
 
   const handleContinue = async () => {
     if (mode === "crew") {
-      toast({ title: "Invite flow pending", body: "Crew invite validation will be added after owner onboarding.", variant: "info" });
+      toast({ title: "Invite unavailable", body: "Owner setup needed.", variant: "info" });
       return;
     }
     setLoading(true);
     try {
       await registerOwner(name, email, password);
-      toast({ title: "Account created", body: "Let's configure your business profile.", variant: "success" });
+      toast({ title: "Account created", variant: "success" });
     } catch (error) {
-      toast({ title: "Registration failed", body: error instanceof Error ? error.message : "Could not create Firebase Auth account.", variant: "error" });
+      toast({ title: "Signup failed", body: "Try again.", variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -442,9 +442,9 @@ export function BusinessSetupScreen() {
             setSaving(true);
             try {
               await createOwnerBusinessProfile(form);
-              toast({ title: "Business profile created", body: "Firestore owner tenant is ready.", variant: "success" });
+              toast({ title: "Profile created", variant: "success" });
             } catch (error) {
-              toast({ title: "Setup failed", body: error instanceof Error ? error.message : "Could not save business profile.", variant: "error" });
+              toast({ title: "Setup failed", body: "Try again.", variant: "error" });
             } finally {
               setSaving(false);
             }

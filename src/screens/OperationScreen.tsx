@@ -129,7 +129,7 @@ export function OperationScreen() {
       overrideReason: price !== getItemPrice(item, customer) ? "Manual override" : undefined,
     });
     setShowItemPicker(false);
-    toast({ title: "Item added", body: `${item.itemName} × ${qty}`, variant: "success" });
+    toast({ title: "Item added", body: `${qty} added`, variant: "success" });
   };
 
   if (!activeTrip) {
@@ -418,7 +418,7 @@ export function OperationScreen() {
             const c = addCustomer(newC);
             setSelectedCustomerId(c.id);
             setShowAddCustomer(false);
-            toast({ title: "Customer added", body: c.displayName, variant: "success" });
+            toast({ title: "Customer added", variant: "success" });
           }}
         />
       </Modal>
@@ -429,7 +429,7 @@ export function OperationScreen() {
             const newD = addDestination(d.islandName, d.atoll, d.code);
             setSelectedDestId(newD.id);
             setShowAddDest(false);
-            toast({ title: "Destination added", body: newD.islandName, variant: "success" });
+            toast({ title: "Island added", variant: "success" });
           }}
         />
       </Modal>

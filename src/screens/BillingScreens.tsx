@@ -184,7 +184,7 @@ function GenerateBillForm({ onGenerate }: { onGenerate: (type: string, customerI
         </select>
       </div>
       <div className="rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-xs text-ocean-900">
-        Number generation happens on the server. The new bill will use the next sequence in the numbering lock for this business profile.
+        The next bill number will be assigned automatically.
       </div>
       <Btn fullWidth size="lg" icon="check" onClick={() => onGenerate(type, customerId, destId, tripId)}>
         Generate bill

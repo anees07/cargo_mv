@@ -334,7 +334,7 @@ export function TripDetailScreen() {
 
         {trip.status === "draft" && hasPermission(currentUser.role, "manage_trip") && (
           <div className="mt-4">
-            <Btn variant="primary" size="lg" fullWidth icon="check" onClick={() => { openTrip(trip.id); toast({ title: "Trip opened", body: `${trip.tripNumber} is now active.`, variant: "success" }); }}>
+            <Btn variant="primary" size="lg" fullWidth icon="check" onClick={() => { openTrip(trip.id); toast({ title: "Trip opened", body: trip.tripNumber, variant: "success" }); }}>
               Open trip for loading
             </Btn>
           </div>
@@ -362,7 +362,7 @@ export function TripDetailScreen() {
             <Btn variant="secondary" size="lg" fullWidth icon="save" onClick={() => {
               if (confirm("Close this trip for archive? This action is permanent.")) {
                 closeTrip(trip.id);
-                toast({ title: "Trip archived", body: "Locked for reporting.", variant: "info" });
+                toast({ title: "Trip archived", variant: "info" });
                 navigate("trips");
               }
             }}>
