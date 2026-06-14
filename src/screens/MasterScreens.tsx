@@ -273,7 +273,7 @@ function AddCustomerForm({
         </label>
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Credit limit</label>
-          <input type="number" value={form.creditLimit} onChange={e => setForm({ ...form, creditLimit: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
+          <input type="number" value={form.creditLimit} onFocus={e => e.currentTarget.select()} onChange={e => setForm({ ...form, creditLimit: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
         </div>
       </div>
       <Btn
@@ -459,7 +459,7 @@ function EditCatalogForm({
         <Field label="Item Code *" value={form.itemCode} onChange={v => setForm({ ...form, itemCode: v.toUpperCase().replace(/\s/g, "-").slice(0, 12) })} />
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Standard Price (MVR)</label>
-          <input type="number" step={0.5} value={standardPrice} onChange={e => setStandardPrice(Number(e.target.value))} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500 font-mono" />
+          <input type="number" step={0.5} value={standardPrice} onFocus={e => e.currentTarget.select()} onChange={e => setStandardPrice(Number(e.target.value))} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500 font-mono" />
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
@@ -479,7 +479,7 @@ function EditCatalogForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">GST Rate %</label>
-          <input type="number" value={form.defaultTaxRate} onChange={e => setForm({ ...form, defaultTaxRate: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
+          <input type="number" value={form.defaultTaxRate} onFocus={e => e.currentTarget.select()} onChange={e => setForm({ ...form, defaultTaxRate: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
         </div>
         <label className="mt-5 flex items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-700">
           <input type="checkbox" checked={form.taxInclusive} onChange={e => setForm({ ...form, taxInclusive: e.target.checked })} />
@@ -536,6 +536,7 @@ function AddCatalogForm({
           min={0}
           step={0.5}
           value={standardPrice || ""}
+          onFocus={e => e.currentTarget.select()}
           onChange={e => setStandardPrice(Number(e.target.value))}
           placeholder="0.00"
           className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500 font-mono"
@@ -563,7 +564,7 @@ function AddCatalogForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Tax rate %</label>
-          <input type="number" value={form.defaultTaxRate} onChange={e => setForm({ ...form, defaultTaxRate: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
+          <input type="number" value={form.defaultTaxRate} onFocus={e => e.currentTarget.select()} onChange={e => setForm({ ...form, defaultTaxRate: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
         </div>
         <label className="mt-5 flex items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-700">
           <input type="checkbox" checked={form.taxInclusive} onChange={e => setForm({ ...form, taxInclusive: e.target.checked })} />

@@ -176,6 +176,7 @@ function RecordStandalonePaymentForm({
             max={maxDue}
             step={0.5}
             value={amount}
+            onFocus={e => e.currentTarget.select()}
             onChange={e => setAmount(Number(e.target.value))}
             className="h-11 w-full rounded-xl border border-slate-300 pl-12 pr-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500"
           />

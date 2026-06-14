@@ -350,6 +350,7 @@ function EditCustomerForm({
             type="number"
             disabled={!creditAllowed}
             value={creditLimit}
+            onFocus={e => e.currentTarget.select()}
             onChange={e => setCreditLimit(Number(e.target.value))}
             className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 disabled:opacity-50"
           />
@@ -553,6 +554,7 @@ function EditDestinationForm({
             type="number"
             min={1}
             value={sortOrder}
+            onFocus={e => e.currentTarget.select()}
             onChange={e => setSortOrder(Number(e.target.value))}
             className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 font-mono"
           />
@@ -620,6 +622,7 @@ export function CreateTripScreen() {
           <input
             type="number"
             value={hours}
+            onFocus={e => e.currentTarget.select()}
             onChange={e => setHours(Math.max(1, Number(e.target.value)))}
             min={1}
             max={72}

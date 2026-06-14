@@ -609,6 +609,7 @@ function EditTaxSettingsForm({
             max={25}
             step={0.5}
             value={taxRate}
+            onFocus={e => e.currentTarget.select()}
             onChange={e => setTaxRate(Number(e.target.value))}
             className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold text-violet-700 outline-none focus:border-ocean-500 font-mono"
           />

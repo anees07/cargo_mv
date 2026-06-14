@@ -483,6 +483,7 @@ function ItemPicker({ items, customer, getPrice, operationType, availability, on
               min={1}
               max={maxQty}
               value={safeQty}
+              onFocus={e => e.currentTarget.select()}
               onChange={e => {
                 const next = Math.max(1, Number(e.target.value));
                 setQty(maxQty ? Math.min(next, maxQty) : next);
@@ -500,6 +501,7 @@ function ItemPicker({ items, customer, getPrice, operationType, availability, on
               min={0}
               step={0.5}
               value={price || defaultPrice}
+              onFocus={e => e.currentTarget.select()}
               onChange={e => setPrice(Number(e.target.value))}
               className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
             />
