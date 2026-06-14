@@ -98,11 +98,13 @@ export function PaymentsScreen() {
 
       <Modal open={showRecord} onClose={() => setShowRecord(false)} title="Record payment">
         <RecordStandalonePaymentForm
-          bills={bills.filter(b => b.paymentStatus !== "paid")}
+          bills={bills.filter(b => b.paymentStatus !== "paid" && b.billStatus !== "draft" && b.billStatus !== "cancelled")}
           customers={customers}
-          onPost={(billId, amount, method, ref, notes) => {
-            postPayment(billId, amount, method, ref, notes);
-            setShowRecord(false);
+          onPost={async (billId, amount, method, ref, notes) => {
+            const posted = await postPayment(billId, amount, method, ref, notes);
+            if (posted) {
+              setShowRecord(false);
+            }
           }}
         />
       </Modal>
@@ -117,7 +119,7 @@ function RecordStandalonePaymentForm({
 }: {
   bills: Bill[];
   customers: Customer[];
-  onPost: (billId: string, amount: number, method: PaymentMethod, reference?: string, notes?: string) => void;
+  onPost: (billId: string, amount: number, method: PaymentMethod, reference?: string, notes?: string) => void | Promise<void>;
 }) {
   const [selectedBillId, setSelectedBillId] = useState<string>(bills[0]?.id || "");
   const selectedBill = bills.find(b => b.id === selectedBillId);

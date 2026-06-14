@@ -12,14 +12,15 @@ export function ReportsScreen() {
   const { bills, customers, destinations, payments, trips, businessProfile, toast, back } = useApp();
   const [tab, setTab] = useState<"overview" | "destination" | "customer" | "tax" | "cashier">("overview");
   const [showExport, setShowExport] = useState(false);
+  const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
 
-  const totalBilled = bills.reduce((s, b) => s + b.grandTotal, 0);
+  const totalBilled = activeBills.reduce((s, b) => s + b.grandTotal, 0);
   const totalCollected = payments.reduce((s, p) => s + p.amount, 0);
   const totalOutstanding = customers.reduce((s, c) => s + c.outstandingBalance, 0);
-  const totalTax = bills.reduce((s, b) => s + b.taxTotal, 0);
+  const totalTax = activeBills.reduce((s, b) => s + b.taxTotal, 0);
 
   const destinationReport = destinations.map(d => {
-    const destBills = bills.filter(b => b.destinationId === d.id);
+    const destBills = activeBills.filter(b => b.destinationId === d.id);
     return {
       ...d,
       billCount: destBills.length,
@@ -63,7 +64,7 @@ export function ReportsScreen() {
               <Card className="p-4">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Total billed</p>
                 <p className="mt-1 text-2xl font-bold text-slate-900">{MVRShort(totalBilled)}</p>
-                <p className="mt-1 text-xs text-slate-500">{bills.length} bills this period</p>
+                <p className="mt-1 text-xs text-slate-500">{activeBills.length} bills this period</p>
               </Card>
               <Card className="p-4">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Collected</p>
@@ -92,7 +93,7 @@ export function ReportsScreen() {
                       <p className="text-slate-500">{formatDate(t.createdAt)}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-slate-900">{bills.filter(b => b.tripId === t.id).length} bills</p>
+                      <p className="font-semibold text-slate-900">{activeBills.filter(b => b.tripId === t.id).length} bills</p>
                       <p className="text-slate-500">{t.status}</p>
                     </div>
                   </div>
@@ -281,10 +282,11 @@ function GstReportingSuite() {
   const { businessProfile, bills } = useApp();
   const [periodSpan, setPeriodSpan] = useState<"3m" | "6m" | "1y">("3m");
   const [filingQuarter, setFilingQuarter] = useState("Q1 2025 (Jan - Mar)");
+  const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
 
   // Filter or snapshot simulate based on period span
-  const totalGross = bills.reduce((s, b) => s + b.grandTotal, 0) * (periodSpan === "3m" ? 1 : periodSpan === "6m" ? 2.1 : 4.3);
-  const rawTax = bills.reduce((s, b) => s + b.taxTotal, 0) * (periodSpan === "3m" ? 1 : periodSpan === "6m" ? 2.1 : 4.3);
+  const totalGross = activeBills.reduce((s, b) => s + b.grandTotal, 0) * (periodSpan === "3m" ? 1 : periodSpan === "6m" ? 2.1 : 4.3);
+  const rawTax = activeBills.reduce((s, b) => s + b.taxTotal, 0) * (periodSpan === "3m" ? 1 : periodSpan === "6m" ? 2.1 : 4.3);
   
   // Maldives MIRA Specific split breakdowns
   const standardGross = totalGross * 0.92;

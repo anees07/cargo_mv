@@ -203,6 +203,7 @@ export interface Bill {
   finalizedAt?: ISODate;
   createdAt: ISODate;
   itemCount: number;
+  items?: OperationItem[];
 }
 
 export type PaymentMethod = "cash" | "bank_transfer" | "cheque" | "mobile_wallet" | "other";

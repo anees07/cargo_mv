@@ -3,15 +3,20 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, StatusBadge, TopBar } from "../components/ui";
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
-import type { BillType, Operation, PaymentMethod } from "../types";
+import type { BillType, Operation, OperationItem, PaymentMethod } from "../types";
 
 // ============================================================================
 // Billing — list, filter, generate, finalize
 // ============================================================================
 export function BillingScreen() {
-  const { bills, customers, destinations, trips, operations, navigate, selectBill, createBillFromOperation, back, currentUser } = useApp();
+  const { bills, customers, destinations, trips, operations, navigate, selectBill, createBillFromOperation, updateDraftBill, cancelBill, finalizeBill, back, currentUser } = useApp();
   const [filter, setFilter] = useState<"all" | "unpaid" | "partial" | "paid" | "credit">("all");
   const [showGenerate, setShowGenerate] = useState(false);
+  const [editingBillId, setEditingBillId] = useState<string | null>(null);
+  const [cancellingBillId, setCancellingBillId] = useState<string | null>(null);
+  const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
+  const editingBill = activeBills.find(bill => bill.id === editingBillId);
+  const cancellingBill = activeBills.find(bill => bill.id === cancellingBillId);
   const billableOperations = operations.filter(operation => {
     const trip = trips.find(t => t.id === operation.tripId);
     const billType = billTypeForOperation(operation);
@@ -22,11 +27,13 @@ export function BillingScreen() {
         bill.tripId === operation.tripId &&
         bill.destinationId === operation.destinationId &&
         bill.customerId === operation.customerId &&
-        bill.billType === billType
+        bill.billType === billType &&
+        bill.billStatus !== "draft" &&
+        bill.billStatus !== "cancelled"
       );
   });
 
-  const filtered = bills.filter(b => {
+  const filtered = activeBills.filter(b => {
     if (filter === "all") return true;
     if (filter === "unpaid") return b.paymentStatus === "unpaid";
     if (filter === "partial") return b.paymentStatus === "partial";
@@ -108,7 +115,7 @@ export function BillingScreen() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-semibold text-slate-900">{c?.displayName}</p>
-                      <StatusBadge status={b.paymentStatus} />
+                      <StatusBadge status={b.billStatus === "draft" ? "draft" : b.paymentStatus} />
                     </div>
                     <p className="mt-0.5 text-xs text-slate-500">{b.billNumber} • {b.itemCount} items</p>
                     <p className="mt-1 text-xs text-slate-600 flex items-center gap-2">
@@ -123,6 +130,42 @@ export function BillingScreen() {
                     <p className="text-xs text-slate-400 mt-0.5">{formatDate(b.createdAt)}</p>
                   </div>
                 </div>
+                {b.billStatus === "draft" && (
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                    <Btn
+                      size="sm"
+                      variant="outline"
+                      icon="edit"
+                      onClick={event => {
+                        event.stopPropagation();
+                        setEditingBillId(b.id);
+                      }}
+                    >
+                      Edit
+                    </Btn>
+                    <Btn
+                      size="sm"
+                      variant="danger"
+                      icon="x"
+                      onClick={event => {
+                        event.stopPropagation();
+                        setCancellingBillId(b.id);
+                      }}
+                    >
+                      Cancel
+                    </Btn>
+                    <Btn
+                      size="sm"
+                      icon="check"
+                      onClick={event => {
+                        event.stopPropagation();
+                        finalizeBill(b.id);
+                      }}
+                    >
+                      Finalize
+                    </Btn>
+                  </div>
+                )}
               </Card>
             );
           })}
@@ -132,8 +175,8 @@ export function BillingScreen() {
       <Modal open={showGenerate} onClose={() => setShowGenerate(false)} title="Generate new bill" full>
         <GenerateBillForm
           billableOperations={billableOperations}
-          onGenerate={(operationId, billType) => {
-            const bill = createBillFromOperation(operationId, billType);
+          onGenerate={async (operationId, billType) => {
+            const bill = await createBillFromOperation(operationId, billType);
             setShowGenerate(false);
             if (bill) {
               selectBill(bill.id);
@@ -141,6 +184,30 @@ export function BillingScreen() {
             }
           }}
         />
+      </Modal>
+
+      <Modal open={Boolean(editingBill)} onClose={() => setEditingBillId(null)} title="Edit draft bill">
+        {editingBill && (
+          <EditDraftBillForm
+            items={editingBill.items || []}
+            onSave={(items, reason) => {
+              updateDraftBill(editingBill.id, items, reason);
+              setEditingBillId(null);
+            }}
+          />
+        )}
+      </Modal>
+
+      <Modal open={Boolean(cancellingBill)} onClose={() => setCancellingBillId(null)} title="Cancel draft bill">
+        {cancellingBill && (
+          <CancelBillForm
+            billNumber={cancellingBill.billNumber}
+            onCancel={(reason) => {
+              cancelBill(cancellingBill.id, reason);
+              setCancellingBillId(null);
+            }}
+          />
+        )}
       </Modal>
     </div>
   );
@@ -155,7 +222,7 @@ function GenerateBillForm({
   onGenerate,
 }: {
   billableOperations: Operation[];
-  onGenerate: (operationId: string, billType: BillType) => void;
+  onGenerate: (operationId: string, billType: BillType) => void | Promise<void>;
 }) {
   const { customers, destinations, trips } = useApp();
   const [operationId, setOperationId] = useState(billableOperations[0]?.id || "");
@@ -198,10 +265,12 @@ function GenerateBillForm({
 // Invoice Preview — A4 PDF rendering
 // ============================================================================
 export function InvoicePreviewScreen() {
-  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd } = useApp();
+  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd, updateDraftBill, cancelBill } = useApp();
   const bill = bills.find(b => b.id === selectedBillId) || bills[0];
   const [showPay, setShowPay] = useState(false);
   const [showAlter, setShowAlter] = useState(false);
+  const [showEditDraft, setShowEditDraft] = useState(false);
+  const [showCancelDraft, setShowCancelDraft] = useState(false);
 
   if (!bill) return null;
   const customer = customers.find(c => c.id === bill.customerId);
@@ -209,6 +278,7 @@ export function InvoicePreviewScreen() {
   const trip = trips.find(t => t.id === bill.tripId);
   const taxRate = businessProfile.defaultTaxRate;
   const subtotal = bill.subtotalTaxInclusive - bill.taxTotal;
+  const billItems = bill.items || [];
 
   return (
     <div className="flex h-full flex-col bg-slate-200">
@@ -277,15 +347,19 @@ export function InvoicePreviewScreen() {
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: bill.itemCount }).map((_, i) => (
-                  <tr key={i} className="border-b border-slate-200">
-                    <td className="px-2 py-1.5">{i % 3 === 0 ? "Cement Bag (50kg)" : i % 3 === 1 ? "Sand (m³)" : "Construction Steel"}</td>
-                    <td className="px-2 py-1.5 text-center font-mono">{[120, 8, 2][i % 3]}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{[140, 850, 1850][i % 3].toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{([140, 850, 1850][i % 3] * 0.074).toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{([16800, 6800, 3700][i % 3] / 1).toFixed(2)}</td>
+                {billItems.length > 0 ? billItems.map(item => (
+                  <tr key={item.id} className="border-b border-slate-200">
+                    <td className="px-2 py-1.5">{item.itemNameSnapshot}</td>
+                    <td className="px-2 py-1.5 text-center font-mono">{item.quantity} {item.unitType}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{item.unitPriceTaxInclusive.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{item.taxAmount.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{item.lineTotalTaxInclusive.toFixed(2)}</td>
                   </tr>
-                ))}
+                )) : (
+                  <tr>
+                    <td colSpan={5} className="px-2 py-4 text-center text-slate-500">No line items saved.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -320,8 +394,12 @@ export function InvoicePreviewScreen() {
         {/* Status banner */}
         {bill.billStatus === "draft" && (
           <div className="mx-auto mt-3 max-w-2xl rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            <strong>Draft.</strong> Finalize this bill to lock the numbering and generate the official PDF.
-            <Btn size="sm" variant="primary" className="mt-2" onClick={() => finalizeBill(bill.id)}>Finalize bill</Btn>
+            <strong>Draft.</strong> Edit or cancel before finalizing. Finalized bills are locked for payment collection.
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Btn size="sm" variant="outline" icon="edit" onClick={() => setShowEditDraft(true)}>Edit draft</Btn>
+              <Btn size="sm" variant="danger" icon="x" onClick={() => setShowCancelDraft(true)}>Cancel bill</Btn>
+              <Btn size="sm" variant="primary" onClick={() => finalizeBill(bill.id)}>Finalize bill</Btn>
+            </div>
           </div>
         )}
 
@@ -352,13 +430,36 @@ export function InvoicePreviewScreen() {
         />
       </Modal>
 
+      <Modal open={showEditDraft} onClose={() => setShowEditDraft(false)} title="Edit draft bill">
+        <EditDraftBillForm
+          items={billItems}
+          onSave={(items, reason) => {
+            updateDraftBill(bill.id, items, reason);
+            setShowEditDraft(false);
+          }}
+        />
+      </Modal>
+
+      <Modal open={showCancelDraft} onClose={() => setShowCancelDraft(false)} title="Cancel draft bill">
+        <CancelBillForm
+          billNumber={bill.billNumber}
+          onCancel={(reason) => {
+            cancelBill(bill.id, reason);
+            setShowCancelDraft(false);
+            navigate("billing");
+          }}
+        />
+      </Modal>
+
       <Modal open={showPay} onClose={() => setShowPay(false)} title="Collect payment">
         <CollectPaymentForm
           maxAmount={bill.grandTotal - bill.paidAmount}
-          onPost={(amount, method, ref) => {
-            postPayment(bill.id, amount, method as PaymentMethod, ref);
-            setShowPay(false);
-            navigate("payments");
+          onPost={async (amount, method, ref) => {
+            const posted = await postPayment(bill.id, amount, method as PaymentMethod, ref);
+            if (posted) {
+              setShowPay(false);
+              navigate("payments");
+            }
           }}
         />
       </Modal>
@@ -366,10 +467,131 @@ export function InvoicePreviewScreen() {
   );
 }
 
-function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: (amount: number, method: string, ref?: string) => void }) {
+function EditDraftBillForm({
+  items,
+  onSave,
+}: {
+  items: OperationItem[];
+  onSave: (items: OperationItem[], reason: string) => void;
+}) {
+  const [draftItems, setDraftItems] = useState<OperationItem[]>(items.map(item => ({ ...item })));
+  const [reason, setReason] = useState("");
+
+  const updateLine = (itemId: string, updates: Partial<OperationItem>) => {
+    setDraftItems(current => current.map(item => item.id === itemId ? { ...item, ...updates } : item));
+  };
+  const removeLine = (itemId: string) => {
+    setDraftItems(current => current.filter(item => item.id !== itemId));
+  };
+  const estimatedTotal = draftItems.reduce((sum, item) => sum + item.quantity * item.unitPriceTaxInclusive, 0);
+  const canSave = draftItems.length > 0 &&
+    draftItems.every(item => item.quantity > 0 && item.unitPriceTaxInclusive > 0) &&
+    reason.trim().length > 0;
+
+  return (
+    <div className="space-y-4 p-4 md:p-6">
+      <div className="space-y-2">
+        {draftItems.map((item, index) => (
+          <Card key={item.id} className="p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">#{index + 1} {item.itemNameSnapshot}</p>
+                <p className="text-xs text-slate-500">{item.unitType} • GST {item.taxRate}%</p>
+              </div>
+              <button onClick={() => removeLine(item.id)} className="text-rose-600 hover:text-rose-700" title="Remove line">
+                <Icon name="trash" className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-700">Quantity</label>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  value={item.quantity}
+                  onFocus={e => e.currentTarget.select()}
+                  onChange={e => updateLine(item.id, { quantity: Number(e.target.value) })}
+                  className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-700">Unit price tax-incl</label>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.5}
+                  value={item.unitPriceTaxInclusive}
+                  onFocus={e => e.currentTarget.select()}
+                  onChange={e => updateLine(item.id, { unitPriceTaxInclusive: Number(e.target.value), overridePrice: Number(e.target.value) })}
+                  className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-right text-xs font-semibold text-slate-700">
+              Line estimate {MVR(item.quantity * item.unitPriceTaxInclusive)}
+            </p>
+          </Card>
+        ))}
+      </div>
+      <div className="rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-sm">
+        <div className="flex justify-between">
+          <span className="text-slate-600">New bill total</span>
+          <span className="font-bold text-ocean-800">{MVR(estimatedTotal)}</span>
+        </div>
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Reason *</label>
+        <input
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          placeholder="e.g. Corrected quantity before finalize"
+          className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+        />
+      </div>
+      <Btn fullWidth size="lg" icon="check" disabled={!canSave} onClick={() => onSave(draftItems, reason.trim())}>
+        Update draft bill
+      </Btn>
+    </div>
+  );
+}
+
+function CancelBillForm({
+  billNumber,
+  onCancel,
+}: {
+  billNumber: string;
+  onCancel: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <div className="space-y-4 p-4 md:p-6">
+      <Card className="border-l-4 border-l-rose-500 bg-rose-50 p-3">
+        <p className="text-sm font-semibold text-rose-950">Cancel {billNumber}</p>
+        <p className="mt-1 text-xs text-rose-800">Cancelled draft bills are removed from active billed, outstanding, and GST totals.</p>
+      </Card>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Cancellation reason *</label>
+        <textarea
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          rows={3}
+          placeholder="e.g. Customer requested correction before finalize"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-ocean-500"
+        />
+      </div>
+      <Btn fullWidth size="lg" variant="danger" icon="x" disabled={!reason.trim()} onClick={() => onCancel(reason.trim())}>
+        Cancel bill
+      </Btn>
+    </div>
+  );
+}
+
+function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: (amount: number, method: string, ref?: string) => void | Promise<void> }) {
   const [amount, setAmount] = useState(maxAmount);
   const [method, setMethod] = useState("cash");
   const [ref, setRef] = useState("");
+  const needsReference = ["bank_transfer", "cheque", "mobile_wallet"].includes(method);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -412,7 +634,7 @@ function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: 
       </div>
       {(method === "bank_transfer" || method === "cheque" || method === "mobile_wallet") && (
         <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Reference</label>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Reference *</label>
           <input
             value={ref}
             onChange={e => setRef(e.target.value)}
@@ -421,8 +643,14 @@ function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: 
           />
         </div>
       )}
-      <Btn fullWidth size="lg" icon="check" onClick={() => onPost(amount, method as PaymentMethod, ref)}>
-        Post payment
+      <Btn
+        fullWidth
+        size="lg"
+        icon="check"
+        disabled={amount <= 0 || amount > maxAmount || (needsReference && !ref.trim())}
+        onClick={() => onPost(amount, method as PaymentMethod, ref || undefined)}
+      >
+        Post official payment receipt
       </Btn>
     </div>
   );

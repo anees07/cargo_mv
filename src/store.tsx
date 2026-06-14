@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
-import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, setDoc, type Unsubscribe } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, runTransaction, setDoc, type Unsubscribe } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
   createFirebaseOwnerAccount,
@@ -98,8 +98,9 @@ interface AppActions {
   addOperationItem: (item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive"> & { operationType: OperationType }) => void;
   removeOperationItem: (itemId: string) => void;
   finalizeBill: (billId: string) => void;
-  postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => void;
-  createTrip: (originDestinationId: string, plannedArrivalAt: string, notes: string) => Trip | null;
+  postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => Promise<boolean>;
+  updateDraftBill: (billId: string, items: OperationItem[], reason: string) => void;
+  createTrip: (originDestinationId: string, plannedArrivalAt: string, notes: string) => Promise<Trip | null>;
   addDestination: (islandName: string, atoll: string, code: string) => Destination;
   addCustomer: (customer: Omit<Customer, "id" | "businessProfileId" | "outstandingBalance" | "activeStatus" | "createdAt">) => Customer;
   addCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => CatalogItem;
@@ -107,7 +108,7 @@ interface AppActions {
   dismissToast: (id: string) => void;
   markNotificationRead: (id: string) => void;
   generateNextNumber: (type: NumberingSequence["numberType"], destCode?: string) => string;
-  createBillFromOperation: (operationId: string, billType: Bill["billType"]) => Bill | null;
+  createBillFromOperation: (operationId: string, billType: Bill["billType"]) => Promise<Bill | null>;
   closeTrip: (tripId: string) => void;
   toggleOnline: () => void;
   updateBusinessProfile: (updates: Partial<BusinessProfile>) => void;
@@ -227,20 +228,24 @@ async function loadTenantCollection<T extends { id?: string }>(
 }
 
 const persistTenantDoc = (collectionName: string, docId: string, data: Record<string, unknown>) => {
-  const db = getFirebaseFirestore();
-  const businessProfileId = String(data.businessProfileId || "");
-  const target = collectionName === "business_profiles"
-    ? doc(db, collectionName, docId)
-    : businessProfileId
-      ? doc(db, "business_profiles", businessProfileId, collectionName, docId)
-      : null;
-  if (!target) {
-    console.error(`Failed to persist ${collectionName}/${docId}: missing businessProfileId`);
-    return;
-  }
-  void setDoc(target, data).catch(error => {
+  try {
+    const db = getFirebaseFirestore();
+    const businessProfileId = String(data.businessProfileId || "");
+    const target = collectionName === "business_profiles"
+      ? doc(db, collectionName, docId)
+      : businessProfileId
+        ? doc(db, "business_profiles", businessProfileId, collectionName, docId)
+        : null;
+    if (!target) {
+      console.error(`Failed to persist ${collectionName}/${docId}: missing businessProfileId`);
+      return;
+    }
+    void setDoc(target, stripUndefined(data) as Record<string, unknown>).catch(error => {
+      console.error(`Failed to persist ${collectionName}/${docId}`, error);
+    });
+  } catch (error) {
     console.error(`Failed to persist ${collectionName}/${docId}`, error);
-  });
+  }
 };
 
 const persistRootBusinessUser = (uid: string, data: Record<string, unknown>) => {
@@ -249,11 +254,48 @@ const persistRootBusinessUser = (uid: string, data: Record<string, unknown>) => 
   });
 };
 
+const stripUndefined = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, stripUndefined(entry)])
+  );
+};
+
 const deleteTenantDoc = (collectionName: string, businessProfileId: string, docId: string) => {
   void deleteDoc(doc(getFirebaseFirestore(), "business_profiles", businessProfileId, collectionName, docId)).catch(error => {
     console.error(`Failed to delete business_profiles/${businessProfileId}/${collectionName}/${docId}`, error);
   });
 };
+
+const sequenceFromNumber = (value?: string) => {
+  const match = value?.match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
+};
+
+async function getMaxSequenceFromFirestore(businessProfileId: string, collectionName: string, numberField: string) {
+  const snapshot = await getDocs(collection(getFirebaseFirestore(), "business_profiles", businessProfileId, collectionName));
+  return snapshot.docs.reduce((max, document) => {
+    const numberValue = String((document.data() as Record<string, unknown>)[numberField] || "");
+    return Math.max(max, sequenceFromNumber(numberValue));
+  }, 0);
+}
+
+const formatSequenceNumber = (sequence: NumberingSequence, nextSequence: number, destCode?: string) => {
+  const year = new Date().getFullYear();
+  const month = String(new Date().getMonth() + 1).padStart(2, "0");
+  const padded = String(nextSequence).padStart(sequence.padding, "0");
+  return sequence.formatTemplate
+    .replace("{YYYY}", String(year))
+    .replace("{MM}", month)
+    .replace("{DEST}", destCode || "GEN")
+    .replace("{000000}", padded);
+};
+
+const operationDocumentId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
+  `op_${[tripId, operationType, destinationId, customerId].join("_").replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
 const persistTenantState = (state: AppState) => {
   if (!state.isAuthed || !state.businessProfile.id) return;
@@ -406,8 +448,13 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(initialState);
+  const stateRef = useRef<AppState>(initialState);
   const lastRemoteUpdateAt = useRef(0);
   const pendingTripRef = useRef<Trip | null>(null);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Simulate splash screen transition
   useEffect(() => {
@@ -416,31 +463,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, 1400);
     return () => clearTimeout(t);
   }, []);
-
-  useEffect(() => {
-    if (!state.isAuthed || !state.businessProfile.id) return;
-    const timeout = window.setTimeout(() => {
-      if (Date.now() - lastRemoteUpdateAt.current < 1000) return;
-      persistTenantState(state);
-    }, 350);
-    return () => window.clearTimeout(timeout);
-  }, [
-    state.isAuthed,
-    state.businessProfile,
-    state.users,
-    state.destinations,
-    state.customers,
-    state.catalogItems,
-    state.itemPriceRates,
-    state.trips,
-    state.operations,
-    state.bills,
-    state.payments,
-    state.taxSettings,
-    state.numbering,
-    state.auditLogs,
-    state.notifications,
-  ]);
 
   useEffect(() => {
     if (!pendingTripRef.current) return;
@@ -505,6 +527,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .map(document => ({ id: document.id, ...document.data() }) as Trip)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const activeTrip = trips.find(trip => ["open", "loading", "sailing", "offloading"].includes(trip.status));
+      const pendingTrip = pendingTripRef.current ? trips.find(trip => trip.id === pendingTripRef.current?.id) : null;
+      if (pendingTripRef.current && (!pendingTrip || !isUnfinishedTrip(pendingTrip))) {
+        pendingTripRef.current = null;
+      }
       markRemoteUpdate();
       setState(s => ({ ...s, trips, activeTripId: activeTrip?.id || null }));
     }));
@@ -731,12 +757,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openTrip = useCallback((tripId: string) => {
+    const current = stateRef.current;
+    const trip = current.trips.find(t => t.id === tripId);
+    if (!trip) return;
+    const updatedTrip: Trip = { ...trip, status: "loading", actualDepartureAt: new Date().toISOString() };
     setState(s => {
-      const trip = s.trips.find(t => t.id === tripId);
-      if (!trip) return s;
       return {
         ...s,
-        trips: s.trips.map(t => t.id === tripId ? { ...t, status: "loading", actualDepartureAt: new Date().toISOString() } : t),
+        trips: s.trips.map(t => t.id === tripId ? { ...t, status: updatedTrip.status, actualDepartureAt: updatedTrip.actualDepartureAt } : t),
         activeTripId: tripId,
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "trip.open",
@@ -745,18 +773,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toasts: [...s.toasts, { id: id("t"), title: "Trip opened", variant: "success" }],
       };
     });
+    persistTenantDoc(tenantCollections.trips, updatedTrip.id, updatedTrip as unknown as Record<string, unknown>);
   }, []);
 
   const endTrip = useCallback((tripId: string) => {
+    const current = stateRef.current;
+    const trip = current.trips.find(t => t.id === tripId);
+    if (!trip) return;
+    const updatedTrip: Trip = { ...trip, status: "ended", endedBy: current.currentUser.id, actualArrivalAt: new Date().toISOString(), endedAt: new Date().toISOString() };
     setState(s => ({
       ...s,
-      trips: s.trips.map(t => t.id === tripId ? { ...t, status: "ended", endedBy: s.currentUser.id, actualArrivalAt: new Date().toISOString(), endedAt: new Date().toISOString() } : t),
+      trips: s.trips.map(t => t.id === tripId ? { ...t, status: updatedTrip.status, endedBy: updatedTrip.endedBy, actualArrivalAt: updatedTrip.actualArrivalAt, endedAt: updatedTrip.endedAt } : t),
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "trip.end",
         entityType: "trip", entityId: tripId, summary: `Ended trip ${s.trips.find(t => t.id === tripId)?.tripNumber}`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Trip ended", variant: "info" }],
     }));
+    persistTenantDoc(tenantCollections.trips, updatedTrip.id, updatedTrip as unknown as Record<string, unknown>);
   }, []);
 
   const selectBill = useCallback((billId: string) => {
@@ -772,145 +806,315 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const generateNextNumber = useCallback((type: NumberingSequence["numberType"], destCode?: string): string => {
-    let nextNumber = "";
-    setState(s => {
-      const seq = s.numbering.find(n => n.numberType === type);
-      if (!seq) return s;
-      const newSeq = seq.currentSequence + 1;
-      const year = new Date().getFullYear();
-      const month = String(new Date().getMonth() + 1).padStart(2, "0");
-      const padded = String(newSeq).padStart(seq.padding, "0");
-      let formatted = seq.formatTemplate
-        .replace("{YYYY}", String(year))
-        .replace("{MM}", month)
-        .replace("{000000}", padded);
-      if (destCode) {
-        formatted = formatted.replace("{DEST}", destCode);
-      }
-      nextNumber = formatted;
-      return {
-        ...s,
-        numbering: s.numbering.map(n => n.numberType === type ? { ...n, currentSequence: newSeq, lastGenerated: formatted } : n),
-        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
-          actorUserId: s.currentUser.id, action: "numbering.generate",
-          entityType: "numbering", entityId: `n_${type}`,
-          summary: `Generated ${type} number: ${formatted}`,
-        }),
-      };
-    });
-    return nextNumber;
-  }, []);
+    const seq = state.numbering.find(n => n.numberType === type);
+    return seq ? formatSequenceNumber(seq, seq.currentSequence + 1, destCode) : "";
+  }, [state.numbering]);
 
   const addOperationItem = useCallback((item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive"> & { operationType: OperationType }) => {
-    setState(s => {
-      const { operationType, ...operationItem } = item;
-      const taxAmount = (operationItem.unitPriceTaxInclusive * operationItem.quantity) - (operationItem.unitPriceTaxInclusive * operationItem.quantity) / (1 + operationItem.taxRate / 100);
-      const lineTotal = operationItem.unitPriceTaxInclusive * operationItem.quantity;
-      const existingOp = s.operations.find(o =>
-        o.tripId === operationItem.tripId &&
-        o.operationType === operationType &&
-        o.destinationId === operationItem.destinationId &&
-        o.customerId === operationItem.customerId
-      );
-      const newItem: OperationItem = {
-        ...operationItem,
-        id: id("oi"),
-        operationId: existingOp?.id || id("op"),
-        businessProfileId: s.businessProfile.id,
-        createdBy: s.currentUser.id,
-        createdAt: new Date().toISOString(),
-        taxAmount: Number(taxAmount.toFixed(2)),
-        lineTotalTaxInclusive: Number(lineTotal.toFixed(2)),
-      };
-      if (existingOp) {
-        return {
-          ...s,
-          operations: s.operations.map(o => o.id === existingOp.id ? {
-            ...o, items: [newItem, ...o.items],
-            totalTaxInclusive: Number((o.totalTaxInclusive + newItem.lineTotalTaxInclusive).toFixed(2)),
-            totalTax: Number((o.totalTax + newItem.taxAmount).toFixed(2)),
-          } : o),
-        };
-      }
-      const newOp: Operation = {
-        id: newItem.operationId,
-        businessProfileId: s.businessProfile.id,
-        tripId: operationItem.tripId,
-        operationType,
-        destinationId: operationItem.destinationId,
-        customerId: operationItem.customerId,
-        items: [newItem],
-        totalTaxInclusive: newItem.lineTotalTaxInclusive,
-        totalTax: newItem.taxAmount,
-        createdBy: s.currentUser.id,
-        createdAt: new Date().toISOString(),
-        synced: s.isOnline,
-      };
-      return { ...s, operations: [newOp, ...s.operations] };
+    const { operationType, ...operationItem } = item;
+    const taxAmount = (operationItem.unitPriceTaxInclusive * operationItem.quantity) - (operationItem.unitPriceTaxInclusive * operationItem.quantity) / (1 + operationItem.taxRate / 100);
+    const lineTotal = operationItem.unitPriceTaxInclusive * operationItem.quantity;
+    const existingOp = state.operations.find(o =>
+      o.tripId === operationItem.tripId &&
+      o.operationType === operationType &&
+      o.destinationId === operationItem.destinationId &&
+      o.customerId === operationItem.customerId
+    );
+    const operationId = existingOp?.id || operationDocumentId(operationItem.tripId, operationType, operationItem.destinationId, operationItem.customerId);
+    const newItem: OperationItem = {
+      ...operationItem,
+      id: id("oi"),
+      operationId,
+      businessProfileId: state.businessProfile.id,
+      createdBy: state.currentUser.id,
+      createdAt: new Date().toISOString(),
+      taxAmount: Number(taxAmount.toFixed(2)),
+      lineTotalTaxInclusive: Number(lineTotal.toFixed(2)),
+    };
+    const operationToPersist: Operation = existingOp ? {
+      ...existingOp,
+      items: [newItem, ...existingOp.items],
+      totalTaxInclusive: Number((existingOp.totalTaxInclusive + newItem.lineTotalTaxInclusive).toFixed(2)),
+      totalTax: Number((existingOp.totalTax + newItem.taxAmount).toFixed(2)),
+    } : {
+      id: newItem.operationId,
+      businessProfileId: state.businessProfile.id,
+      tripId: operationItem.tripId,
+      operationType,
+      destinationId: operationItem.destinationId,
+      customerId: operationItem.customerId,
+      items: [newItem],
+      totalTaxInclusive: newItem.lineTotalTaxInclusive,
+      totalTax: newItem.taxAmount,
+      createdBy: state.currentUser.id,
+      createdAt: new Date().toISOString(),
+      synced: state.isOnline,
+    };
+    setState(s => existingOp ? {
+      ...s,
+      operations: s.operations.map(o => o.id === existingOp.id ? operationToPersist : o),
+    } : {
+      ...s,
+      operations: [operationToPersist, ...s.operations],
     });
-  }, []);
+    const db = getFirebaseFirestore();
+    const opRef = doc(db, "business_profiles", state.businessProfile.id, tenantCollections.operations, operationToPersist.id);
+    void runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(opRef);
+      const remoteOperation = snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Operation) : null;
+      const remoteItems = remoteOperation?.items || [];
+      const mergedItems = [newItem, ...remoteItems];
+      const operationToWrite: Operation = remoteOperation ? {
+        ...remoteOperation,
+        items: mergedItems,
+        totalTaxInclusive: Number(mergedItems.reduce((sum, opItem) => sum + opItem.lineTotalTaxInclusive, 0).toFixed(2)),
+        totalTax: Number(mergedItems.reduce((sum, opItem) => sum + opItem.taxAmount, 0).toFixed(2)),
+      } : operationToPersist;
+      transaction.set(opRef, stripUndefined(operationToWrite) as Record<string, unknown>);
+    }).catch(error => {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Item not saved", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+      }));
+    });
+  }, [state.businessProfile.id, state.currentUser.id, state.isOnline, state.operations]);
 
   const removeOperationItem = useCallback((itemId: string) => {
+    const current = stateRef.current;
+    const operation = current.operations.find(o => o.items.some(i => i.id === itemId));
+    if (!operation) return;
+    const items = operation.items.filter(i => i.id !== itemId);
+    const updatedOperation: Operation = {
+      ...operation,
+      items,
+      totalTaxInclusive: Number(items.reduce((sum, i) => sum + i.lineTotalTaxInclusive, 0).toFixed(2)),
+      totalTax: Number(items.reduce((sum, i) => sum + i.taxAmount, 0).toFixed(2)),
+    };
     setState(s => ({
       ...s,
-      operations: s.operations.map(o => ({
-        ...o,
-        items: o.items.filter(i => i.id !== itemId),
-        totalTaxInclusive: Number(o.items.filter(i => i.id !== itemId).reduce((sum, i) => sum + i.lineTotalTaxInclusive, 0).toFixed(2)),
-        totalTax: Number(o.items.filter(i => i.id !== itemId).reduce((sum, i) => sum + i.taxAmount, 0).toFixed(2)),
-      })),
+      operations: s.operations.map(o => o.id === operation.id ? updatedOperation : o).filter(o => o.items.length > 0),
     }));
+    if (updatedOperation.items.length === 0) {
+      const db = getFirebaseFirestore();
+      const opRef = doc(db, "business_profiles", updatedOperation.businessProfileId, tenantCollections.operations, updatedOperation.id);
+      void runTransaction(db, async transaction => {
+        const snapshot = await transaction.get(opRef);
+        if (!snapshot.exists()) return;
+        const remoteOperation = { id: snapshot.id, ...snapshot.data() } as Operation;
+        const remoteItems = remoteOperation.items.filter(i => i.id !== itemId);
+        if (remoteItems.length === 0) {
+          transaction.delete(opRef);
+          return;
+        }
+        transaction.set(opRef, stripUndefined({
+          ...remoteOperation,
+          items: remoteItems,
+          totalTaxInclusive: Number(remoteItems.reduce((sum, i) => sum + i.lineTotalTaxInclusive, 0).toFixed(2)),
+          totalTax: Number(remoteItems.reduce((sum, i) => sum + i.taxAmount, 0).toFixed(2)),
+        }) as Record<string, unknown>);
+      }).catch(error => {
+        setState(s => ({
+          ...s,
+          toasts: [...s.toasts, { id: id("t"), title: "Item not removed", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+        }));
+      });
+    } else {
+      const db = getFirebaseFirestore();
+      const opRef = doc(db, "business_profiles", updatedOperation.businessProfileId, tenantCollections.operations, updatedOperation.id);
+      void runTransaction(db, async transaction => {
+        const snapshot = await transaction.get(opRef);
+        if (!snapshot.exists()) return;
+        const remoteOperation = { id: snapshot.id, ...snapshot.data() } as Operation;
+        const remoteItems = remoteOperation.items.filter(i => i.id !== itemId);
+        if (remoteItems.length === 0) {
+          transaction.delete(opRef);
+          return;
+        }
+        transaction.set(opRef, stripUndefined({
+          ...remoteOperation,
+          items: remoteItems,
+          totalTaxInclusive: Number(remoteItems.reduce((sum, i) => sum + i.lineTotalTaxInclusive, 0).toFixed(2)),
+          totalTax: Number(remoteItems.reduce((sum, i) => sum + i.taxAmount, 0).toFixed(2)),
+        }) as Record<string, unknown>);
+      }).catch(error => {
+        setState(s => ({
+          ...s,
+          toasts: [...s.toasts, { id: id("t"), title: "Item not removed", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+        }));
+      });
+    }
   }, []);
 
   const finalizeBill = useCallback((billId: string) => {
+    const current = stateRef.current;
+    const bill = current.bills.find(b => b.id === billId);
+    if (!bill) return;
+    const updatedBill: Bill = {
+      ...bill,
+      billStatus: "finalized",
+      paymentStatus: bill.paidAmount >= bill.grandTotal ? "paid" : bill.paidAmount > 0 ? "partial" : "unpaid",
+      finalizedBy: current.currentUser.id,
+      finalizedAt: new Date().toISOString(),
+    };
     setState(s => ({
       ...s,
-      bills: s.bills.map(b => b.id === billId ? { ...b, billStatus: "finalized", paymentStatus: b.billType === "credit" ? "unpaid" : "paid", paidAmount: b.billType === "credit" ? 0 : b.grandTotal, finalizedBy: s.currentUser.id, finalizedAt: new Date().toISOString() } : b),
+      bills: s.bills.map(b => b.id === billId ? { ...b, ...updatedBill } : b),
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "billing.finalize",
         entityType: "bill", entityId: billId,
         summary: `Finalized bill ${s.bills.find(b => b.id === billId)?.billNumber}`,
       }),
-      toasts: [...s.toasts, { id: id("t"), title: "Bill finalized", variant: "success" }],
+      toasts: [...s.toasts, { id: id("t"), title: "Bill finalized", body: "Ready to collect.", variant: "success" }],
     }));
+    persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
   }, []);
 
-  const postPayment = useCallback((billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => {
-    setState(s => {
-      const bill = s.bills.find(b => b.id === billId);
-      if (!bill) return s;
-      const newPaid = bill.paidAmount + amount;
-      const isPaid = newPaid >= bill.grandTotal;
-      const receiptNum = `RCP-${String(s.numbering.find(n => n.numberType === "receipt")!.currentSequence + 1).padStart(6, "0")}`;
-      const newPayment: Payment = {
-        id: id("pm"),
-        businessProfileId: s.businessProfile.id,
-        billId, paymentNumber: receiptNum,
-        amount, method, reference, notes,
-        collectedBy: s.currentUser.id,
-        collectedAt: new Date().toISOString(),
-      };
-      return {
-        ...s,
-        payments: [newPayment, ...s.payments],
-        bills: s.bills.map(b => b.id === billId ? {
-          ...b,
+  const postPayment = useCallback(async (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => {
+    const businessProfileId = state.businessProfile.id;
+    const localSeq = state.numbering.find(n => n.numberType === "receipt");
+    if (!businessProfileId || !localSeq) return false;
+
+    try {
+      const db = getFirebaseFirestore();
+      const remoteMaxSequence = await getMaxSequenceFromFirestore(businessProfileId, tenantCollections.payments, "paymentNumber");
+      const localMaxSequence = state.payments.reduce((max, payment) => Math.max(max, sequenceFromNumber(payment.paymentNumber)), 0);
+      const paymentId = id("pm");
+      const billRef = doc(db, "business_profiles", businessProfileId, tenantCollections.bills, billId);
+      const paymentRef = doc(db, "business_profiles", businessProfileId, tenantCollections.payments, paymentId);
+      const seqRef = doc(db, "business_profiles", businessProfileId, tenantCollections.numbering, "receipt");
+
+      const result = await runTransaction(db, async transaction => {
+        const [seqSnapshot, billSnapshot] = await Promise.all([
+          transaction.get(seqRef),
+          transaction.get(billRef),
+        ]);
+        if (!billSnapshot.exists()) {
+          throw new Error("Bill not found.");
+        }
+
+        const bill = { id: billSnapshot.id, ...billSnapshot.data() } as Bill;
+        const sequenceData = seqSnapshot.exists()
+          ? ({ ...localSeq, ...seqSnapshot.data() } as NumberingSequence)
+          : localSeq;
+        const nextSequence = Math.max(
+          Number(sequenceData.currentSequence || 0),
+          remoteMaxSequence,
+          localMaxSequence
+        ) + 1;
+        const receiptNum = formatSequenceNumber(sequenceData, nextSequence);
+        const newPaid = Number((Number(bill.paidAmount || 0) + amount).toFixed(2));
+        const isPaid = newPaid >= bill.grandTotal;
+        const updatedBill: Bill = {
+          ...bill,
           paidAmount: newPaid,
           paymentStatus: isPaid ? "paid" : "partial",
           billStatus: isPaid ? "paid" : "partially_paid",
-        } : b),
-        numbering: s.numbering.map(n => n.numberType === "receipt" ? { ...n, currentSequence: n.currentSequence + 1, lastGenerated: receiptNum } : n),
+        };
+        const newPayment: Payment = {
+          id: paymentId,
+          businessProfileId,
+          billId,
+          paymentNumber: receiptNum,
+          amount,
+          method,
+          reference,
+          notes,
+          collectedBy: state.currentUser.id,
+          collectedAt: new Date().toISOString(),
+        };
+        const updatedSequence: NumberingSequence & { id: string; businessProfileId: string } = {
+          ...sequenceData,
+          id: "receipt",
+          businessProfileId,
+          numberType: "receipt",
+          currentSequence: nextSequence,
+          lastGenerated: receiptNum,
+        };
+
+        transaction.set(paymentRef, stripUndefined(newPayment) as Record<string, unknown>);
+        transaction.set(billRef, stripUndefined(updatedBill) as Record<string, unknown>);
+        transaction.set(seqRef, stripUndefined(updatedSequence) as Record<string, unknown>);
+        return { payment: newPayment, bill: updatedBill, sequence: updatedSequence };
+      });
+
+      setState(s => ({
+        ...s,
+        payments: [result.payment, ...s.payments.filter(payment => payment.id !== result.payment.id)],
+        bills: s.bills.map(b => b.id === billId ? result.bill : b),
+        numbering: s.numbering.map(n => n.numberType === "receipt" ? { ...n, ...result.sequence } : n),
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
-          actorUserId: s.currentUser.id, action: "payment.post",
-          entityType: "payment", entityId: newPayment.id,
-          summary: `Posted MVR ${amount.toFixed(2)} payment — ${receiptNum}`,
+          actorUserId: s.currentUser.id,
+          action: "payment.post",
+          entityType: "payment",
+          entityId: result.payment.id,
+          summary: `Posted MVR ${amount.toFixed(2)} payment - ${result.payment.paymentNumber}`,
         }),
         toasts: [...s.toasts, { id: id("t"), title: "Payment posted", body: MVR(amount), variant: "success" }],
+      }));
+      return true;
+    } catch (error) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Payment not posted", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+      }));
+      return false;
+    }
+  }, [state.businessProfile.id, state.currentUser.id, state.numbering, state.payments]);
+
+  const updateDraftBill = useCallback((billId: string, items: OperationItem[], reason: string) => {
+    const bill = state.bills.find(b => b.id === billId);
+    if (!bill) return;
+    if (bill.billStatus !== "draft") {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Bill locked", body: bill.billNumber, variant: "warning" as const }],
+      }));
+      return;
+    }
+    const validItems = items.filter(item => item.quantity > 0 && item.unitPriceTaxInclusive > 0);
+    if (validItems.length === 0) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "No items", body: "Cancel instead.", variant: "error" as const }],
+      }));
+      return;
+    }
+    const recalculatedItems = validItems.map(item => {
+      const lineTotal = Number((item.quantity * item.unitPriceTaxInclusive).toFixed(2));
+      const taxAmount = Number((lineTotal - lineTotal / (1 + item.taxRate / 100)).toFixed(2));
+      return {
+        ...item,
+        lineTotalTaxInclusive: lineTotal,
+        taxAmount,
       };
     });
-  }, []);
+    const grandTotal = Number(recalculatedItems.reduce((sum, item) => sum + item.lineTotalTaxInclusive, 0).toFixed(2));
+    const taxTotal = Number(recalculatedItems.reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2));
+    const updatedBill: Bill = {
+      ...bill,
+      items: recalculatedItems,
+      itemCount: recalculatedItems.length,
+      subtotalTaxInclusive: grandTotal,
+      taxTotal,
+      grandTotal,
+      paymentStatus: bill.paidAmount >= grandTotal ? "paid" : bill.paidAmount > 0 ? "partial" : "unpaid",
+    };
+    setState(s => ({
+      ...s,
+      bills: s.bills.map(b => b.id === billId ? updatedBill : b),
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+        actorUserId: s.currentUser.id,
+        action: "billing.update_draft",
+        entityType: "bill",
+        entityId: billId,
+        summary: `Updated draft bill ${bill.billNumber}. Reason: ${reason || "Draft correction"}`,
+      }),
+      toasts: [...s.toasts, { id: id("t"), title: "Bill updated", body: bill.billNumber, variant: "success" as const }],
+    }));
+    persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
+  }, [state.bills]);
 
-  const createTrip = useCallback((originDestinationId: string, plannedArrivalAt: string, notes: string): Trip | null => {
+  const createTrip = useCallback(async (originDestinationId: string, plannedArrivalAt: string, notes: string): Promise<Trip | null> => {
     const existingTrip = state.trips.find(isUnfinishedTrip) || pendingTripRef.current;
     if (existingTrip) {
       setState(s => ({
@@ -921,36 +1125,113 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    const newSeq = state.numbering.find(n => n.numberType === "trip")!.currentSequence + 1;
-    const year = new Date().getFullYear();
-    const padded = String(newSeq).padStart(6, "0");
-    const tripNumber = `TRIP-${year}-${padded}`;
-    const newTrip: Trip = {
-      id: id("t"),
-      businessProfileId: state.businessProfile.id,
-      tripNumber,
-      vesselName: state.businessProfile.vesselName,
-      originDestinationId,
-      plannedDepartureAt: new Date().toISOString(),
-      plannedArrivalAt,
-      status: "draft",
-      openedBy: state.currentUser.id,
-      notes,
-      createdAt: new Date().toISOString(),
-    };
-    pendingTripRef.current = newTrip;
-    setState(s => ({
-      ...s,
-      trips: [newTrip, ...s.trips],
-      numbering: s.numbering.map(n => n.numberType === "trip" ? { ...n, currentSequence: newSeq, lastGenerated: tripNumber } : n),
-      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
-        actorUserId: s.currentUser.id, action: "trip.create",
-        entityType: "trip", entityId: newTrip.id,
-        summary: `Created draft trip ${tripNumber}`,
-      }),
-    }));
-    return newTrip;
-  }, [state.trips, state.numbering, state.businessProfile, state.currentUser]);
+    const businessProfileId = state.businessProfile.id;
+    const localSeq = state.numbering.find(n => n.numberType === "trip");
+    if (!businessProfileId || !localSeq) return null;
+
+    try {
+      const db = getFirebaseFirestore();
+      const remoteTrips = await loadTenantCollection<Trip>(tenantCollections.trips, businessProfileId);
+      const remoteUnfinishedTrip = remoteTrips.find(isUnfinishedTrip);
+      if (remoteUnfinishedTrip) {
+        setState(s => ({
+          ...s,
+          selectedTripId: remoteUnfinishedTrip.id,
+          toasts: [...s.toasts, { id: id("t"), title: "Trip already open", body: remoteUnfinishedTrip.tripNumber, variant: "warning" as const }],
+        }));
+        return null;
+      }
+
+      const remoteMaxSequence = remoteTrips.reduce((max, trip) => Math.max(max, sequenceFromNumber(trip.tripNumber)), 0);
+      const localMaxSequence = state.trips.reduce((max, trip) => Math.max(max, sequenceFromNumber(trip.tripNumber)), 0);
+      const tripId = id("t");
+      const tripRef = doc(db, "business_profiles", businessProfileId, tenantCollections.trips, tripId);
+      const seqRef = doc(db, "business_profiles", businessProfileId, tenantCollections.numbering, "trip");
+      const activeTripRef = doc(db, "business_profiles", businessProfileId, "runtime_locks", "active_trip");
+
+      const result = await runTransaction(db, async transaction => {
+        const [seqSnapshot, activeTripSnapshot] = await Promise.all([
+          transaction.get(seqRef),
+          transaction.get(activeTripRef),
+        ]);
+        if (activeTripSnapshot.exists()) {
+          const activeTripId = String(activeTripSnapshot.data().tripId || "");
+          if (activeTripId) {
+            const activeTripDoc = await transaction.get(doc(db, "business_profiles", businessProfileId, tenantCollections.trips, activeTripId));
+            if (activeTripDoc.exists()) {
+              const activeTrip = { id: activeTripDoc.id, ...activeTripDoc.data() } as Trip;
+              if (isUnfinishedTrip(activeTrip)) {
+                throw new Error(`Trip already open: ${activeTrip.tripNumber}`);
+              }
+            }
+          }
+        }
+
+        const sequenceData = seqSnapshot.exists()
+          ? ({ ...localSeq, ...seqSnapshot.data() } as NumberingSequence)
+          : localSeq;
+        const nextSequence = Math.max(
+          Number(sequenceData.currentSequence || 0),
+          remoteMaxSequence,
+          localMaxSequence
+        ) + 1;
+        const tripNumber = formatSequenceNumber(sequenceData, nextSequence);
+        const newTrip: Trip = {
+          id: tripId,
+          businessProfileId,
+          tripNumber,
+          vesselName: state.businessProfile.vesselName,
+          originDestinationId,
+          plannedDepartureAt: new Date().toISOString(),
+          plannedArrivalAt,
+          status: "draft",
+          openedBy: state.currentUser.id,
+          notes,
+          createdAt: new Date().toISOString(),
+        };
+        const updatedSequence: NumberingSequence & { id: string; businessProfileId: string } = {
+          ...sequenceData,
+          id: "trip",
+          businessProfileId,
+          numberType: "trip",
+          currentSequence: nextSequence,
+          lastGenerated: tripNumber,
+        };
+
+        transaction.set(tripRef, stripUndefined(newTrip) as Record<string, unknown>);
+        transaction.set(seqRef, stripUndefined(updatedSequence) as Record<string, unknown>);
+        transaction.set(activeTripRef, {
+          businessProfileId,
+          tripId,
+          tripNumber,
+          status: newTrip.status,
+          updatedAt: new Date().toISOString(),
+        });
+        return { trip: newTrip, sequence: updatedSequence };
+      });
+
+      pendingTripRef.current = result.trip;
+      setState(s => ({
+        ...s,
+        trips: [result.trip, ...s.trips.filter(trip => trip.id !== result.trip.id)],
+        numbering: s.numbering.map(n => n.numberType === "trip" ? { ...n, ...result.sequence } : n),
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+          actorUserId: s.currentUser.id,
+          action: "trip.create",
+          entityType: "trip",
+          entityId: result.trip.id,
+          summary: `Created draft trip ${result.trip.tripNumber}`,
+        }),
+      }));
+      return result.trip;
+    } catch (error) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Trip not created", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+      }));
+      return null;
+    }
+  }, [state.trips, state.numbering, state.businessProfile.id, state.businessProfile.vesselName, state.currentUser.id]);
 
   const addDestination = useCallback((islandName: string, atoll: string, code: string): Destination => {
     const newDest: Destination = {
@@ -960,6 +1241,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeStatus: true, sortOrder: state.destinations.length + 1,
     };
     setState(s => ({ ...s, destinations: [...s.destinations, newDest] }));
+    persistTenantDoc(tenantCollections.destinations, newDest.id, newDest as unknown as Record<string, unknown>);
     return newDest;
   }, [state.businessProfile, state.destinations.length]);
 
@@ -973,6 +1255,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
     };
     setState(s => ({ ...s, customers: [...s.customers, newCustomer] }));
+    persistTenantDoc(tenantCollections.customers, newCustomer.id, newCustomer as unknown as Record<string, unknown>);
     return newCustomer;
   }, [state.businessProfile]);
 
@@ -995,6 +1278,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       catalogItems: [...s.catalogItems, newItem],
       itemPriceRates: [...s.itemPriceRates, newRate],
     }));
+    persistTenantDoc(tenantCollections.catalogItems, newItem.id, newItem as unknown as Record<string, unknown>);
+    persistTenantDoc(tenantCollections.itemPriceRates, newRate.id, newRate as unknown as Record<string, unknown>);
     return newItem;
   }, [state.businessProfile]);
 
@@ -1011,82 +1296,167 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const markNotificationRead = useCallback((notifId: string) => {
+    const current = stateRef.current;
+    const updatedNotification = current.notifications.find(n => n.id === notifId);
+    if (!updatedNotification) return;
+    const persistedNotification = { ...updatedNotification, read: true };
     setState(s => ({
       ...s,
       notifications: s.notifications.map(n => n.id === notifId ? { ...n, read: true } : n),
     }));
+    persistTenantDoc(tenantCollections.notifications, persistedNotification.id, persistedNotification as unknown as Record<string, unknown>);
   }, []);
 
-  const createBillFromOperation = useCallback((operationId: string, billType: Bill["billType"]): Bill | null => {
-    let newBill: Bill | null = null;
-    setState(s => {
-      const op = s.operations.find(o => o.id === operationId);
-      if (!op) return s;
-      if (op.items.length === 0) {
-        return {
-          ...s,
-          toasts: [...s.toasts, { id: id("t"), title: "No items", body: "Add cargo first.", variant: "error" as const }],
-        };
-      }
-      const existingBill = s.bills.find(b =>
-        b.tripId === op.tripId &&
-        b.destinationId === op.destinationId &&
-        b.customerId === op.customerId &&
-        b.billType === billType
-      );
-      if (existingBill) {
-        return {
+  const createBillFromOperation = useCallback(async (operationId: string, billType: Bill["billType"]): Promise<Bill | null> => {
+    const op = state.operations.find(o => o.id === operationId);
+    if (!op) return null;
+    if (op.items.length === 0) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "No items", body: "Add cargo first.", variant: "error" as const }],
+      }));
+      return null;
+    }
+    const existingBill = state.bills.find(b =>
+      b.tripId === op.tripId &&
+      b.destinationId === op.destinationId &&
+      b.customerId === op.customerId &&
+      b.billType === billType
+    );
+    if (existingBill) {
+      if (existingBill.billStatus !== "draft") {
+        setState(s => ({
           ...s,
           selectedBillId: existingBill.id,
-          toasts: [...s.toasts, { id: id("t"), title: "Bill exists", body: existingBill.billNumber, variant: "warning" as const }],
-        };
+          toasts: [...s.toasts, { id: id("t"), title: "Bill locked", body: existingBill.billNumber, variant: "warning" as const }],
+        }));
+        return null;
       }
-      const dest = s.destinations.find(d => d.id === op.destinationId);
-      const seq = s.numbering.find(n => n.numberType === "bill");
-      if (!seq) return s;
-      const newSeq = seq.currentSequence + 1;
-      const padded = String(newSeq).padStart(seq.padding, "0");
-      const billNumber = `BILL-${dest?.destinationCode || "GEN"}-${padded}`;
-
-      newBill = {
-        id: id("b"),
-        businessProfileId: s.businessProfile.id,
-        tripId: op.tripId,
-        destinationId: op.destinationId,
-        customerId: op.customerId,
-        billNumber,
-        billType,
-        billStatus: "draft",
-        subtotalTaxInclusive: op.totalTaxInclusive,
-        taxTotal: op.totalTax,
-        grandTotal: op.totalTaxInclusive,
-        paymentStatus: "unpaid",
-        paidAmount: 0,
-        createdBy: s.currentUser.id,
-        createdAt: new Date().toISOString(),
-        itemCount: op.items.length,
+      const existingItems = existingBill.items || [];
+      const mergedItems = [...op.items, ...existingItems];
+      const updatedBill: Bill = {
+        ...existingBill,
+        items: mergedItems,
+        itemCount: mergedItems.length,
+        subtotalTaxInclusive: Number((existingBill.subtotalTaxInclusive + op.totalTaxInclusive).toFixed(2)),
+        taxTotal: Number((existingBill.taxTotal + op.totalTax).toFixed(2)),
+        grandTotal: Number((existingBill.grandTotal + op.totalTaxInclusive).toFixed(2)),
       };
-      return {
+      setState(s => ({
         ...s,
-        bills: [newBill, ...s.bills],
-        numbering: s.numbering.map(n => n.numberType === "bill" ? { ...n, currentSequence: newSeq, lastGenerated: billNumber } : n),
+        selectedBillId: existingBill.id,
+        operations: s.operations.filter(operation => operation.id !== op.id),
+        bills: s.bills.map(b => b.id === existingBill.id ? updatedBill : b),
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+          actorUserId: s.currentUser.id,
+          action: "billing.update_draft",
+          entityType: "bill",
+          entityId: existingBill.id,
+          summary: `Updated draft bill ${existingBill.billNumber}`,
+        }),
+        toasts: [...s.toasts, { id: id("t"), title: "Bill updated", body: existingBill.billNumber, variant: "success" as const }],
+      }));
+      persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
+      deleteTenantDoc(tenantCollections.operations, state.businessProfile.id, op.id);
+      return updatedBill;
+    }
+
+    const businessProfileId = state.businessProfile.id;
+    const dest = state.destinations.find(d => d.id === op.destinationId);
+    const localSeq = state.numbering.find(n => n.numberType === "bill");
+    if (!businessProfileId || !localSeq) return null;
+
+    try {
+      const db = getFirebaseFirestore();
+      const remoteMaxSequence = await getMaxSequenceFromFirestore(businessProfileId, tenantCollections.bills, "billNumber");
+      const localMaxSequence = state.bills.reduce((max, bill) => Math.max(max, sequenceFromNumber(bill.billNumber)), 0);
+      const billId = id("b");
+      const billRef = doc(db, "business_profiles", businessProfileId, tenantCollections.bills, billId);
+      const opRef = doc(db, "business_profiles", businessProfileId, tenantCollections.operations, op.id);
+      const seqRef = doc(db, "business_profiles", businessProfileId, tenantCollections.numbering, "bill");
+
+      const result = await runTransaction(db, async transaction => {
+        const [seqSnapshot, opSnapshot] = await Promise.all([
+          transaction.get(seqRef),
+          transaction.get(opRef),
+        ]);
+        if (!opSnapshot.exists()) {
+          throw new Error("Operation already billed.");
+        }
+        const sequenceData = seqSnapshot.exists()
+          ? ({ ...localSeq, ...seqSnapshot.data() } as NumberingSequence)
+          : localSeq;
+        const nextSequence = Math.max(
+          Number(sequenceData.currentSequence || 0),
+          remoteMaxSequence,
+          localMaxSequence
+        ) + 1;
+        const billNumber = formatSequenceNumber(sequenceData, nextSequence, dest?.destinationCode);
+        const newBill: Bill = {
+          id: billId,
+          businessProfileId,
+          tripId: op.tripId,
+          destinationId: op.destinationId,
+          customerId: op.customerId,
+          billNumber,
+          billType,
+          billStatus: "draft",
+          subtotalTaxInclusive: op.totalTaxInclusive,
+          taxTotal: op.totalTax,
+          grandTotal: op.totalTaxInclusive,
+          paymentStatus: "unpaid",
+          paidAmount: 0,
+          createdBy: state.currentUser.id,
+          createdAt: new Date().toISOString(),
+          itemCount: op.items.length,
+          items: op.items,
+        };
+        const updatedSequence: NumberingSequence & { id: string; businessProfileId: string } = {
+          ...sequenceData,
+          id: "bill",
+          businessProfileId,
+          numberType: "bill",
+          currentSequence: nextSequence,
+          lastGenerated: billNumber,
+        };
+        transaction.set(billRef, stripUndefined(newBill) as Record<string, unknown>);
+        transaction.set(seqRef, stripUndefined(updatedSequence) as Record<string, unknown>);
+        transaction.delete(opRef);
+        return { bill: newBill, sequence: updatedSequence };
+      });
+
+      setState(s => ({
+        ...s,
+        operations: s.operations.filter(operation => operation.id !== op.id),
+        bills: [result.bill, ...s.bills.filter(bill => bill.id !== result.bill.id)],
+        numbering: s.numbering.map(n => n.numberType === "bill" ? { ...n, ...result.sequence } : n),
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "billing.create",
           entityType: "bill",
-          entityId: newBill!.id,
-          summary: `Created ${billType.replace("_", " ")} bill ${billNumber}`,
+          entityId: result.bill.id,
+          summary: `Created ${billType.replace("_", " ")} bill ${result.bill.billNumber}`,
         }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: billNumber, variant: "success" as const }],
-      };
-    });
-    return newBill;
-  }, []);
+        toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: result.bill.billNumber, variant: "success" as const }],
+      }));
+      return result.bill;
+    } catch (error) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Bill not created", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+      }));
+      return null;
+    }
+  }, [state.bills, state.businessProfile.id, state.currentUser.id, state.destinations, state.numbering, state.operations]);
 
   const closeTrip = useCallback((tripId: string) => {
+    const current = stateRef.current;
+    const trip = current.trips.find(t => t.id === tripId);
+    if (!trip) return;
+    const updatedTrip: Trip = { ...trip, status: "closed", closedBy: current.currentUser.id, closedAt: new Date().toISOString() };
     setState(s => ({
       ...s,
-      trips: s.trips.map(t => t.id === tripId ? { ...t, status: "closed", closedBy: s.currentUser.id, closedAt: new Date().toISOString() } : t),
+      trips: s.trips.map(t => t.id === tripId ? { ...t, status: updatedTrip.status, closedBy: updatedTrip.closedBy, closedAt: updatedTrip.closedAt } : t),
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id,
         action: "trip.close",
@@ -1096,6 +1466,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Trip closed", variant: "info" as const }],
     }));
+    persistTenantDoc(tenantCollections.trips, updatedTrip.id, updatedTrip as unknown as Record<string, unknown>);
   }, []);
 
   const toggleOnline = useCallback(() => {
@@ -1112,32 +1483,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateBusinessProfile = useCallback((updates: Partial<BusinessProfile>) => {
+    const current = stateRef.current;
+    const updatedProfile: BusinessProfile = { ...current.businessProfile, ...updates };
     setState(s => {
-      const updated = { ...s.businessProfile, ...updates };
       return {
         ...s,
-        businessProfile: updated,
+        businessProfile: { ...s.businessProfile, ...updates },
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "settings.update",
           entityType: "business_profile",
-          entityId: updated.id,
-          summary: `Updated business settings for ${updated.businessName}`,
+          entityId: updatedProfile.id,
+          summary: `Updated business settings for ${updatedProfile.businessName}`,
         }),
         toasts: [...s.toasts, { id: id("t"), title: "Profile saved", variant: "success" as const }],
       };
     });
+    persistTenantDoc("business_profiles", updatedProfile.id, updatedProfile as unknown as Record<string, unknown>);
   }, []);
 
   const inviteUser = useCallback((newUser: Omit<User, "id" | "businessProfileId" | "online">): User => {
-    let created: User | null = null;
+    const current = stateRef.current;
+    const created: User = {
+      ...newUser,
+      id: id("u"),
+      businessProfileId: current.businessProfile.id,
+      online: false,
+    };
     setState(s => {
-      created = {
-        ...newUser,
-        id: id("u"),
-        businessProfileId: s.businessProfile.id,
-        online: false,
-      };
       return {
         ...s,
         users: [...s.users, created],
@@ -1151,13 +1524,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toasts: [...s.toasts, { id: id("t"), title: "Invite sent", variant: "success" as const }],
       };
     });
-    return created || ({ ...newUser, id: "temp", businessProfileId: "bp", online: false });
+    persistTenantDoc(tenantCollections.users, created.id, {
+      ...created,
+      uid: created.id,
+      activeStatus: true,
+    } as unknown as Record<string, unknown>);
+    return created;
   }, []);
 
   const updateTripStatus = useCallback((tripId: string, status: Trip["status"]) => {
+    const current = stateRef.current;
+    const trip = current.trips.find(t => t.id === tripId);
+    if (!trip) return;
+    const updatedTrip: Trip = { ...trip, status };
     setState(s => {
-      const trip = s.trips.find(t => t.id === tripId);
-      if (!trip) return s;
       return {
         ...s,
         trips: s.trips.map(t => t.id === tripId ? { ...t, status } : t),
@@ -1171,33 +1551,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toasts: [...s.toasts, { id: id("t"), title: "Trip updated", body: status, variant: "info" as const }],
       };
     });
+    persistTenantDoc(tenantCollections.trips, updatedTrip.id, updatedTrip as unknown as Record<string, unknown>);
   }, []);
 
   const alterBillAfterTripEnd = useCallback((billId: string, newTotal: number, reason: string) => {
+    const current = stateRef.current;
+    const bill = current.bills.find(b => b.id === billId);
+    if (!bill) return;
+    const trip = current.trips.find(t => t.id === bill.tripId);
+    if (!["owner", "admin"].includes(current.currentUser.role)) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Not allowed", body: "Owner or Admin only.", variant: "error" as const }],
+      }));
+      return;
+    }
+    const oldTotal = bill.grandTotal;
+    const taxTotal = Number((newTotal - newTotal / (1 + current.businessProfile.defaultTaxRate / 100)).toFixed(2));
+    const updatedBill: Bill = {
+      ...bill,
+      grandTotal: newTotal,
+      subtotalTaxInclusive: newTotal,
+      taxTotal,
+      billStatus: "adjusted",
+      paymentStatus: bill.paidAmount >= newTotal ? "paid" : bill.paidAmount > 0 ? "partial" : "unpaid",
+    };
     setState(s => {
-      const bill = s.bills.find(b => b.id === billId);
-      if (!bill) return s;
-      const trip = s.trips.find(t => t.id === bill.tripId);
-      if (!["owner", "admin"].includes(s.currentUser.role)) {
-        return {
-          ...s,
-          toasts: [...s.toasts, { id: id("t"), title: "Not allowed", body: "Owner or Admin only.", variant: "error" as const }],
-        };
-      }
-      const oldTotal = bill.grandTotal;
-      const taxTotal = Number((newTotal - newTotal / (1 + s.businessProfile.defaultTaxRate / 100)).toFixed(2));
-      const newBill: Bill = {
-        ...bill,
-        grandTotal: newTotal,
-        subtotalTaxInclusive: newTotal,
-        taxTotal,
-        billStatus: "adjusted",
-        paymentStatus: bill.paidAmount >= newTotal ? "paid" : bill.paidAmount > 0 ? "partial" : "unpaid",
-      };
-
       return {
         ...s,
-        bills: s.bills.map(b => b.id === billId ? newBill : b),
+        bills: s.bills.map(b => b.id === billId ? updatedBill : b),
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "billing.alter_post_trip",
@@ -1208,9 +1590,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toasts: [...s.toasts, { id: id("t"), title: "Bill adjusted", body: bill.billNumber, variant: "success" as const }],
       };
     });
+    persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
   }, []);
 
   const updateUser = useCallback((userId: string, updates: Partial<User>) => {
+    const current = stateRef.current;
+    const user = current.users.find(u => u.id === userId);
+    if (!user) return;
+    const updatedUser: User = { ...user, ...updates };
     setState(s => ({
       ...s,
       users: s.users.map(u => u.id === userId ? { ...u, ...updates } : u),
@@ -1219,6 +1606,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "User saved", variant: "success" as const }],
     }));
+    const payload = { ...updatedUser, uid: updatedUser.id, activeStatus: true } as unknown as Record<string, unknown>;
+    persistTenantDoc(tenantCollections.users, updatedUser.id, payload);
+    persistRootBusinessUser(updatedUser.id, payload);
   }, []);
 
   const deleteUser = useCallback((userId: string) => {
@@ -1234,6 +1624,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.businessProfile.id]);
 
   const updateDestination = useCallback((destId: string, updates: Partial<Destination>) => {
+    const current = stateRef.current;
+    const destination = current.destinations.find(d => d.id === destId);
+    if (!destination) return;
+    const updatedDestination: Destination = { ...destination, ...updates };
     setState(s => ({
       ...s,
       destinations: s.destinations.map(d => d.id === destId ? { ...d, ...updates } : d),
@@ -1242,6 +1636,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Island saved", variant: "success" as const }],
     }));
+    persistTenantDoc(tenantCollections.destinations, updatedDestination.id, updatedDestination as unknown as Record<string, unknown>);
   }, []);
 
   const deleteDestination = useCallback((destId: string) => {
@@ -1257,6 +1652,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.businessProfile.id]);
 
   const updateCustomer = useCallback((customerId: string, updates: Partial<Customer>) => {
+    const current = stateRef.current;
+    const customer = current.customers.find(c => c.id === customerId);
+    if (!customer) return;
+    const updatedCustomer: Customer = { ...customer, ...updates };
     setState(s => ({
       ...s,
       customers: s.customers.map(c => c.id === customerId ? { ...c, ...updates } : c),
@@ -1265,6 +1664,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Customer saved", variant: "success" as const }],
     }));
+    persistTenantDoc(tenantCollections.customers, updatedCustomer.id, updatedCustomer as unknown as Record<string, unknown>);
   }, []);
 
   const deleteCustomer = useCallback((customerId: string) => {
@@ -1280,24 +1680,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.businessProfile.id]);
 
   const updateCatalogItem = useCallback((itemId: string, updates: Partial<CatalogItem>, newPrice?: number) => {
+    const current = stateRef.current;
+    const item = current.catalogItems.find(i => i.id === itemId);
+    if (!item) return;
+    const updatedItem: CatalogItem = { ...item, ...updates };
+    const hasStandardRate = current.itemPriceRates.some(r => r.itemId === itemId && r.priceLevel === "standard");
+    const itemPriceRates = newPrice === undefined
+      ? current.itemPriceRates
+      : hasStandardRate
+        ? current.itemPriceRates.map(r => r.itemId === itemId && r.priceLevel === "standard" ? { ...r, priceTaxInclusive: newPrice } : r)
+        : [
+            ...current.itemPriceRates,
+            {
+              id: id("p"),
+              businessProfileId: item.businessProfileId || current.businessProfile.id,
+              itemId,
+              priceLevel: "standard" as const,
+              priceTaxInclusive: newPrice,
+            },
+          ];
+    const updatedRates = itemPriceRates.filter(rate => rate.itemId === itemId && rate.priceLevel === "standard");
     setState(s => {
-      const hasStandardRate = s.itemPriceRates.some(r => r.itemId === itemId && r.priceLevel === "standard");
-      const item = s.catalogItems.find(i => i.id === itemId);
-      const itemPriceRates = newPrice === undefined
-        ? s.itemPriceRates
-        : hasStandardRate
-          ? s.itemPriceRates.map(r => r.itemId === itemId && r.priceLevel === "standard" ? { ...r, priceTaxInclusive: newPrice } : r)
-          : [
-              ...s.itemPriceRates,
-              {
-                id: id("p"),
-                businessProfileId: item?.businessProfileId || s.businessProfile.id,
-                itemId,
-                priceLevel: "standard" as const,
-                priceTaxInclusive: newPrice,
-              },
-            ];
-
       return {
         ...s,
         catalogItems: s.catalogItems.map(i => i.id === itemId ? { ...i, ...updates } : i),
@@ -1308,6 +1711,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toasts: [...s.toasts, { id: id("t"), title: "Item saved", variant: "success" as const }],
       };
     });
+    persistTenantDoc(tenantCollections.catalogItems, updatedItem.id, updatedItem as unknown as Record<string, unknown>);
+    updatedRates.forEach(rate => persistTenantDoc(tenantCollections.itemPriceRates, rate.id, rate as unknown as Record<string, unknown>));
   }, []);
 
   const deleteCatalogItem = useCallback((itemId: string) => {
@@ -1325,6 +1730,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.businessProfile.id, state.itemPriceRates]);
 
   const updateTripNotes = useCallback((tripId: string, notes: string) => {
+    const current = stateRef.current;
+    const trip = current.trips.find(t => t.id === tripId);
+    if (!trip) return;
+    const updatedTrip: Trip = { ...trip, notes };
     setState(s => ({
       ...s,
       trips: s.trips.map(t => t.id === tripId ? { ...t, notes } : t),
@@ -1333,6 +1742,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Notes saved", variant: "success" as const }],
     }));
+    persistTenantDoc(tenantCollections.trips, updatedTrip.id, updatedTrip as unknown as Record<string, unknown>);
   }, []);
 
   const deleteTrip = useCallback((tripId: string) => {
@@ -1348,52 +1758,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.businessProfile.id]);
 
   const cancelBill = useCallback((billId: string, reason: string) => {
-    setState(s => {
-      const bill = s.bills.find(b => b.id === billId);
-      if (!bill) return s;
-      return {
+    const bill = state.bills.find(b => b.id === billId);
+    if (!bill) return;
+    if (bill.billStatus !== "draft") {
+      setState(s => ({
         ...s,
-        bills: s.bills.map(b => b.id === billId ? { ...b, billStatus: "cancelled" } : b),
-        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
-          actorUserId: s.currentUser.id, action: "billing.cancel", entityType: "bill", entityId: billId, summary: `Cancelled financial document ${bill.billNumber}. Reason: ${reason}`,
-        }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill cancelled", body: bill.billNumber, variant: "warning" as const }],
-      };
-    });
-  }, []);
+        toasts: [...s.toasts, { id: id("t"), title: "Bill locked", body: bill.billNumber, variant: "warning" as const }],
+      }));
+      return;
+    }
+    const cancelledBill: Bill = {
+      ...bill,
+      billStatus: "cancelled",
+      paymentStatus: "unpaid",
+      paidAmount: 0,
+    };
+    setState(s => ({
+      ...s,
+      bills: s.bills.map(b => b.id === billId ? cancelledBill : b),
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+        actorUserId: s.currentUser.id,
+        action: "billing.cancel",
+        entityType: "bill",
+        entityId: billId,
+        summary: `Cancelled draft bill ${bill.billNumber}. Tax removed from active GST totals. Reason: ${reason}`,
+      }),
+      toasts: [...s.toasts, { id: id("t"), title: "Bill cancelled", body: bill.billNumber, variant: "warning" as const }],
+    }));
+    persistTenantDoc(tenantCollections.bills, cancelledBill.id, cancelledBill as unknown as Record<string, unknown>);
+  }, [state.bills]);
 
   const voidPayment = useCallback((paymentId: string, reason: string) => {
-    deleteTenantDoc(tenantCollections.payments, state.businessProfile.id, paymentId);
+    const current = stateRef.current;
+    const pay = current.payments.find(p => p.id === paymentId);
+    if (!pay) return;
+    const bill = current.bills.find(b => b.id === pay.billId);
+    const paidAmount = bill ? Math.max(0, bill.paidAmount - pay.amount) : 0;
+    const updatedBill: Bill | null = bill ? {
+      ...bill,
+      paidAmount,
+      paymentStatus: paidAmount >= bill.grandTotal ? "paid" : paidAmount > 0 ? "partial" : "unpaid",
+      billStatus: paidAmount >= bill.grandTotal ? "paid" : "partially_paid",
+    } : null;
+    deleteTenantDoc(tenantCollections.payments, current.businessProfile.id, paymentId);
     setState(s => {
-      const pay = s.payments.find(p => p.id === paymentId);
-      if (!pay) return s;
       return {
         ...s,
         payments: s.payments.filter(p => p.id !== paymentId),
-        bills: s.bills.map(b => b.id === pay.billId ? {
-          ...b,
-          paidAmount: Math.max(0, b.paidAmount - pay.amount),
-          paymentStatus: Math.max(0, b.paidAmount - pay.amount) >= b.grandTotal ? "paid" : Math.max(0, b.paidAmount - pay.amount) > 0 ? "partial" : "unpaid",
-          billStatus: Math.max(0, b.paidAmount - pay.amount) >= b.grandTotal ? "paid" : "partially_paid",
-        } : b),
+        bills: updatedBill ? s.bills.map(b => b.id === pay.billId ? updatedBill : b) : s.bills,
         auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "payment.void", entityType: "payment", entityId: paymentId, summary: `Voided payment receipt ${pay.paymentNumber} (${MVR(pay.amount)}). Reason: ${reason}`,
         }),
         toasts: [...s.toasts, { id: id("t"), title: "Payment voided", body: pay.paymentNumber, variant: "warning" as const }],
       };
     });
-  }, [state.businessProfile.id]);
+    if (updatedBill) {
+      persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
+    }
+  }, []);
 
   const updateTaxSetting = useCallback((taxId: string, updates: Partial<TaxSetting>) => {
+    const current = stateRef.current;
+    const taxSetting = current.taxSettings.find(t => t.id === taxId);
+    if (!taxSetting) return;
+    const updatedTax: TaxSetting = { ...taxSetting, ...updates };
+    const updatedProfile: BusinessProfile | null = updates.taxRate !== undefined
+      ? { ...current.businessProfile, defaultTaxRate: updates.taxRate }
+      : null;
     setState(s => ({
       ...s,
       taxSettings: s.taxSettings.map(t => t.id === taxId ? { ...t, ...updates } : t),
-      businessProfile: updates.taxRate !== undefined ? { ...s.businessProfile, defaultTaxRate: updates.taxRate } : s.businessProfile,
+      businessProfile: updatedProfile || s.businessProfile,
       auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "tax.update", entityType: "tax_setting", entityId: taxId, summary: `Adjusted global GST tax parameter`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Tax saved", variant: "success" as const }],
     }));
+    persistTenantDoc(tenantCollections.taxSettings, updatedTax.id, updatedTax as unknown as Record<string, unknown>);
+    if (updatedProfile) {
+      persistTenantDoc("business_profiles", updatedProfile.id, updatedProfile as unknown as Record<string, unknown>);
+    }
   }, []);
 
   const value: AppState & AppActions = {
@@ -1401,7 +1845,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
     addOperationItem, removeOperationItem,
-    finalizeBill, postPayment, createTrip,
+    finalizeBill, postPayment, updateDraftBill, createTrip,
     createBillFromOperation,
     addDestination, addCustomer, addCatalogItem,
     toast, dismissToast, markNotificationRead,

@@ -590,7 +590,7 @@ export function CreateTripScreen() {
   const [creating, setCreating] = useState(false);
   const unfinishedTrip = trips.find(isUnfinishedTrip);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (creating) return;
     if (unfinishedTrip) {
       selectTrip(unfinishedTrip.id);
@@ -600,7 +600,7 @@ export function CreateTripScreen() {
     }
     setCreating(true);
     const arrival = new Date(Date.now() + hours * 3600000).toISOString();
-    const trip = createTrip(origin, arrival, notes || "New cargo trip");
+    const trip = await createTrip(origin, arrival, notes || "New cargo trip");
     if (!trip) {
       setCreating(false);
       navigate("trip_detail");

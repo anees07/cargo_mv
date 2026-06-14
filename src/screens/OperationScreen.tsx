@@ -11,8 +11,8 @@ import type { CatalogItem, Customer, OperationItem } from "../types";
 export function OperationScreen() {
   const {
     trips, activeTripId, customers, destinations, catalogItems, itemPriceRates,
-    businessProfile, addOperationItem, removeOperationItem, operations, addCustomer, addDestination, navigate, back, toast,
-    createBillFromOperation, selectBill, currentUser,
+    businessProfile, addOperationItem, removeOperationItem, operations, addCustomer, addDestination, back, toast,
+    createBillFromOperation, currentUser,
   } = useApp();
   const activeTrip = trips.find(t => t.id === activeTripId);
 
@@ -213,7 +213,7 @@ export function OperationScreen() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900">{dest?.islandName || "Select destination"}</p>
-                <p className="text-xs text-slate-500">{dest?.atoll} Atoll • {dest?.destinationCode}</p>
+                <p className="text-xs text-slate-500">{dest ? `${dest.atoll} Atoll • ${dest.destinationCode}` : "Choose destination"}</p>
               </div>
             </div>
             <Icon name="chevron_down" className="h-5 w-5 text-slate-400" />
@@ -234,7 +234,7 @@ export function OperationScreen() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900">{customer?.displayName || "Select customer"}</p>
-                <p className="text-xs text-slate-500 capitalize">{customer?.customerType.replace("_", " ")} • {customer?.defaultPriceLevelId}</p>
+                <p className="text-xs text-slate-500 capitalize">{customer ? `${customer.customerType.replace("_", " ")} • ${customer.defaultPriceLevelId}` : "Choose customer"}</p>
               </div>
             </div>
             <Icon name="chevron_down" className="h-5 w-5 text-slate-400" />
@@ -331,13 +331,11 @@ export function OperationScreen() {
               size="lg"
               icon="receipt"
               disabled={!currentOp || currentOp.items.length === 0}
-              onClick={() => {
+              onClick={async () => {
                 if (currentOp) {
-                  const bill = createBillFromOperation(currentOp.id, opType === "offloading" ? "offloading_bill" : "loading_bill");
+                  const bill = await createBillFromOperation(currentOp.id, opType === "offloading" ? "offloading_bill" : "loading_bill");
                   if (bill) {
                     resetOperationForm();
-                    selectBill(bill.id);
-                    navigate("invoice_preview");
                   }
                 }
               }}
