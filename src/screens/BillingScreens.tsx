@@ -3,15 +3,28 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, StatusBadge, TopBar } from "../components/ui";
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
-import type { BillType, PaymentMethod } from "../types";
+import type { BillType, Operation, PaymentMethod } from "../types";
 
 // ============================================================================
 // Billing — list, filter, generate, finalize
 // ============================================================================
 export function BillingScreen() {
-  const { bills, customers, destinations, trips, navigate, selectBill, createManualBill, back, currentUser } = useApp();
+  const { bills, customers, destinations, trips, operations, navigate, selectBill, createBillFromOperation, back, currentUser } = useApp();
   const [filter, setFilter] = useState<"all" | "unpaid" | "partial" | "paid" | "credit">("all");
   const [showGenerate, setShowGenerate] = useState(false);
+  const billableOperations = operations.filter(operation => {
+    const trip = trips.find(t => t.id === operation.tripId);
+    const billType = billTypeForOperation(operation);
+    return operation.items.length > 0 &&
+      Boolean(trip) &&
+      !["ended", "closed"].includes(trip!.status) &&
+      !bills.some(bill =>
+        bill.tripId === operation.tripId &&
+        bill.destinationId === operation.destinationId &&
+        bill.customerId === operation.customerId &&
+        bill.billType === billType
+      );
+  });
 
   const filtered = bills.filter(b => {
     if (filter === "all") return true;
@@ -37,7 +50,7 @@ export function BillingScreen() {
         onBack={back}
         trailing={
           hasPermission(currentUser.role, "create_bill") && (
-            <Btn size="sm" icon="plus" onClick={() => setShowGenerate(true)}>New bill</Btn>
+            <Btn size="sm" icon="plus" disabled={billableOperations.length === 0} onClick={() => setShowGenerate(true)}>New bill</Btn>
           )
         }
       />
@@ -118,13 +131,9 @@ export function BillingScreen() {
 
       <Modal open={showGenerate} onClose={() => setShowGenerate(false)} title="Generate new bill" full>
         <GenerateBillForm
-          onGenerate={(type, customerId, destId, tripId) => {
-            const bill = createManualBill({
-              billType: type as BillType,
-              customerId,
-              destinationId: destId,
-              tripId,
-            });
+          billableOperations={billableOperations}
+          onGenerate={(operationId, billType) => {
+            const bill = createBillFromOperation(operationId, billType);
             setShowGenerate(false);
             if (bill) {
               selectBill(bill.id);
@@ -137,56 +146,48 @@ export function BillingScreen() {
   );
 }
 
-function GenerateBillForm({ onGenerate }: { onGenerate: (type: string, customerId: string, destId: string, tripId: string) => void }) {
-  const { customers, destinations, trips, activeTripId } = useApp();
-  const [type, setType] = useState("credit");
-  const [customerId, setCustomerId] = useState(customers[0]?.id || "");
-  const [destId, setDestId] = useState(destinations[0]?.id || "");
-  const [tripId, setTripId] = useState(activeTripId || trips[0]?.id || "");
+function billTypeForOperation(operation: Operation): BillType {
+  return operation.operationType === "offloading" ? "offloading_bill" : "loading_bill";
+}
+
+function GenerateBillForm({
+  billableOperations,
+  onGenerate,
+}: {
+  billableOperations: Operation[];
+  onGenerate: (operationId: string, billType: BillType) => void;
+}) {
+  const { customers, destinations, trips } = useApp();
+  const [operationId, setOperationId] = useState(billableOperations[0]?.id || "");
+  const selectedOperation = billableOperations.find(operation => operation.id === operationId);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bill type</label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
-          {[
-            { id: "instant_cash", label: "Instant cash bill" },
-            { id: "credit", label: "Credit invoice" },
-            { id: "destination_grouped", label: "Destination grouped" },
-            { id: "individual_invoice", label: "Individual invoice" },
-          ].map(t => (
-            <button
-              key={t.id}
-              onClick={() => setType(t.id)}
-              className={`rounded-xl border p-3 text-left text-xs font-medium ${type === t.id ? "border-ocean-500 bg-ocean-50 text-ocean-700" : "border-slate-200"}`}
-            >
-              {t.label}
-            </button>
-          ))}
+      {billableOperations.length === 0 ? (
+        <Card className="p-4 text-sm text-slate-600">
+          Add cargo items to an active operation before creating a bill.
+        </Card>
+      ) : (
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Billable operation</label>
+          <select value={operationId} onChange={e => setOperationId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm">
+            {billableOperations.map(operation => {
+              const customer = customers.find(c => c.id === operation.customerId);
+              const destination = destinations.find(d => d.id === operation.destinationId);
+              const trip = trips.find(t => t.id === operation.tripId);
+              return (
+                <option key={operation.id} value={operation.id}>
+                  {trip?.tripNumber} • {customer?.displayName || "Customer"} • {destination?.islandName || "Island"} • {operation.items.length} item{operation.items.length !== 1 ? "s" : ""}
+                </option>
+              );
+            })}
+        </select>
         </div>
-      </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Customer</label>
-        <select value={customerId} onChange={e => setCustomerId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm">
-          {customers.map(c => <option key={c.id} value={c.id}>{c.displayName}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Destination</label>
-        <select value={destId} onChange={e => setDestId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm">
-          {destinations.map(d => <option key={d.id} value={d.id}>{d.islandName} ({d.destinationCode})</option>)}
-        </select>
-      </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Trip</label>
-        <select value={tripId} onChange={e => setTripId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm">
-          {trips.filter(t => ["open", "loading", "sailing", "offloading"].includes(t.status)).map(t => <option key={t.id} value={t.id}>{t.tripNumber}</option>)}
-        </select>
-      </div>
+      )}
       <div className="rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-xs text-ocean-900">
-        The next bill number will be assigned automatically.
+        Bills are created from saved operation items only.
       </div>
-      <Btn fullWidth size="lg" icon="check" onClick={() => onGenerate(type, customerId, destId, tripId)}>
+      <Btn fullWidth size="lg" icon="check" disabled={!selectedOperation} onClick={() => selectedOperation && onGenerate(selectedOperation.id, billTypeForOperation(selectedOperation))}>
         Generate bill
       </Btn>
     </div>

@@ -108,7 +108,6 @@ interface AppActions {
   markNotificationRead: (id: string) => void;
   generateNextNumber: (type: NumberingSequence["numberType"], destCode?: string) => string;
   createBillFromOperation: (operationId: string, billType: Bill["billType"]) => Bill | null;
-  createManualBill: (input: { billType: Bill["billType"]; customerId: string; destinationId: string; tripId: string }) => Bill | null;
   closeTrip: (tripId: string) => void;
   toggleOnline: () => void;
   updateBusinessProfile: (updates: Partial<BusinessProfile>) => void;
@@ -1023,6 +1022,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => {
       const op = s.operations.find(o => o.id === operationId);
       if (!op) return s;
+      if (op.items.length === 0) {
+        return {
+          ...s,
+          toasts: [...s.toasts, { id: id("t"), title: "No items", body: "Add cargo first.", variant: "error" as const }],
+        };
+      }
+      const existingBill = s.bills.find(b =>
+        b.tripId === op.tripId &&
+        b.destinationId === op.destinationId &&
+        b.customerId === op.customerId &&
+        b.billType === billType
+      );
+      if (existingBill) {
+        return {
+          ...s,
+          selectedBillId: existingBill.id,
+          toasts: [...s.toasts, { id: id("t"), title: "Bill exists", body: existingBill.billNumber, variant: "warning" as const }],
+        };
+      }
       const dest = s.destinations.find(d => d.id === op.destinationId);
       const seq = s.numbering.find(n => n.numberType === "bill");
       if (!seq) return s;
@@ -1058,60 +1076,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entityType: "bill",
           entityId: newBill!.id,
           summary: `Created ${billType.replace("_", " ")} bill ${billNumber}`,
-        }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: billNumber, variant: "success" as const }],
-      };
-    });
-    return newBill;
-  }, []);
-
-  const createManualBill = useCallback((input: { billType: Bill["billType"]; customerId: string; destinationId: string; tripId: string }): Bill | null => {
-    let newBill: Bill | null = null;
-    setState(s => {
-      const trip = s.trips.find(t => t.id === input.tripId);
-      if (!trip || ["ended", "closed"].includes(trip.status)) {
-        return {
-          ...s,
-          toasts: [...s.toasts, { id: id("t"), title: "Trip not active", body: "Open a trip first.", variant: "error" as const }],
-        };
-      }
-      const dest = s.destinations.find(d => d.id === input.destinationId);
-      const seq = s.numbering.find(n => n.numberType === "bill");
-      if (!seq) return s;
-      const newSeq = seq.currentSequence + 1;
-      const padded = String(newSeq).padStart(seq.padding, "0");
-      const billNumber = `BILL-${dest?.destinationCode || "GEN"}-${padded}`;
-      const baseAmount = input.billType === "instant_cash" ? 4200 : input.billType === "destination_grouped" ? 18500 : 9600;
-      const taxTotal = Number((baseAmount - baseAmount / (1 + s.businessProfile.defaultTaxRate / 100)).toFixed(2));
-      newBill = {
-        id: id("b"),
-        businessProfileId: s.businessProfile.id,
-        tripId: input.tripId,
-        destinationId: input.destinationId,
-        customerId: input.customerId,
-        billNumber,
-        billType: input.billType,
-        billStatus: "draft",
-        subtotalTaxInclusive: baseAmount,
-        taxTotal,
-        grandTotal: baseAmount,
-        paymentStatus: "unpaid",
-        paidAmount: 0,
-        createdBy: s.currentUser.id,
-        createdAt: new Date().toISOString(),
-        itemCount: input.billType === "destination_grouped" ? 8 : 3,
-      };
-      return {
-        ...s,
-        selectedBillId: newBill.id,
-        bills: [newBill, ...s.bills],
-        numbering: s.numbering.map(n => n.numberType === "bill" ? { ...n, currentSequence: newSeq, lastGenerated: billNumber } : n),
-        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
-          actorUserId: s.currentUser.id,
-          action: "billing.create",
-          entityType: "bill",
-          entityId: newBill!.id,
-          summary: `Created draft bill ${billNumber}`,
         }),
         toasts: [...s.toasts, { id: id("t"), title: "Bill created", body: billNumber, variant: "success" as const }],
       };
@@ -1438,7 +1402,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
     addOperationItem, removeOperationItem,
     finalizeBill, postPayment, createTrip,
-    createBillFromOperation, createManualBill,
+    createBillFromOperation,
     addDestination, addCustomer, addCatalogItem,
     toast, dismissToast, markNotificationRead,
     generateNextNumber, toggleOnline,

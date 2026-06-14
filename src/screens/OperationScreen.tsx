@@ -17,7 +17,7 @@ export function OperationScreen() {
   const activeTrip = trips.find(t => t.id === activeTripId);
 
   const [opType, setOpType] = useState<"loading" | "offloading" | "cargo_handling">("loading");
-  const [selectedDestId, setSelectedDestId] = useState<string | null>(destinations[2]?.id || null);
+  const [selectedDestId, setSelectedDestId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [showItemPicker, setShowItemPicker] = useState(false);
@@ -107,6 +107,16 @@ export function OperationScreen() {
   const handleSelectDest = (id: string) => {
     setSelectedDestId(id);
     setSelectedCustomerId(null);
+  };
+
+  const resetOperationForm = () => {
+    setSelectedDestId(null);
+    setSelectedCustomerId(null);
+    setShowCustomerPicker(false);
+    setShowItemPicker(false);
+    setShowAddCustomer(false);
+    setShowAddDest(false);
+    setShowOpTypePicker(false);
   };
 
   const handleAddItem = (item: CatalogItem, qty: number, price: number) => {
@@ -325,6 +335,7 @@ export function OperationScreen() {
                 if (currentOp) {
                   const bill = createBillFromOperation(currentOp.id, opType === "offloading" ? "offloading_bill" : "loading_bill");
                   if (bill) {
+                    resetOperationForm();
                     selectBill(bill.id);
                     navigate("invoice_preview");
                   }

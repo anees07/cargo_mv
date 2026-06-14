@@ -125,10 +125,10 @@ async function seed() {
   ]);
 
   const catalogItems = withTenant([
-    { id: "i_001", itemName: "Rice Sack (50kg)", itemCode: "RIC-50", category: "perishable", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "rice", createdAt: today },
-    { id: "i_002", itemName: "Cement Bag (50kg)", itemCode: "CEM-50", category: "construction", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "bag", createdAt: today },
-    { id: "i_003", itemName: "Gas Cylinder (12kg)", itemCode: "GAS-12", category: "general_cargo", unitType: "piece", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "gas", createdAt: today },
-    { id: "i_004", itemName: "General Cargo Carton", itemCode: "GEN-CT", category: "general_cargo", unitType: "piece", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "box", createdAt: today },
+    { id: "i_001", itemName: "Rice Sack (50kg)", itemCode: "RIC-50", category: "perishable", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🌾", createdAt: today },
+    { id: "i_002", itemName: "Cement Bag (50kg)", itemCode: "CEM-50", category: "construction", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🧱", createdAt: today },
+    { id: "i_003", itemName: "Gas Cylinder (12kg)", itemCode: "GAS-12", category: "general_cargo", unitType: "piece", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🔥", createdAt: today },
+    { id: "i_004", itemName: "General Cargo Carton", itemCode: "GEN-CT", category: "general_cargo", unitType: "piece", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "📦", createdAt: today },
   ]);
 
   const itemPriceRates = withTenant([

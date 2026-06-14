@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, TopBar, FirestoreListBuilder } from "../components/ui";
 import { MVR, MVRShort } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
 import type { CatalogItem, Customer } from "../types";
 
 // ============================================================================
@@ -441,6 +442,20 @@ function EditCatalogForm({
     icon: item.icon,
   });
   const [standardPrice, setStandardPrice] = useState(currentPrice);
+  const handleNameChange = (itemName: string) => {
+    setForm(current => ({
+      ...current,
+      itemName,
+      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(itemName, current.category) : current.icon,
+    }));
+  };
+  const handleCategoryChange = (category: CatalogItem["category"]) => {
+    setForm(current => ({
+      ...current,
+      category,
+      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(current.itemName, category) : current.icon,
+    }));
+  };
 
   return (
     <div className="space-y-3 p-4 md:p-6">
@@ -449,11 +464,11 @@ function EditCatalogForm({
           <label className="mb-1 block text-xs font-semibold text-slate-700">Icon</label>
           <input
             value={form.icon}
-            onChange={e => setForm({ ...form, icon: e.target.value.slice(0, 2) })}
+            onChange={e => setForm({ ...form, icon: e.target.value.slice(0, 4) })}
             className="h-11 w-full rounded-xl border border-slate-300 px-3 text-center text-xl outline-none focus:border-ocean-500"
           />
         </div>
-        <Field label="Item Name *" value={form.itemName} onChange={v => setForm({ ...form, itemName: v })} />
+        <Field label="Item Name *" value={form.itemName} onChange={handleNameChange} />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <Field label="Item Code *" value={form.itemCode} onChange={v => setForm({ ...form, itemCode: v.toUpperCase().replace(/\s/g, "-").slice(0, 12) })} />
@@ -465,7 +480,7 @@ function EditCatalogForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Category</label>
-          <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value as CatalogItem["category"] })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 capitalize">
+          <select value={form.category} onChange={e => handleCategoryChange(e.target.value as CatalogItem["category"])} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 capitalize">
             {(["general_cargo", "perishable", "construction", "fuel", "vehicle", "other"] as const).map(cat => <option key={cat} value={cat}>{cat.replace("_", " ")}</option>)}
           </select>
         </div>
@@ -510,10 +525,24 @@ function AddCatalogForm({
     unitType: "piece" as CatalogItem["unitType"],
     defaultTaxRate: 8,
     taxInclusive: true,
-    icon: "📦",
+    icon: DEFAULT_CATALOG_ICON,
   });
   const [standardPrice, setStandardPrice] = useState(0);
   const canSave = Boolean(form.itemName && form.itemCode && standardPrice > 0);
+  const handleNameChange = (itemName: string) => {
+    setForm(current => ({
+      ...current,
+      itemName,
+      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(itemName, current.category) : current.icon,
+    }));
+  };
+  const handleCategoryChange = (category: CatalogItem["category"]) => {
+    setForm(current => ({
+      ...current,
+      category,
+      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(current.itemName, category) : current.icon,
+    }));
+  };
 
   return (
     <div className="space-y-3 p-4 md:p-6">
@@ -522,11 +551,11 @@ function AddCatalogForm({
           <label className="mb-1 block text-xs font-semibold text-slate-700">Icon</label>
           <input
             value={form.icon}
-            onChange={e => setForm({ ...form, icon: e.target.value.slice(0, 2) })}
+            onChange={e => setForm({ ...form, icon: e.target.value.slice(0, 4) })}
             className="h-11 w-full rounded-xl border border-slate-300 px-3 text-center text-xl outline-none focus:border-ocean-500"
           />
         </div>
-        <Field label="Item name *" value={form.itemName} onChange={v => setForm({ ...form, itemName: v })} placeholder="e.g. Water case" />
+        <Field label="Item name *" value={form.itemName} onChange={handleNameChange} placeholder="e.g. Water case" />
       </div>
       <Field label="Item code *" value={form.itemCode} onChange={v => setForm({ ...form, itemCode: v.toUpperCase().replace(/\s/g, "-").slice(0, 12) })} placeholder="WTR-CASE" />
       <div>
@@ -545,7 +574,7 @@ function AddCatalogForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Category</label>
-          <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value as CatalogItem["category"] })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
+          <select value={form.category} onChange={e => handleCategoryChange(e.target.value as CatalogItem["category"])} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
             <option value="general_cargo">General cargo</option>
             <option value="perishable">Perishable</option>
             <option value="construction">Construction</option>
