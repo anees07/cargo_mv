@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
-import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, setDoc, type Unsubscribe } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
   createFirebaseOwnerAccount,
@@ -211,22 +211,36 @@ async function loadTenantCollection<T extends { id?: string }>(
   businessProfileId: string,
 ): Promise<T[]> {
   const db = getFirebaseFirestore();
-  const snapshot = await getDocs(query(
-    collection(db, collectionName),
-    where("businessProfileId", "==", businessProfileId),
-  ));
+  const snapshot = await getDocs(collection(db, "business_profiles", businessProfileId, collectionName));
   return snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as T);
 }
 
 const persistTenantDoc = (collectionName: string, docId: string, data: Record<string, unknown>) => {
-  void setDoc(doc(getFirebaseFirestore(), collectionName, docId), data).catch(error => {
+  const db = getFirebaseFirestore();
+  const businessProfileId = String(data.businessProfileId || "");
+  const target = collectionName === "business_profiles"
+    ? doc(db, collectionName, docId)
+    : businessProfileId
+      ? doc(db, "business_profiles", businessProfileId, collectionName, docId)
+      : null;
+  if (!target) {
+    console.error(`Failed to persist ${collectionName}/${docId}: missing businessProfileId`);
+    return;
+  }
+  void setDoc(target, data).catch(error => {
     console.error(`Failed to persist ${collectionName}/${docId}`, error);
   });
 };
 
-const deleteTenantDoc = (collectionName: string, docId: string) => {
-  void deleteDoc(doc(getFirebaseFirestore(), collectionName, docId)).catch(error => {
-    console.error(`Failed to delete ${collectionName}/${docId}`, error);
+const persistRootBusinessUser = (uid: string, data: Record<string, unknown>) => {
+  void setDoc(doc(getFirebaseFirestore(), "business_users", uid), data).catch(error => {
+    console.error(`Failed to persist business_users/${uid}`, error);
+  });
+};
+
+const deleteTenantDoc = (collectionName: string, businessProfileId: string, docId: string) => {
+  void deleteDoc(doc(getFirebaseFirestore(), "business_profiles", businessProfileId, collectionName, docId)).catch(error => {
+    console.error(`Failed to delete business_profiles/${businessProfileId}/${collectionName}/${docId}`, error);
   });
 };
 
@@ -239,6 +253,13 @@ const persistTenantState = (state: AppState) => {
     uid: user.id,
     activeStatus: true,
   }));
+  if (state.currentUser.id) {
+    persistRootBusinessUser(state.currentUser.id, {
+      ...state.currentUser,
+      uid: state.currentUser.id,
+      activeStatus: true,
+    });
+  }
   state.destinations.forEach(item => persistTenantDoc(tenantCollections.destinations, item.id, item as unknown as Record<string, unknown>));
   state.customers.forEach(item => persistTenantDoc(tenantCollections.customers, item.id, item as unknown as Record<string, unknown>));
   state.catalogItems.forEach(item => persistTenantDoc(tenantCollections.catalogItems, item.id, item as unknown as Record<string, unknown>));
@@ -374,6 +395,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(initialState);
+  const lastRemoteUpdateAt = useRef(0);
 
   // Simulate splash screen transition
   useEffect(() => {
@@ -385,7 +407,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!state.isAuthed || !state.businessProfile.id) return;
-    const timeout = window.setTimeout(() => persistTenantState(state), 350);
+    const timeout = window.setTimeout(() => {
+      if (Date.now() - lastRemoteUpdateAt.current < 1000) return;
+      persistTenantState(state);
+    }, 350);
     return () => window.clearTimeout(timeout);
   }, [
     state.isAuthed,
@@ -404,6 +429,112 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state.auditLogs,
     state.notifications,
   ]);
+
+  useEffect(() => {
+    if (!state.isAuthed || !state.businessProfile.id) return;
+    const db = getFirebaseFirestore();
+    const businessProfileId = state.businessProfile.id;
+    const unsubscribers: Unsubscribe[] = [];
+    const markRemoteUpdate = () => {
+      lastRemoteUpdateAt.current = Date.now();
+    };
+    const tenantCollection = (collectionName: string) =>
+      collection(db, "business_profiles", businessProfileId, collectionName);
+
+    unsubscribers.push(onSnapshot(doc(db, "business_profiles", businessProfileId), snapshot => {
+      if (!snapshot.exists()) return;
+      markRemoteUpdate();
+      setState(s => ({ ...s, businessProfile: { id: snapshot.id, ...snapshot.data() } as BusinessProfile }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.users), snapshot => {
+      const users = snapshot.docs.map(document => businessUserFromDoc({ id: document.id, ...document.data() }));
+      markRemoteUpdate();
+      setState(s => ({
+        ...s,
+        users,
+        currentUser: users.find(user => user.id === s.currentUser.id) || s.currentUser,
+      }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.destinations), snapshot => {
+      const destinations = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as Destination)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      markRemoteUpdate();
+      setState(s => ({ ...s, destinations }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.customers), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({ ...s, customers: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as Customer) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.catalogItems), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({ ...s, catalogItems: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as CatalogItem) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.itemPriceRates), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({ ...s, itemPriceRates: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as ItemPriceRate) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.trips), snapshot => {
+      const trips = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as Trip)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const activeTrip = trips.find(trip => ["open", "loading", "sailing", "offloading"].includes(trip.status));
+      markRemoteUpdate();
+      setState(s => ({ ...s, trips, activeTripId: activeTrip?.id || null }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.operations), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({ ...s, operations: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as Operation) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.bills), snapshot => {
+      const bills = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as Bill)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      markRemoteUpdate();
+      setState(s => ({ ...s, bills }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.payments), snapshot => {
+      const payments = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as Payment)
+        .sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
+      markRemoteUpdate();
+      setState(s => ({ ...s, payments }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.taxSettings), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({ ...s, taxSettings: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as TaxSetting) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.numbering), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({ ...s, numbering: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as NumberingSequence) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.auditLogs), snapshot => {
+      const auditLogs = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as AuditLog)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      markRemoteUpdate();
+      setState(s => ({ ...s, auditLogs }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.notifications), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({ ...s, notifications: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as AppNotification) }));
+    }));
+
+    return () => unsubscribers.forEach(unsubscribe => unsubscribe());
+  }, [state.isAuthed, state.businessProfile.id]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const credential = await signInWithFirebase(email, password);
@@ -524,10 +655,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       { numberType: "payment", prefix: "PAY", currentSequence: 0, formatTemplate: "PAY-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "customer", prefix: "CUS", currentSequence: 0, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "" },
     ].map(sequence => ({ ...sequence, id: sequence.numberType, businessProfileId }));
+    await setDoc(doc(db, "business_users", owner.uid), ownerUser);
     await Promise.all([
-      setDoc(doc(db, "business_users", owner.uid), ownerUser),
-      setDoc(doc(db, tenantCollections.taxSettings, taxSetting.id), taxSetting),
-      ...numberingSequences.map(sequence => setDoc(doc(db, tenantCollections.numbering, sequence.id), sequence)),
+      setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.users, owner.uid), ownerUser),
+      setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.taxSettings, taxSetting.id), taxSetting),
+      ...numberingSequences.map(sequence => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.numbering, sequence.id), sequence)),
     ]);
 
     setState(s => ({
@@ -1094,7 +1226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteUser = useCallback((userId: string) => {
-    deleteTenantDoc(tenantCollections.users, userId);
+    deleteTenantDoc(tenantCollections.users, state.businessProfile.id, userId);
     setState(s => ({
       ...s,
       users: s.users.filter(u => u.id !== userId),
@@ -1103,7 +1235,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "User removed", body: "User was deleted.", variant: "info" as const }],
     }));
-  }, []);
+  }, [state.businessProfile.id]);
 
   const updateDestination = useCallback((destId: string, updates: Partial<Destination>) => {
     setState(s => ({
@@ -1117,7 +1249,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteDestination = useCallback((destId: string) => {
-    deleteTenantDoc(tenantCollections.destinations, destId);
+    deleteTenantDoc(tenantCollections.destinations, state.businessProfile.id, destId);
     setState(s => ({
       ...s,
       destinations: s.destinations.filter(d => d.id !== destId),
@@ -1126,7 +1258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Destination removed", body: "Island deleted.", variant: "info" as const }],
     }));
-  }, []);
+  }, [state.businessProfile.id]);
 
   const updateCustomer = useCallback((customerId: string, updates: Partial<Customer>) => {
     setState(s => ({
@@ -1140,7 +1272,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteCustomer = useCallback((customerId: string) => {
-    deleteTenantDoc(tenantCollections.customers, customerId);
+    deleteTenantDoc(tenantCollections.customers, state.businessProfile.id, customerId);
     setState(s => ({
       ...s,
       customers: s.customers.filter(c => c.id !== customerId),
@@ -1149,7 +1281,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Customer removed", body: "Customer deleted.", variant: "info" as const }],
     }));
-  }, []);
+  }, [state.businessProfile.id]);
 
   const updateCatalogItem = useCallback((itemId: string, updates: Partial<CatalogItem>, newPrice?: number) => {
     setState(s => {
@@ -1183,8 +1315,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteCatalogItem = useCallback((itemId: string) => {
-    deleteTenantDoc(tenantCollections.catalogItems, itemId);
-    state.itemPriceRates.filter(rate => rate.itemId === itemId).forEach(rate => deleteTenantDoc(tenantCollections.itemPriceRates, rate.id));
+    deleteTenantDoc(tenantCollections.catalogItems, state.businessProfile.id, itemId);
+    state.itemPriceRates.filter(rate => rate.itemId === itemId).forEach(rate => deleteTenantDoc(tenantCollections.itemPriceRates, state.businessProfile.id, rate.id));
     setState(s => ({
       ...s,
       catalogItems: s.catalogItems.filter(i => i.id !== itemId),
@@ -1194,7 +1326,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Catalog item removed", body: "Cargo item deleted.", variant: "info" as const }],
     }));
-  }, []);
+  }, [state.businessProfile.id, state.itemPriceRates]);
 
   const updateTripNotes = useCallback((tripId: string, notes: string) => {
     setState(s => ({
@@ -1208,7 +1340,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteTrip = useCallback((tripId: string) => {
-    deleteTenantDoc(tenantCollections.trips, tripId);
+    deleteTenantDoc(tenantCollections.trips, state.businessProfile.id, tripId);
     setState(s => ({
       ...s,
       trips: s.trips.filter(t => t.id !== tripId),
@@ -1217,7 +1349,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Trip voided", body: "Trip manifest deleted.", variant: "info" as const }],
     }));
-  }, []);
+  }, [state.businessProfile.id]);
 
   const cancelBill = useCallback((billId: string, reason: string) => {
     setState(s => {
@@ -1235,7 +1367,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const voidPayment = useCallback((paymentId: string, reason: string) => {
-    deleteTenantDoc(tenantCollections.payments, paymentId);
+    deleteTenantDoc(tenantCollections.payments, state.businessProfile.id, paymentId);
     setState(s => {
       const pay = s.payments.find(p => p.id === paymentId);
       if (!pay) return s;
@@ -1254,7 +1386,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toasts: [...s.toasts, { id: id("t"), title: "Payment voided", body: `Receipt ${pay.paymentNumber} voided.`, variant: "warning" as const }],
       };
     });
-  }, []);
+  }, [state.businessProfile.id]);
 
   const updateTaxSetting = useCallback((taxId: string, updates: Partial<TaxSetting>) => {
     setState(s => ({

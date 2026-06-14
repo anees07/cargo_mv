@@ -18,12 +18,14 @@ service cloud.firestore {
     //   name: string, role: owner|admin|manager|cashier|loading_staff|offloading_staff|viewer,
     //   activeStatus: bool
     //
-    // Root tenant-scoped collections:
+    // Tenant-scoped collections:
+    //   business_profiles/{businessProfileId}/{collectionName}/{docId}
+    //
     //   destinations, customers, catalog_items, item_price_rates, trips,
     //   operations, operation_items, bills, payments, tax_settings,
     //   numbering_sequences, audit_logs, notifications, pdf_documents,
     //   sync_conflicts.
-    // Each document must include businessProfileId: string.
+    // Each tenant document must include businessProfileId: string.
     //
     // These are prototype rules. They default-deny unknown paths and require
     // Firebase Auth plus a matching business_users membership document.
@@ -50,6 +52,11 @@ service cloud.firestore {
       return signedInUser().data.role in ['owner', 'admin'];
     }
 
+    function ownsBusinessProfile(businessProfileId) {
+      return exists(/databases/$(database)/documents/business_profiles/$(businessProfileId))
+        && get(/databases/$(database)/documents/business_profiles/$(businessProfileId)).data.ownerUserId == request.auth.uid;
+    }
+
     function validBusinessUser(data, uid) {
       return data.keys().hasOnly([
           'id', 'uid', 'businessProfileId', 'email', 'name', 'role',
@@ -61,6 +68,28 @@ service cloud.firestore {
         && validString(data.email, 3, 160)
         && validString(data.name, 1, 120)
         && data.role in ['owner', 'admin', 'manager', 'cashier', 'loading_staff', 'offloading_staff', 'viewer']
+        && data.activeStatus is bool;
+    }
+
+    function validBusinessProfile(data, businessProfileId) {
+      return data.keys().hasOnly([
+          'id', 'ownerUserId', 'businessName', 'vesselName',
+          'vesselRegistrationNumber', 'companyName',
+          'companyRegistrationNumber', 'gstNumber',
+          'taxRegistrationStatus', 'phone', 'email', 'address', 'logoEmoji',
+          'defaultCurrency', 'defaultTaxRate',
+          'taxInclusivePricingEnabled', 'activeStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.id == businessProfileId
+        && data.ownerUserId is string
+        && validString(data.businessName, 1, 120)
+        && validString(data.vesselName, 1, 120)
+        && validString(data.vesselRegistrationNumber, 1, 80)
+        && data.defaultCurrency == 'MVR'
+        && data.defaultTaxRate is number
+        && data.defaultTaxRate >= 0
+        && data.defaultTaxRate <= 100
+        && data.taxInclusivePricingEnabled is bool
         && data.activeStatus is bool;
     }
 
@@ -163,34 +192,115 @@ service cloud.firestore {
         ]);
     }
 
-    function canReadTenantDoc() {
-      return isBusinessMember(resource.data.businessProfileId);
-    }
-
-    function canCreateTenantDoc() {
-      return isBusinessMember(request.resource.data.businessProfileId)
-        && validTenantDoc(request.resource.data)
-        && isManagerOrAbove();
-    }
-
-    function canUpdateTenantDoc() {
-      return isBusinessMember(resource.data.businessProfileId)
-        && isBusinessMember(request.resource.data.businessProfileId)
-        && businessProfileUnchanged()
-        && createdAtUnchangedIfPresent()
-        && validTenantDoc(request.resource.data)
-        && isManagerOrAbove();
-    }
-
     match /business_profiles/{businessProfileId} {
       allow read: if isBusinessMember(businessProfileId);
       allow create: if isAuthenticated()
         && request.resource.data.ownerUserId == request.auth.uid
-        && validString(request.resource.data.businessName, 1, 120);
+        && validBusinessProfile(request.resource.data, businessProfileId);
       allow update: if isBusinessMember(businessProfileId)
         && isOwnerOrAdmin()
-        && request.resource.data.ownerUserId == resource.data.ownerUserId;
+        && request.resource.data.ownerUserId == resource.data.ownerUserId
+        && validBusinessProfile(request.resource.data, businessProfileId);
       allow delete: if false;
+
+      match /business_users/{uid} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create: if isBusinessMember(businessProfileId)
+          && validBusinessUser(request.resource.data, uid)
+          && request.resource.data.businessProfileId == businessProfileId
+          && (
+            (
+              request.auth.uid == uid
+              && request.resource.data.role == 'owner'
+            )
+            || (
+              isOwnerOrAdmin()
+              && request.resource.data.role != 'owner'
+            )
+          );
+        allow update: if isBusinessMember(businessProfileId)
+          && validBusinessUser(request.resource.data, uid)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.businessProfileId == businessProfileId
+          && request.resource.data.businessProfileId == resource.data.businessProfileId
+          && (
+            (
+              request.auth.uid == uid
+              && request.resource.data.role == resource.data.role
+            )
+            || (
+              isOwnerOrAdmin()
+              && resource.data.role != 'owner'
+              && request.resource.data.role != 'owner'
+            )
+          );
+        allow delete: if isOwnerOrAdmin()
+          && request.auth.uid != uid
+          && resource.data.role != 'owner'
+          && resource.data.businessProfileId == businessProfileId;
+      }
+
+      match /vessels/{docId} {
+        allow read, write: if false;
+      }
+
+      match /catalog_items/{itemId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && isManagerOrAbove()
+          && validCatalogItem(request.resource.data);
+        allow update: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && request.resource.data.businessProfileId == businessProfileId
+          && isManagerOrAbove()
+          && businessProfileUnchanged()
+          && createdAtUnchangedIfPresent()
+          && validCatalogItem(request.resource.data);
+        allow delete: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && isOwnerOrAdmin();
+      }
+
+      match /item_price_rates/{rateId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && isManagerOrAbove()
+          && validPriceRate(request.resource.data);
+        allow update: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && request.resource.data.businessProfileId == businessProfileId
+          && isManagerOrAbove()
+          && businessProfileUnchanged()
+          && createdAtUnchangedIfPresent()
+          && validPriceRate(request.resource.data);
+        allow delete: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && isOwnerOrAdmin();
+      }
+
+      match /{collectionName}/{docId} {
+        allow read: if collectionName != 'vessels'
+          && isBusinessMember(businessProfileId);
+        allow create: if collectionName != 'vessels'
+          && isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data)
+          && isManagerOrAbove();
+        allow update: if collectionName != 'vessels'
+          && isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && request.resource.data.businessProfileId == businessProfileId
+          && businessProfileUnchanged()
+          && createdAtUnchangedIfPresent()
+          && validTenantDoc(request.resource.data)
+          && isManagerOrAbove();
+        allow delete: if collectionName != 'vessels'
+          && isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && isOwnerOrAdmin();
+      }
     }
 
     match /business_users/{uid} {
@@ -205,6 +315,7 @@ service cloud.firestore {
           (
             request.auth.uid == uid
             && request.resource.data.role == 'owner'
+            && ownsBusinessProfile(request.resource.data.businessProfileId)
           )
           || (
             isOwnerOrAdmin()
@@ -233,39 +344,8 @@ service cloud.firestore {
         && resource.data.businessProfileId == signedInUser().data.businessProfileId;
     }
 
-    match /catalog_items/{itemId} {
-      allow read: if canReadTenantDoc();
-      allow create: if isBusinessMember(request.resource.data.businessProfileId)
-        && isManagerOrAbove()
-        && validCatalogItem(request.resource.data);
-      allow update: if isBusinessMember(resource.data.businessProfileId)
-        && isBusinessMember(request.resource.data.businessProfileId)
-        && isManagerOrAbove()
-        && businessProfileUnchanged()
-        && createdAtUnchangedIfPresent()
-        && validCatalogItem(request.resource.data);
-      allow delete: if isBusinessMember(resource.data.businessProfileId) && isOwnerOrAdmin();
-    }
-
-    match /item_price_rates/{rateId} {
-      allow read: if canReadTenantDoc();
-      allow create: if isBusinessMember(request.resource.data.businessProfileId)
-        && isManagerOrAbove()
-        && validPriceRate(request.resource.data);
-      allow update: if isBusinessMember(resource.data.businessProfileId)
-        && isBusinessMember(request.resource.data.businessProfileId)
-        && isManagerOrAbove()
-        && businessProfileUnchanged()
-        && createdAtUnchangedIfPresent()
-        && validPriceRate(request.resource.data);
-      allow delete: if isBusinessMember(resource.data.businessProfileId) && isOwnerOrAdmin();
-    }
-
     match /{collectionName}/{docId} {
-      allow read: if canReadTenantDoc();
-      allow create: if canCreateTenantDoc();
-      allow update: if canUpdateTenantDoc();
-      allow delete: if isBusinessMember(resource.data.businessProfileId) && isOwnerOrAdmin();
+      allow read, write: if false;
     }
   }
 }

@@ -49,7 +49,7 @@ function withTenant(items) {
   return items.map(item => ({ ...item, businessProfileId }));
 }
 
-async function write(collectionName, id, data) {
+async function writeRoot(collectionName, id, data) {
   try {
     const ref = doc(db, collectionName, id);
     const existing = await getDoc(ref);
@@ -60,6 +60,21 @@ async function write(collectionName, id, data) {
     await setDoc(ref, safeData);
   } catch (error) {
     error.message = `${collectionName}/${id}: ${error.message}`;
+    throw error;
+  }
+}
+
+async function writeTenant(collectionName, id, data) {
+  try {
+    const ref = doc(db, "business_profiles", businessProfileId, collectionName, id);
+    const existing = await getDoc(ref);
+    const existingCreatedAt = existing.exists() ? existing.data().createdAt : undefined;
+    const safeData = existingCreatedAt && data.createdAt
+      ? { ...data, createdAt: existingCreatedAt }
+      : data;
+    await setDoc(ref, safeData);
+  } catch (error) {
+    error.message = `business_profiles/${businessProfileId}/${collectionName}/${id}: ${error.message}`;
     throw error;
   }
 }
@@ -178,12 +193,12 @@ async function seed() {
     { id: "n_002", title: "Payment received", body: "MVR 18,000 partial payment from STO Maldives.", type: "success", createdAt: yesterday, read: true },
   ]);
 
-  await write("business_profiles", businessProfileId, businessProfile);
-  await write("business_users", owner.uid, users[0]);
+  await writeRoot("business_profiles", businessProfileId, businessProfile);
+  await writeRoot("business_users", owner.uid, users[0]);
 
   const writeMany = async (collectionName, items) => {
     for (const item of items) {
-      await write(collectionName, item.id, item);
+      await writeTenant(collectionName, item.id, item);
     }
   };
 

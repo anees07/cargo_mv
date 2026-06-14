@@ -6,45 +6,43 @@ import { MVR, formatDateTime } from "../utils/format";
 const schemaGroups = [
   {
     title: "Core identity",
-    tables: ["business_profiles", "business_users", "roles", "permissions", "business_user_roles", "device_sessions"],
+    tables: ["business_profiles", "business_users"],
   },
   {
     title: "Setup data",
-    tables: ["destinations", "customers", "customer_destinations", "price_levels", "catalog_items", "item_price_rates", "tax_settings", "numbering_sequences"],
+    tables: ["destinations", "customers", "catalog_items", "item_price_rates", "tax_settings", "numbering_sequences"],
   },
   {
     title: "Trips and operations",
-    tables: ["trips", "trip_destinations", "operations", "operation_items"],
+    tables: ["trips", "operations"],
   },
   {
     title: "Billing",
-    tables: ["bills", "bill_items", "invoices", "invoice_items", "payments", "receipts", "customer_ledger_entries"],
+    tables: ["bills", "payments"],
   },
   {
     title: "Files and audit",
-    tables: ["files", "pdf_documents", "audit_logs", "sync_conflicts"],
+    tables: ["audit_logs", "notifications"],
   },
 ];
 
 const edgeFunctions = [
-  { name: "create_business_profile", risk: "high", status: "ready" },
-  { name: "generate_next_number", risk: "critical", status: "ready" },
-  { name: "open_trip", risk: "high", status: "ready" },
-  { name: "end_trip", risk: "critical", status: "ready" },
-  { name: "close_trip", risk: "critical", status: "ready" },
-  { name: "finalize_bill", risk: "critical", status: "ready" },
-  { name: "generate_invoice", risk: "critical", status: "ready" },
-  { name: "post_payment", risk: "critical", status: "ready" },
-  { name: "generate_receipt", risk: "high", status: "ready" },
-  { name: "sync_offline_operations", risk: "high", status: "draft" },
-  { name: "alter_bill_after_trip_end", risk: "critical", status: "draft" },
+  { name: "create_business_profile", risk: "high", status: "client" },
+  { name: "generate_next_number", risk: "critical", status: "client" },
+  { name: "open_trip", risk: "high", status: "client" },
+  { name: "end_trip", risk: "critical", status: "client" },
+  { name: "close_trip", risk: "critical", status: "client" },
+  { name: "finalize_bill", risk: "critical", status: "client" },
+  { name: "post_payment", risk: "critical", status: "client" },
+  { name: "sync_offline_operations", risk: "high", status: "future" },
+  { name: "alter_bill_after_trip_end", risk: "critical", status: "future" },
 ];
 
 const rlsPolicies = [
   "JWT user must be a member of business_profile_id",
-  "All selects scoped by business_profile_id",
+  "All tenant reads use /business_profiles/{businessProfileId}/ subcollections",
   "Financial records use soft delete and immutable finalized snapshots",
-  "Numbering rows locked by business_profile_id + number_type",
+  "Numbering rows scoped by businessProfileId + numberType",
   "Storage paths start with /{business_profile_id}/",
   "Realtime channels subscribe only to current business_profile_id",
 ];
@@ -338,11 +336,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             <Card className="border-l-4 border-l-amber-500 bg-amber-50 p-3.5">
               <p className="text-xs font-bold text-amber-950">🔥 Multi-Tenant Firebase Cloud Firestore Schema</p>
               <p className="mt-1 text-xs leading-relaxed text-amber-900">
-                To power this application purely on Firebase while fulfilling the absolute guard rule — <em>“Everything belongs to a Business Profile”</em> — every root collection document must include an indexed <strong><code className="bg-amber-200/70 px-1 py-0.5 rounded">businessProfileId</code></strong> field, or sit as a subcollection under <strong><code className="bg-amber-200/70 px-1 py-0.5 rounded">/business_profiles/{businessProfile.id}/</code></strong>. Below is the production Cloud Firestore architecture.
+                To power this application purely on Firebase while fulfilling the guard rule <em>“Everything belongs to a Business Profile”</em>, operational data is stored only under <strong><code className="bg-amber-200/70 px-1 py-0.5 rounded">/business_profiles/{businessProfile.id}/...</code></strong>. Root Firestore paths are limited to the business profile document and the authenticated user bootstrap record.
               </p>
             </Card>
 
-            <Section title="Root Collections & Documents">
+            <Section title="Business-Scoped Collections & Documents">
               <div className="space-y-3">
                 {[
                   {
@@ -420,7 +418,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                     },
                   },
                   {
-                    coll: "price_levels",
+                    coll: "item_price_rates",
                     doc: "rate_RIC50_business",
                     desc: "Customer-group or destination specific custom pricing",
                     fields: {
@@ -532,7 +530,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                     },
                   },
                   {
-                    coll: "numbering_locks",
+                    coll: "numbering_sequences",
                     doc: "bp_001_trip",
                     desc: "Distributed transaction counter preventing multi-device numbering collisions",
                     fields: {
@@ -550,7 +548,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Icon name="database" className="h-4 w-4 text-amber-600" />
-                        <span className="font-mono text-sm font-bold text-slate-900">/{c.coll}/{c.doc}</span>
+                        <span className="font-mono text-sm font-bold text-slate-900">
+                          {c.coll === "business_profiles" || c.coll === "business_users"
+                            ? `/${c.coll}/${c.doc}`
+                            : `/business_profiles/${businessProfile.id || "{businessProfileId}"}/${c.coll}/${c.doc}`}
+                        </span>
                       </div>
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">{c.desc}</span>
                     </div>
@@ -567,191 +569,102 @@ final goRouterProvider = Provider<GoRouter>((ref) {
               </div>
             </Section>
 
-            <Section title="Exhaustive Complete Firestore Security Rules Schema (rules_version = '2')">
+            <Section title="Deployed Firestore Security Rules Model">
               <Card className="bg-slate-900 text-slate-200 p-4 font-mono text-xs overflow-x-auto leading-relaxed">
                 <pre>{`rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ========================================================================
-    // Domain Role Clearance Helpers
-    // ========================================================================
-
-    // Helper 1: Verify authenticated user belongs exactly to requested businessProfileId
-    function isBusinessCrew(bpId) {
-      return request.auth != null && 
-        exists(/databases/$(database)/documents/business_users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/business_users/$(request.auth.uid)).data.businessProfileId == bpId;
+    function signedInUser() {
+      return get(/databases/$(database)/documents/business_users/$(request.auth.uid));
     }
 
-    // Helper 2: Verify user clearance role matches one of allowed distinct roles
-    function hasRole(bpId, allowedRoles) {
-      let userDoc = get(/databases/$(database)/documents/business_users/$(request.auth.uid));
-      return isBusinessCrew(bpId) && (userDoc.data.role in allowedRoles);
+    function isBusinessMember(businessProfileId) {
+      return request.auth != null
+        && signedInUser().data.businessProfileId == businessProfileId
+        && signedInUser().data.activeStatus == true;
     }
 
-    // Helper 3: Ensure incoming document resource enforces correct tenant ID
-    function isWritingCorrectTenant(bpId) {
-      return request.resource.data.businessProfileId == bpId;
+    function isManagerOrAbove() {
+      return signedInUser().data.role in ['owner', 'admin', 'manager'];
     }
 
-    // ========================================================================
-    // 1. Business Profiles & User Directory
-    // ========================================================================
-    match /business_profiles/{bpId} {
-      allow create: if request.auth != null; // Edge function creates master setup
-      allow read: if isBusinessCrew(bpId);
-      allow update: if hasRole(bpId, ['owner', 'admin']);
-      allow delete: if hasRole(bpId, ['owner']); // Only Owner can soft-delete profile
+    function isOwnerOrAdmin() {
+      return signedInUser().data.role in ['owner', 'admin'];
+    }
+
+    function validTenantDoc(data) {
+      return data.businessProfileId is string
+        && data.businessProfileId.size() > 0
+        && data.keys().hasOnly([
+          'id', 'businessProfileId', 'createdAt', 'updatedAt', 'activeStatus',
+          'islandName', 'atoll', 'destinationCode', 'sortOrder',
+          'customerType', 'displayName', 'legalName', 'phone', 'email', 'address',
+          'tripNumber', 'vesselName', 'originDestinationId', 'status', 'notes',
+          'operationType', 'destinationId', 'customerId', 'tripId', 'items',
+          'billNumber', 'billType', 'billStatus', 'paymentStatus',
+          'paymentNumber', 'billId', 'amount', 'method', 'reference',
+          'taxName', 'taxRate', 'taxInclusiveEnabled',
+          'numberType', 'prefix', 'currentSequence', 'padding', 'formatTemplate',
+          'actorUserId', 'action', 'entityType', 'entityId', 'summary',
+          'title', 'body', 'read', 'type'
+        ]);
+    }
+
+    match /business_profiles/{businessProfileId} {
+      allow read: if isBusinessMember(businessProfileId);
+      allow create: if request.auth != null
+        && request.resource.data.ownerUserId == request.auth.uid;
+      allow update: if isBusinessMember(businessProfileId) && isOwnerOrAdmin();
+      allow delete: if false;
+
+      match /vessels/{docId} {
+        allow read, write: if false;
+      }
+
+      match /{collectionName}/{docId} {
+        allow read: if collectionName != 'vessels'
+          && isBusinessMember(businessProfileId);
+        allow create, update: if collectionName != 'vessels'
+          && isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data)
+          && isManagerOrAbove();
+        allow delete: if collectionName != 'vessels'
+          && isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && isOwnerOrAdmin();
+      }
     }
 
     match /business_users/{uid} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow create: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                    hasRole(request.resource.data.businessProfileId, ['owner', 'admin']);
-      allow update: if (request.auth.uid == uid) || 
-                    hasRole(resource.data.businessProfileId, ['owner', 'admin']);
-      allow delete: if hasRole(resource.data.businessProfileId, ['owner', 'admin']) && (request.auth.uid != uid);
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.resource.data.uid == uid
+        && request.resource.data.businessProfileId is string;
+      allow delete: if false;
     }
 
-    // ========================================================================
-    // 2. Master Setup Data (Destinations, Customers, Catalog, Pricing, Tax)
-    // ========================================================================
-    match /destinations/{destId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow write: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                   hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager']);
-    }
-
-    match /customers/{custId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow write: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                   hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager', 'cashier']);
-    }
-
-    match /catalog_items/{itemId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow write: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                   hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager', 'loading_staff']);
-    }
-
-    match /price_levels/{rateId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow write: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                   hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager']);
-    }
-
-    match /tax_settings/{taxId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow write: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                   hasRole(request.resource.data.businessProfileId, ['owner']);
-    }
-
-    // ========================================================================
-    // 3. Trip Sailing Manifest Lifecycle
-    // ========================================================================
-    match /trips/{tripId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow create: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                    hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager']);
-      allow update: if isBusinessCrew(resource.data.businessProfileId) && 
-                    hasRole(resource.data.businessProfileId, ['owner', 'admin', 'manager', 'loading_staff', 'offloading_staff']);
-      allow delete: if hasRole(resource.data.businessProfileId, ['owner']);
-    }
-
-    // ========================================================================
-    // 4. Operations & Line-Item Manifests
-    // ========================================================================
-    match /operations/{opId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow create, update: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                            hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager', 'loading_staff', 'offloading_staff']);
-      allow delete: if hasRole(resource.data.businessProfileId, ['owner', 'admin']);
-    }
-
-    match /operation_items/{oiId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow create: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                    hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager', 'loading_staff', 'offloading_staff']);
-      allow update, delete: if hasRole(resource.data.businessProfileId, ['owner', 'admin', 'manager', 'loading_staff']);
-    }
-
-    // ========================================================================
-    // 5. Finalized Accounting Invoices & Payments (Strict Compliance Guard)
-    // ========================================================================
-    match /bills/{billId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow create: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                    hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'manager', 'cashier']);
-      // Compliance core rule: Modifying finalized bills allowed only for Owner/Admin
-      allow update: if hasRole(resource.data.businessProfileId, ['owner', 'admin']);
-      allow delete: if false; // Strict compliance: Hard deletes completely forbidden
-    }
-
-    match /payments/{payId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow create: if isBusinessCrew(request.resource.data.businessProfileId) && 
-                    hasRole(request.resource.data.businessProfileId, ['owner', 'admin', 'cashier']);
-      allow update: if hasRole(resource.data.businessProfileId, ['owner', 'admin']);
-      allow delete: if false; // Payments use compliance soft voids only
-    }
-
-    match /audit_logs/{logId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId) && 
-                  hasRole(resource.data.businessProfileId, ['owner', 'admin', 'manager', 'viewer']);
-      allow create: if isBusinessCrew(request.resource.data.businessProfileId);
-      allow update, delete: if false; // Compliance Core Rule: Audit logs are completely immutable
-    }
-
-    match /numbering_locks/{lockId} {
-      allow read: if isBusinessCrew(resource.data.businessProfileId);
-      allow write: if false; // Updated strictly via atomic Cloud Functions transaction
+    match /{collectionName}/{docId} {
+      allow read, write: if false;
     }
   }
 }`}</pre>
               </Card>
             </Section>
 
-            <Section title="Firebase Cloud Functions Transaction (Atomic Numbering Lock)">
+            <Section title="Current Numbering Storage">
               <Card className="bg-slate-900 text-slate-200 p-4 font-mono text-xs overflow-x-auto">
-                <pre>{`const functions = require('firebase-functions');
-const admin = require('firebase-admin');
-admin.initializeApp();
+                <pre>{`business_profiles/{businessProfileId}/numbering_sequences/{numberType}
 
-exports.generateSafeNumber = functions.https.onCall(async (data, context) => {
-  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required');
-  
-  const { businessProfileId, numberType, destinationCode } = data;
-  const db = admin.firestore();
-  const lockRef = db.collection('numbering_locks').doc(\`\${businessProfileId}_\${numberType}\`);
-
-  return await db.runTransaction(async (transaction) => {
-    const lockDoc = await transaction.get(lockRef);
-    if (!lockDoc.exists) throw new functions.https.HttpsError('not-found', 'Lock record missing');
-
-    const sequenceData = lockDoc.data();
-    const nextSeq = sequenceData.currentSequence + 1;
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    const padded = String(nextSeq).padStart(sequenceData.padding, '0');
-
-    let newNumber = sequenceData.formatTemplate
-      .replace('{YYYY}', String(year))
-      .replace('{MM}', month)
-      .replace('{000000}', padded);
-
-    if (destinationCode) newNumber = newNumber.replace('{DEST}', destinationCode);
-
-    // Atomically increment lock and save last generated signature
-    transaction.update(lockRef, {
-      currentSequence: nextSeq,
-      lastGenerated: newNumber,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    return { safeNumber: newNumber, sequence: nextSeq };
-  });
-});`}</pre>
+{
+  businessProfileId: string,
+  numberType: 'trip' | 'bill' | 'invoice' | 'receipt' | 'payment' | 'customer',
+  prefix: string,
+  currentSequence: number,
+  padding: number,
+  formatTemplate: string,
+  lastGenerated: string
+}`}</pre>
               </Card>
             </Section>
           </div>
@@ -760,7 +673,7 @@ exports.generateSafeNumber = functions.https.onCall(async (data, context) => {
         {tab === "functions" && (
           <div className="space-y-4">
             <Card className="border-l-4 border-l-ocean-600 p-3 text-xs text-slate-600">
-              Sensitive business logic never runs on the client. Flutter calls these functions with JWT, and the function validates membership and role before writing.
+              Current production writes use Firebase Auth plus Cloud Firestore Security Rules. These server functions are future hardening points for workflows that need stronger transactional guarantees.
             </Card>
 
             <div className="space-y-2">
