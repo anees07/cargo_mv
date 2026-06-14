@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="navy" x1="310" y1="210" x2="780" y2="835" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#073B68"/>
+      <stop offset="1" stop-color="#031F3B"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="370" y1="520" x2="715" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22C6C4"/>
+      <stop offset="0.55" stop-color="#069B9E"/>
+      <stop offset="1" stop-color="#047579"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="220" y1="730" x2="820" y2="755" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#078B95"/>
+      <stop offset="0.55" stop-color="#10B2BD"/>
+      <stop offset="1" stop-color="#37D0D2"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="170" y1="470" x2="380" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#FBBF24"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="30" flood-color="#0F172A" flood-opacity="0.18"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#042F43" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#F8FAFC"/>
+  <rect x="104" y="96" width="816" height="816" rx="178" fill="#FFFFFF" filter="url(#cardShadow)"/>
+
+  <path fill="url(#navy)" d="M474 211h93l252 560h-128l-72-165-124 37-93 128H271L474 211Zm60 136-109 300 153-57 54 21-98-264Z"/>
+
+  <g fill="none" stroke="url(#gold)" stroke-linecap="round">
+    <path stroke-width="18" d="M236 417h123"/>
+    <path stroke-width="18" d="M174 462h166"/>
+    <path stroke-width="18" d="M229 508h91"/>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <path fill="#F8FAFC" d="M386 532 530 491l151 59v130l-157 37-138-36V532Z"/>
+    <path fill="url(#teal)" d="M405 548 530 515v155l-125 27V548Z"/>
+    <path fill="#0E8C91" d="M548 524 664 568v103l-116-20V524Z"/>
+    <path fill="#34C7C7" opacity="0.38" d="M589 560h10v82h-10zM621 572h10v74h-10zM650 583h8v63h-8z"/>
+    <path fill="#006A75" opacity="0.55" d="M417 565h17v108h-17zM498 541h17v131h-17z"/>
+    <path fill="none" stroke="#0B5965" stroke-width="8" d="M417 563h95v109h-95z"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" d="M447 554v129M482 545v135M515 537v133"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" d="M405 581h16M405 626h18M405 672h16M437 623h19M471 624h18"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linejoin="round" d="M386 532 530 491l151 59"/>
+  </g>
+
+  <path fill="url(#wave)" d="M225 655c73 68 160 91 264 62 85-23 139-70 212-43 57 21 88 42 112 67-122-47-216-33-310 35-101 72-216 74-278-121Z"/>
+  <path fill="#FFFFFF" d="M470 805c87-43 153-116 250-120 44-2 80 6 109 22-111-13-192 6-291 72-25 17-46 24-68 26Z"/>
+  <path fill="url(#wave)" d="M430 803c94-4 167-89 277-92 50-1 87 8 117 30-108-16-189 10-282 75-36 25-75 35-112 27v-40Z"/>
+</svg>
