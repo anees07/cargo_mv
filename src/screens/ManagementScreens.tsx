@@ -509,7 +509,7 @@ export function SettingsScreen() {
                 <Icon name={isOnline ? "wifi" : "wifi_off"} className={`h-5 w-5 ${isOnline ? "text-emerald-600" : "text-rose-500"}`} />
                 <div className="text-left">
                   <p className="text-sm font-medium text-slate-900">Realtime sync</p>
-                  <p className="text-xs text-slate-500">{isOnline ? "Connected to InsForge" : "Disconnected — tap to reconnect"}</p>
+                  <p className="text-xs text-slate-500">{isOnline ? "Connected to Firebase" : "Disconnected - tap to reconnect"}</p>
                 </div>
               </div>
               <span className={`text-xs font-semibold ${isOnline ? "text-emerald-600" : "text-rose-600"}`}>{isOnline ? "ONLINE" : "OFFLINE"}</span>
@@ -1186,7 +1186,7 @@ export function ProfileScreen() {
             <Icon name={isOnline ? "wifi" : "wifi_off"} className={`h-5 w-5 ${isOnline ? "text-emerald-600" : "text-rose-500"}`} />
             <div className="flex-1 text-left">
               <p className="text-sm font-medium text-slate-900">{isOnline ? "Connected" : "Offline mode"}</p>
-              <p className="text-xs text-slate-500">{isOnline ? "InsForge realtime active" : "Tap to reconnect"}</p>
+              <p className="text-xs text-slate-500">{isOnline ? "Firebase realtime active" : "Tap to reconnect"}</p>
             </div>
             <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"}`} />
           </button>
@@ -1203,7 +1203,7 @@ export function ProfileScreen() {
             Sign out
           </Btn>
           <p className="mt-3 text-center text-xs text-slate-400">
-            AtollCargo v1.0 • InsForge PostgreSQL + Edge Functions
+            AtollCargo v1.0 • Firebase Auth + Cloud Firestore
           </p>
         </div>
       </div>

@@ -50,7 +50,7 @@ const rlsPolicies = [
 ];
 
 // ============================================================================
-// Backend Console — InsForge production blueprint
+// Backend Console — Firebase production blueprint
 // ============================================================================
   export function BackendScreen() {
   const { back, businessProfile, numbering, auditLogs, bills, payments, operations, users } = useApp();
@@ -60,7 +60,7 @@ const rlsPolicies = [
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar
         title="Backend & System Specs"
-        subtitle="PostgreSQL / InsForge, Firebase Firestore, & Flutter GoRouter"
+        subtitle="Firebase Auth, Cloud Firestore, and Flutter GoRouter"
         onBack={back}
       />
 

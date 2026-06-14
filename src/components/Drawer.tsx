@@ -182,7 +182,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
           </button>
 
           <p className="mt-2 text-center text-xs text-slate-400">
-            AtollCargo v1.0 • InsForge PostgreSQL + Edge Functions
+            AtollCargo v1.0 • Firebase Auth + Cloud Firestore
           </p>
         </div>
       </div>

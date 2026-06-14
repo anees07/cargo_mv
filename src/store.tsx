@@ -1,5 +1,13 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
-import * as seed from "./seed";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
+import type { User as FirebaseUser } from "firebase/auth";
+import {
+  createFirebaseOwnerAccount,
+  getFirebaseFirestore,
+  sendFirebasePasswordReset,
+  signInWithFirebase,
+  signOutFirebase,
+} from "./lib/firebase";
 import { MVR } from "./utils/format";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate,
@@ -8,8 +16,8 @@ import type {
 } from "./types";
 
 // ============================================================================
-// State Store — modeled after Riverpod NotifierProvider
-// Mirrors the InsForge PostgreSQL repository pattern.
+// State Store — modeled after Riverpod NotifierProvider.
+// Firebase Auth owns identity; Cloud Firestore owns tenant data.
 // ============================================================================
 
 export type Screen =
@@ -61,11 +69,22 @@ interface AppState {
   selectedDestinationId: string | null;
   isOnline: boolean;
   pendingSyncCount: number;
+  pendingOwnerRegistration: { uid: string; name: string; email: string } | null;
 }
 
 interface AppActions {
-  signIn: (email: string, password: string) => void;
-  signOut: () => void;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  registerOwner: (name: string, email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  createOwnerBusinessProfile: (input: {
+    businessName: string;
+    vesselName: string;
+    vesselReg: string;
+    companyReg: string;
+    gst: string;
+    taxRate: string;
+  }) => Promise<void>;
   selectBusinessProfile: (profileId: string) => void;
   navigate: (s: Screen) => void;
   back: () => void;
@@ -112,22 +131,49 @@ interface AppActions {
 
 const initialState: AppState = {
   isAuthed: false,
-  currentUser: seed.currentUser,
-  businessProfile: seed.businessProfile,
-  users: seed.users,
-  destinations: seed.destinations,
-  customers: seed.customers,
-  catalogItems: seed.catalogItems,
-  itemPriceRates: seed.itemPriceRates,
-  trips: seed.trips,
-  activeTripId: "t_001",
-  operations: seed.operations,
-  bills: seed.bills,
-  payments: seed.payments,
-  taxSettings: seed.taxSettings,
-  numbering: seed.numbering,
-  auditLogs: seed.auditLogs,
-  notifications: seed.notifications,
+  currentUser: {
+    id: "",
+    name: "Cargo Operator",
+    email: "",
+    role: "viewer",
+    businessProfileId: "",
+    avatar: "CO",
+    online: false,
+  },
+  businessProfile: {
+    id: "",
+    ownerUserId: "",
+    businessName: "AtollCargo",
+    vesselName: "",
+    vesselRegistrationNumber: "",
+    companyName: "",
+    companyRegistrationNumber: "",
+    gstNumber: "",
+    taxRegistrationStatus: "unregistered",
+    phone: "",
+    email: "",
+    address: "",
+    logoEmoji: "AC",
+    defaultCurrency: "MVR",
+    defaultTaxRate: 8,
+    taxInclusivePricingEnabled: true,
+    activeStatus: true,
+    createdAt: "",
+  },
+  users: [],
+  destinations: [],
+  customers: [],
+  catalogItems: [],
+  itemPriceRates: [],
+  trips: [],
+  activeTripId: null,
+  operations: [],
+  bills: [],
+  payments: [],
+  taxSettings: [],
+  numbering: [],
+  auditLogs: [],
+  notifications: [],
   toasts: [],
   screen: "splash",
   screenStack: [],
@@ -137,16 +183,194 @@ const initialState: AppState = {
   selectedDestinationId: null,
   isOnline: true,
   pendingSyncCount: 0,
+  pendingOwnerRegistration: null,
 };
 
 const AppContext = createContext<(AppState & AppActions) | null>(null);
 
 const id = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 
-const addAudit = (logs: AuditLog[], entry: Omit<AuditLog, "id" | "createdAt" | "businessProfileId">) => [
-  { ...entry, id: id("al"), createdAt: new Date().toISOString(), businessProfileId: "bp_001" },
-  ...logs,
-];
+const tenantCollections = {
+  users: "business_users",
+  destinations: "destinations",
+  customers: "customers",
+  catalogItems: "catalog_items",
+  itemPriceRates: "item_price_rates",
+  trips: "trips",
+  operations: "operations",
+  bills: "bills",
+  payments: "payments",
+  taxSettings: "tax_settings",
+  numbering: "numbering_sequences",
+  auditLogs: "audit_logs",
+  notifications: "notifications",
+} as const;
+
+async function loadTenantCollection<T extends { id?: string }>(
+  collectionName: string,
+  businessProfileId: string,
+): Promise<T[]> {
+  const db = getFirebaseFirestore();
+  const snapshot = await getDocs(query(
+    collection(db, collectionName),
+    where("businessProfileId", "==", businessProfileId),
+  ));
+  return snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as T);
+}
+
+const persistTenantDoc = (collectionName: string, docId: string, data: Record<string, unknown>) => {
+  void setDoc(doc(getFirebaseFirestore(), collectionName, docId), data).catch(error => {
+    console.error(`Failed to persist ${collectionName}/${docId}`, error);
+  });
+};
+
+const deleteTenantDoc = (collectionName: string, docId: string) => {
+  void deleteDoc(doc(getFirebaseFirestore(), collectionName, docId)).catch(error => {
+    console.error(`Failed to delete ${collectionName}/${docId}`, error);
+  });
+};
+
+const persistTenantState = (state: AppState) => {
+  if (!state.isAuthed || !state.businessProfile.id) return;
+  const businessProfileId = state.businessProfile.id;
+  persistTenantDoc("business_profiles", businessProfileId, state.businessProfile as unknown as Record<string, unknown>);
+  state.users.forEach(user => persistTenantDoc(tenantCollections.users, user.id, {
+    ...user,
+    uid: user.id,
+    activeStatus: true,
+  }));
+  state.destinations.forEach(item => persistTenantDoc(tenantCollections.destinations, item.id, item as unknown as Record<string, unknown>));
+  state.customers.forEach(item => persistTenantDoc(tenantCollections.customers, item.id, item as unknown as Record<string, unknown>));
+  state.catalogItems.forEach(item => persistTenantDoc(tenantCollections.catalogItems, item.id, item as unknown as Record<string, unknown>));
+  state.itemPriceRates.forEach(item => persistTenantDoc(tenantCollections.itemPriceRates, item.id, item as unknown as Record<string, unknown>));
+  state.trips.forEach(item => persistTenantDoc(tenantCollections.trips, item.id, item as unknown as Record<string, unknown>));
+  state.operations.forEach(item => persistTenantDoc(tenantCollections.operations, item.id, item as unknown as Record<string, unknown>));
+  state.bills.forEach(item => persistTenantDoc(tenantCollections.bills, item.id, item as unknown as Record<string, unknown>));
+  state.payments.forEach(item => persistTenantDoc(tenantCollections.payments, item.id, item as unknown as Record<string, unknown>));
+  state.taxSettings.forEach(item => persistTenantDoc(tenantCollections.taxSettings, item.id, item as unknown as Record<string, unknown>));
+  state.numbering.forEach(item => persistTenantDoc(tenantCollections.numbering, item.numberType, {
+    ...item,
+    id: item.numberType,
+    businessProfileId,
+  }));
+  state.auditLogs.slice(0, 250).forEach(item => persistTenantDoc(tenantCollections.auditLogs, item.id, item as unknown as Record<string, unknown>));
+  state.notifications.forEach(item => persistTenantDoc(tenantCollections.notifications, item.id, {
+    ...item,
+    businessProfileId,
+  } as unknown as Record<string, unknown>));
+};
+
+const initials = (nameOrEmail: string) =>
+  nameOrEmail
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join("") || "U";
+
+const userFromFirebase = (firebaseUser: FirebaseUser, businessProfileId: string, role: User["role"] = "owner"): User => ({
+  id: firebaseUser.uid,
+  name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Cargo Operator",
+  email: firebaseUser.email || "",
+  role,
+  businessProfileId,
+  avatar: initials(firebaseUser.displayName || firebaseUser.email || "Cargo Operator"),
+  online: true,
+});
+
+const businessUserFromDoc = (data: Record<string, unknown>): User => ({
+  id: String(data.uid || data.id || ""),
+  name: String(data.name || data.email || "Cargo Operator"),
+  email: String(data.email || ""),
+  role: (data.role || "viewer") as User["role"],
+  businessProfileId: String(data.businessProfileId || ""),
+  avatar: String(data.avatar || initials(String(data.name || data.email || "Cargo Operator"))),
+  online: Boolean(data.online ?? true),
+});
+
+const addAudit = (
+  logs: AuditLog[],
+  businessProfileId: string,
+  entry: Omit<AuditLog, "id" | "createdAt" | "businessProfileId">,
+) => {
+  const auditEntry = { ...entry, id: id("al"), createdAt: new Date().toISOString(), businessProfileId };
+  persistTenantDoc(tenantCollections.auditLogs, auditEntry.id, auditEntry);
+  return [auditEntry, ...logs];
+};
+
+async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<string, unknown>) {
+  const db = getFirebaseFirestore();
+  const businessProfileId = String(userData.businessProfileId || `bp_${firebaseUser.uid}`);
+  const role = (userData.role || "owner") as User["role"];
+  const profileSnapshot = await getDoc(doc(db, "business_profiles", businessProfileId));
+  if (!profileSnapshot.exists()) {
+    return {
+      missingProfile: true,
+      businessProfileId,
+      role,
+    };
+  }
+
+  const [
+    users,
+    destinations,
+    customers,
+    catalogItems,
+    itemPriceRates,
+    trips,
+    operations,
+    bills,
+    payments,
+    taxSettings,
+    numbering,
+    auditLogs,
+    notifications,
+  ] = await Promise.all([
+    loadTenantCollection<Record<string, unknown>>(tenantCollections.users, businessProfileId),
+    loadTenantCollection<Destination>(tenantCollections.destinations, businessProfileId),
+    loadTenantCollection<Customer>(tenantCollections.customers, businessProfileId),
+    loadTenantCollection<CatalogItem>(tenantCollections.catalogItems, businessProfileId),
+    loadTenantCollection<ItemPriceRate>(tenantCollections.itemPriceRates, businessProfileId),
+    loadTenantCollection<Trip>(tenantCollections.trips, businessProfileId),
+    loadTenantCollection<Operation>(tenantCollections.operations, businessProfileId),
+    loadTenantCollection<Bill>(tenantCollections.bills, businessProfileId),
+    loadTenantCollection<Payment>(tenantCollections.payments, businessProfileId),
+    loadTenantCollection<TaxSetting>(tenantCollections.taxSettings, businessProfileId),
+    loadTenantCollection<NumberingSequence & { id?: string; businessProfileId?: string }>(tenantCollections.numbering, businessProfileId),
+    loadTenantCollection<AuditLog>(tenantCollections.auditLogs, businessProfileId),
+    loadTenantCollection<AppNotification & { businessProfileId?: string }>(tenantCollections.notifications, businessProfileId),
+  ]);
+
+  const currentUser = businessUserFromDoc({
+    uid: firebaseUser.uid,
+    name: firebaseUser.displayName,
+    email: firebaseUser.email,
+    businessProfileId,
+    role,
+    ...userData,
+  });
+  const activeTrip = trips.find(trip => ["open", "loading", "sailing", "offloading"].includes(trip.status));
+
+  return {
+    missingProfile: false,
+    currentUser,
+    businessProfile: { id: profileSnapshot.id, ...profileSnapshot.data() } as BusinessProfile,
+    users: users.map(businessUserFromDoc),
+    destinations: destinations.sort((a, b) => a.sortOrder - b.sortOrder),
+    customers,
+    catalogItems,
+    itemPriceRates,
+    trips: trips.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    activeTripId: activeTrip?.id || null,
+    operations,
+    bills: bills.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    payments: payments.sort((a, b) => b.collectedAt.localeCompare(a.collectedAt)),
+    taxSettings,
+    numbering,
+    auditLogs: auditLogs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    notifications,
+  };
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(initialState);
@@ -159,17 +383,174 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, []);
 
-  const signIn = useCallback((_email: string, _password: string) => {
-    // If user belongs to multiple profiles, route to select_profile. We'll simulate that here.
-    setState(s => ({ ...s, isAuthed: true, screen: "select_profile", screenStack: [] }));
+  useEffect(() => {
+    if (!state.isAuthed || !state.businessProfile.id) return;
+    const timeout = window.setTimeout(() => persistTenantState(state), 350);
+    return () => window.clearTimeout(timeout);
+  }, [
+    state.isAuthed,
+    state.businessProfile,
+    state.users,
+    state.destinations,
+    state.customers,
+    state.catalogItems,
+    state.itemPriceRates,
+    state.trips,
+    state.operations,
+    state.bills,
+    state.payments,
+    state.taxSettings,
+    state.numbering,
+    state.auditLogs,
+    state.notifications,
+  ]);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const credential = await signInWithFirebase(email, password);
+    const db = getFirebaseFirestore();
+    const userDoc = await getDoc(doc(db, "business_users", credential.user.uid));
+    const userData = userDoc.exists() ? userDoc.data() : null;
+    const businessProfileId = typeof userData?.businessProfileId === "string" ? userData.businessProfileId : `bp_${credential.user.uid}`;
+    const role = typeof userData?.role === "string" ? userData.role as User["role"] : "owner";
+    const tenantState = userData ? await loadTenantState(credential.user, userData) : null;
+    setState(s => ({
+      ...s,
+      isAuthed: true,
+      ...(tenantState && !tenantState.missingProfile ? tenantState : {
+        currentUser: userFromFirebase(credential.user, businessProfileId, role),
+      }),
+      screen: tenantState && !tenantState.missingProfile ? "dashboard" : "business_setup",
+      screenStack: [],
+      pendingOwnerRegistration: tenantState && !tenantState.missingProfile ? null : {
+        uid: credential.user.uid,
+        name: credential.user.displayName || credential.user.email?.split("@")[0] || "Cargo Operator",
+        email: credential.user.email || email,
+      },
+    }));
   }, []);
+
+  const registerOwner = useCallback(async (name: string, email: string, password: string) => {
+    const credential = await createFirebaseOwnerAccount(name, email, password);
+    const pendingOwnerRegistration = {
+      uid: credential.user.uid,
+      name: name.trim(),
+      email: credential.user.email || email.trim(),
+    };
+    setState(s => ({
+      ...s,
+      isAuthed: true,
+      currentUser: userFromFirebase(credential.user, `bp_${credential.user.uid}`, "owner"),
+      pendingOwnerRegistration,
+      screen: "business_setup",
+      screenStack: [],
+    }));
+  }, []);
+
+  const sendPasswordReset = useCallback(async (email: string) => {
+    await sendFirebasePasswordReset(email);
+  }, []);
+
+  const createOwnerBusinessProfile = useCallback(async (input: {
+    businessName: string;
+    vesselName: string;
+    vesselReg: string;
+    companyReg: string;
+    gst: string;
+    taxRate: string;
+  }) => {
+    const owner = state.pendingOwnerRegistration;
+    if (!owner) {
+      throw new Error("Create an owner account before setting up a business profile.");
+    }
+    const db = getFirebaseFirestore();
+    const businessProfileId = `bp_${owner.uid}`;
+    const createdAt = new Date().toISOString();
+    const businessProfile: BusinessProfile = {
+      id: businessProfileId,
+      ownerUserId: owner.uid,
+      businessName: input.businessName.trim(),
+      vesselName: input.vesselName.trim(),
+      vesselRegistrationNumber: input.vesselReg.trim(),
+      companyName: input.businessName.trim(),
+      companyRegistrationNumber: input.companyReg.trim(),
+      gstNumber: input.gst.trim(),
+      taxRegistrationStatus: input.gst.trim() ? "registered" : "unregistered",
+      phone: "",
+      email: owner.email,
+      address: "",
+      logoEmoji: "AC",
+      defaultCurrency: "MVR",
+      defaultTaxRate: Number(input.taxRate) || 0,
+      taxInclusivePricingEnabled: true,
+      activeStatus: true,
+      createdAt,
+    };
+    const currentUser: User = {
+      id: owner.uid,
+      name: owner.name,
+      email: owner.email,
+      role: "owner",
+      businessProfileId,
+      avatar: initials(owner.name || owner.email),
+      online: true,
+    };
+
+    await setDoc(doc(db, "business_profiles", businessProfileId), businessProfile);
+    const ownerUser = {
+      uid: owner.uid,
+      id: owner.uid,
+      name: owner.name,
+      email: owner.email,
+      role: "owner",
+      businessProfileId,
+      activeStatus: true,
+      createdAt,
+      avatar: currentUser.avatar,
+      online: true,
+    };
+    const taxSetting: TaxSetting = {
+      id: "tx_001",
+      businessProfileId,
+      taxName: "GST",
+      taxRate: businessProfile.defaultTaxRate,
+      taxInclusiveEnabled: businessProfile.taxInclusivePricingEnabled,
+      activeStatus: true,
+    };
+    const numberingSequences = [
+      { numberType: "trip", prefix: "TRIP", currentSequence: 0, formatTemplate: "TRIP-{YYYY}-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "bill", prefix: "BILL", currentSequence: 0, formatTemplate: "BILL-{DEST}-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "invoice", prefix: "INV", currentSequence: 0, formatTemplate: "INV-{YYYY}-{MM}-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "receipt", prefix: "RCP", currentSequence: 0, formatTemplate: "RCP-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "payment", prefix: "PAY", currentSequence: 0, formatTemplate: "PAY-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "customer", prefix: "CUS", currentSequence: 0, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "" },
+    ].map(sequence => ({ ...sequence, id: sequence.numberType, businessProfileId }));
+    await Promise.all([
+      setDoc(doc(db, "business_users", owner.uid), ownerUser),
+      setDoc(doc(db, tenantCollections.taxSettings, taxSetting.id), taxSetting),
+      ...numberingSequences.map(sequence => setDoc(doc(db, tenantCollections.numbering, sequence.id), sequence)),
+    ]);
+
+    setState(s => ({
+      ...s,
+      isAuthed: true,
+      currentUser,
+      businessProfile,
+      users: [currentUser],
+      taxSettings: [taxSetting],
+      numbering: numberingSequences,
+      pendingOwnerRegistration: null,
+      screen: "dashboard",
+      screenStack: [],
+    }));
+  }, [state.pendingOwnerRegistration]);
 
   const selectBusinessProfile = useCallback((_profileId: string) => {
     setState(s => ({ ...s, screen: "dashboard", screenStack: [] }));
   }, []);
 
-  const signOut = useCallback(() => {
-    setState(s => ({ ...s, isAuthed: false, screen: "welcome", screenStack: [] }));
+  const signOut = useCallback(async () => {
+    await signOutFirebase();
+    setState(s => ({ ...s, isAuthed: false, screen: "welcome", screenStack: [], pendingOwnerRegistration: null }));
   }, []);
 
   const navigate = useCallback((screen: Screen) => {
@@ -205,7 +586,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...s,
         trips: s.trips.map(t => t.id === tripId ? { ...t, status: "loading", actualDepartureAt: new Date().toISOString() } : t),
         activeTripId: tripId,
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "trip.open",
           entityType: "trip", entityId: tripId, summary: `Opened trip ${trip.tripNumber}`,
         }),
@@ -218,7 +599,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({
       ...s,
       trips: s.trips.map(t => t.id === tripId ? { ...t, status: "ended", endedBy: s.currentUser.id, actualArrivalAt: new Date().toISOString(), endedAt: new Date().toISOString() } : t),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "trip.end",
         entityType: "trip", entityId: tripId, summary: `Ended trip ${s.trips.find(t => t.id === tripId)?.tripNumber}`,
       }),
@@ -258,7 +639,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...s,
         numbering: s.numbering.map(n => n.numberType === type ? { ...n, currentSequence: newSeq, lastGenerated: formatted } : n),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "numbering.generate",
           entityType: "numbering", entityId: `n_${type}`,
           summary: `Generated ${type} number: ${formatted}`,
@@ -333,7 +714,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({
       ...s,
       bills: s.bills.map(b => b.id === billId ? { ...b, billStatus: "finalized", paymentStatus: b.billType === "credit" ? "unpaid" : "paid", paidAmount: b.billType === "credit" ? 0 : b.grandTotal, finalizedBy: s.currentUser.id, finalizedAt: new Date().toISOString() } : b),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "billing.finalize",
         entityType: "bill", entityId: billId,
         summary: `Finalized bill ${s.bills.find(b => b.id === billId)?.billNumber}`,
@@ -367,7 +748,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           billStatus: isPaid ? "paid" : "partially_paid",
         } : b),
         numbering: s.numbering.map(n => n.numberType === "receipt" ? { ...n, currentSequence: n.currentSequence + 1, lastGenerated: receiptNum } : n),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "payment.post",
           entityType: "payment", entityId: newPayment.id,
           summary: `Posted MVR ${amount.toFixed(2)} payment — ${receiptNum}`,
@@ -399,7 +780,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...s,
       trips: [newTrip, ...s.trips],
       numbering: s.numbering.map(n => n.numberType === "trip" ? { ...n, currentSequence: newSeq, lastGenerated: tripNumber } : n),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "trip.create",
         entityType: "trip", entityId: newTrip.id,
         summary: `Created draft trip ${tripNumber}`,
@@ -507,7 +888,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...s,
         bills: [newBill, ...s.bills],
         numbering: s.numbering.map(n => n.numberType === "bill" ? { ...n, currentSequence: newSeq, lastGenerated: billNumber } : n),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "billing.create",
           entityType: "bill",
@@ -561,7 +942,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         selectedBillId: newBill.id,
         bills: [newBill, ...s.bills],
         numbering: s.numbering.map(n => n.numberType === "bill" ? { ...n, currentSequence: newSeq, lastGenerated: billNumber } : n),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "billing.create",
           entityType: "bill",
@@ -578,7 +959,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({
       ...s,
       trips: s.trips.map(t => t.id === tripId ? { ...t, status: "closed", closedBy: s.currentUser.id, closedAt: new Date().toISOString() } : t),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id,
         action: "trip.close",
         entityType: "trip",
@@ -608,7 +989,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...s,
         businessProfile: updated,
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "settings.update",
           entityType: "business_profile",
@@ -632,7 +1013,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...s,
         users: [...s.users, created],
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "users.invite",
           entityType: "user",
@@ -652,7 +1033,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...s,
         trips: s.trips.map(t => t.id === tripId ? { ...t, status } : t),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "trip.update_status",
           entityType: "trip",
@@ -689,7 +1070,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...s,
         bills: s.bills.map(b => b.id === billId ? newBill : b),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id,
           action: "billing.alter_post_trip",
           entityType: "bill",
@@ -705,7 +1086,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({
       ...s,
       users: s.users.map(u => u.id === userId ? { ...u, ...updates } : u),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "user.update", entityType: "user", entityId: userId, summary: `Updated user settings for ${s.users.find(u => u.id === userId)?.name}`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "User updated", body: "Changes applied successfully.", variant: "success" as const }],
@@ -713,10 +1094,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteUser = useCallback((userId: string) => {
+    deleteTenantDoc(tenantCollections.users, userId);
     setState(s => ({
       ...s,
       users: s.users.filter(u => u.id !== userId),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "user.delete", entityType: "user", entityId: userId, summary: `Removed crew member from directory`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "User removed", body: "User was deleted.", variant: "info" as const }],
@@ -727,7 +1109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({
       ...s,
       destinations: s.destinations.map(d => d.id === destId ? { ...d, ...updates } : d),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "destination.update", entityType: "destination", entityId: destId, summary: `Updated destination ${s.destinations.find(d => d.id === destId)?.islandName}`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Destination updated", body: "Island settings updated.", variant: "success" as const }],
@@ -735,10 +1117,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteDestination = useCallback((destId: string) => {
+    deleteTenantDoc(tenantCollections.destinations, destId);
     setState(s => ({
       ...s,
       destinations: s.destinations.filter(d => d.id !== destId),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "destination.delete", entityType: "destination", entityId: destId, summary: `Removed island destination from operational scope`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Destination removed", body: "Island deleted.", variant: "info" as const }],
@@ -749,7 +1132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({
       ...s,
       customers: s.customers.map(c => c.id === customerId ? { ...c, ...updates } : c),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "customer.update", entityType: "customer", entityId: customerId, summary: `Updated customer settings for ${s.customers.find(c => c.id === customerId)?.displayName}`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Customer updated", body: "Customer ledger settings updated.", variant: "success" as const }],
@@ -757,10 +1140,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteCustomer = useCallback((customerId: string) => {
+    deleteTenantDoc(tenantCollections.customers, customerId);
     setState(s => ({
       ...s,
       customers: s.customers.filter(c => c.id !== customerId),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "customer.delete", entityType: "customer", entityId: customerId, summary: `Removed customer profile`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Customer removed", body: "Customer deleted.", variant: "info" as const }],
@@ -790,7 +1174,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...s,
         catalogItems: s.catalogItems.map(i => i.id === itemId ? { ...i, ...updates } : i),
         itemPriceRates,
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "catalog.update", entityType: "catalog_item", entityId: itemId, summary: `Updated catalog item ${updates.itemName || ""}`,
         }),
         toasts: [...s.toasts, { id: id("t"), title: "Catalog updated", body: "Item specs saved.", variant: "success" as const }],
@@ -799,11 +1183,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteCatalogItem = useCallback((itemId: string) => {
+    deleteTenantDoc(tenantCollections.catalogItems, itemId);
+    state.itemPriceRates.filter(rate => rate.itemId === itemId).forEach(rate => deleteTenantDoc(tenantCollections.itemPriceRates, rate.id));
     setState(s => ({
       ...s,
       catalogItems: s.catalogItems.filter(i => i.id !== itemId),
       itemPriceRates: s.itemPriceRates.filter(r => r.itemId !== itemId),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "catalog.delete", entityType: "catalog_item", entityId: itemId, summary: `Removed cargo item from master catalog`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Catalog item removed", body: "Cargo item deleted.", variant: "info" as const }],
@@ -814,7 +1200,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({
       ...s,
       trips: s.trips.map(t => t.id === tripId ? { ...t, notes } : t),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "trip.update_notes", entityType: "trip", entityId: tripId, summary: `Updated trip notes for ${s.trips.find(t => t.id === tripId)?.tripNumber}`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Trip notes saved", body: "Live manifest updated.", variant: "success" as const }],
@@ -822,10 +1208,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteTrip = useCallback((tripId: string) => {
+    deleteTenantDoc(tenantCollections.trips, tripId);
     setState(s => ({
       ...s,
       trips: s.trips.filter(t => t.id !== tripId),
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "trip.delete", entityType: "trip", entityId: tripId, summary: `Voided sailing journey manifest`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Trip voided", body: "Trip manifest deleted.", variant: "info" as const }],
@@ -839,7 +1226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...s,
         bills: s.bills.map(b => b.id === billId ? { ...b, billStatus: "cancelled" } : b),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "billing.cancel", entityType: "bill", entityId: billId, summary: `Cancelled financial document ${bill.billNumber}. Reason: ${reason}`,
         }),
         toasts: [...s.toasts, { id: id("t"), title: "Bill cancelled", body: `${bill.billNumber} voided successfully.`, variant: "warning" as const }],
@@ -848,6 +1235,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const voidPayment = useCallback((paymentId: string, reason: string) => {
+    deleteTenantDoc(tenantCollections.payments, paymentId);
     setState(s => {
       const pay = s.payments.find(p => p.id === paymentId);
       if (!pay) return s;
@@ -860,7 +1248,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           paymentStatus: Math.max(0, b.paidAmount - pay.amount) >= b.grandTotal ? "paid" : Math.max(0, b.paidAmount - pay.amount) > 0 ? "partial" : "unpaid",
           billStatus: Math.max(0, b.paidAmount - pay.amount) >= b.grandTotal ? "paid" : "partially_paid",
         } : b),
-        auditLogs: addAudit(s.auditLogs, {
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
           actorUserId: s.currentUser.id, action: "payment.void", entityType: "payment", entityId: paymentId, summary: `Voided payment receipt ${pay.paymentNumber} (${MVR(pay.amount)}). Reason: ${reason}`,
         }),
         toasts: [...s.toasts, { id: id("t"), title: "Payment voided", body: `Receipt ${pay.paymentNumber} voided.`, variant: "warning" as const }],
@@ -873,7 +1261,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...s,
       taxSettings: s.taxSettings.map(t => t.id === taxId ? { ...t, ...updates } : t),
       businessProfile: updates.taxRate !== undefined ? { ...s.businessProfile, defaultTaxRate: updates.taxRate } : s.businessProfile,
-      auditLogs: addAudit(s.auditLogs, {
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
         actorUserId: s.currentUser.id, action: "tax.update", entityType: "tax_setting", entityId: taxId, summary: `Adjusted global GST tax parameter`,
       }),
       toasts: [...s.toasts, { id: id("t"), title: "Tax settings updated", body: "Master GST rules updated.", variant: "success" as const }],
@@ -882,7 +1270,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppState & AppActions = {
     ...state,
-    signIn, signOut, selectBusinessProfile, navigate, back,
+    signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
     addOperationItem, removeOperationItem,
     finalizeBill, postPayment, createTrip,

@@ -525,10 +525,10 @@ function ItemPicker({ items, customer, getPrice, operationType, availability, on
       <div className="px-2 pt-1">
         <button
           onClick={() => {
-            const mockScanned = items.find(i => i.itemCode === "FLR-50") || items[1] || items[0];
-            if (mockScanned) {
-              setSelected(mockScanned);
-              setPrice(getPrice(mockScanned, customer));
+            const scannedItem = items.find(i => i.itemCode === "FLR-50") || items[1] || items[0];
+            if (scannedItem) {
+              setSelected(scannedItem);
+              setPrice(getPrice(scannedItem, customer));
             }
           }}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-ocean-400 bg-ocean-50/60 py-2.5 text-xs font-bold text-ocean-900 hover:bg-ocean-100/80 active:bg-ocean-200"

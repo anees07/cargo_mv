@@ -15,7 +15,7 @@ export function SplashScreen() {
       <p className="mt-2 text-sm text-ocean-100">Maldives Cargo Logistics</p>
       <div className="absolute bottom-12 flex items-center gap-2 text-xs text-ocean-200">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        Connected to InsForge
+        Connected to Firebase
       </div>
     </div>
   );
@@ -65,7 +65,7 @@ export function WelcomeScreen() {
           Create new account
         </Btn>
         <p className="mt-4 text-center text-xs text-slate-400">
-          Powered by InsForge • PostgreSQL • JWT Auth
+          Powered by Firebase Auth • Cloud Firestore
         </p>
       </div>
     </div>
@@ -76,20 +76,24 @@ export function WelcomeScreen() {
 // Login Screen
 // ============================================================================
 export function LoginScreen() {
-  const { signIn, navigate, toast } = useApp();
-  const [email, setEmail] = useState("ibrahim@atollmarine.mv");
-  const [password, setPassword] = useState("demo");
+  const { signIn, navigate, toast, sendPasswordReset } = useApp();
+  const [email, setEmail] = useState("demo@atollcargo.mv");
+  const [password, setPassword] = useState("AtollCargoDemo#2026");
   const [loading, setLoading] = useState(false);
 
   const [showForgot, setShowForgot] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
 
-  const handleSignIn = () => {
+  const handleSignIn = async () => {
     setLoading(true);
-    setTimeout(() => {
-      signIn(email, password);
+    try {
+      await signIn(email, password);
+      toast({ title: "Signed in", body: "Firebase Auth session is active.", variant: "success" });
+    } catch (error) {
+      toast({ title: "Sign in failed", body: error instanceof Error ? error.message : "Check your email and password.", variant: "error" });
+    } finally {
       setLoading(false);
-    }, 700);
+    }
   };
 
   return (
@@ -131,8 +135,8 @@ export function LoginScreen() {
         </div>
 
         <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
-          <p className="text-xs font-semibold text-ocean-900">Demo accounts</p>
-          <p className="mt-1 text-xs text-slate-600">Pre-filled credentials are bound to the demo business profile. Tap sign in to continue.</p>
+          <p className="text-xs font-semibold text-ocean-900">Demo Firebase account</p>
+          <p className="mt-1 text-xs text-slate-600">The prefilled owner account is stored in Firebase Auth and loads live tenant data from Cloud Firestore.</p>
         </Card>
       </div>
 
@@ -154,9 +158,14 @@ export function LoginScreen() {
             size="lg"
             icon="check"
             disabled={!resetEmail.trim()}
-            onClick={() => {
-              toast({ title: "Reset link sent", body: `Instructions dispatched to ${resetEmail}.`, variant: "success" });
-              setShowForgot(false);
+            onClick={async () => {
+              try {
+                await sendPasswordReset(resetEmail);
+                toast({ title: "Reset link sent", body: `Instructions dispatched to ${resetEmail}.`, variant: "success" });
+                setShowForgot(false);
+              } catch (error) {
+                toast({ title: "Reset failed", body: error instanceof Error ? error.message : "Could not send reset email.", variant: "error" });
+              }
             }}
           >
             Send recovery link
@@ -237,7 +246,7 @@ export function SelectProfileScreen() {
 // Register Screen — Choose to create Business Profile or join Crew by Invite
 // ============================================================================
 export function RegisterScreen() {
-  const { navigate, toast } = useApp();
+  const { navigate, toast, registerOwner } = useApp();
   const [mode, setMode] = useState<"owner" | "crew">("owner");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -245,18 +254,20 @@ export function RegisterScreen() {
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    if (mode === "crew") {
+      toast({ title: "Invite flow pending", body: "Crew invite validation will be added after owner onboarding.", variant: "info" });
+      return;
+    }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      await registerOwner(name, email, password);
+      toast({ title: "Account created", body: "Let's configure your business profile.", variant: "success" });
+    } catch (error) {
+      toast({ title: "Registration failed", body: error instanceof Error ? error.message : "Could not create Firebase Auth account.", variant: "error" });
+    } finally {
       setLoading(false);
-      if (mode === "owner") {
-        toast({ title: "Account created", body: "Let's configure your business profile.", variant: "success" });
-        navigate("business_setup");
-      } else {
-        toast({ title: "Successfully joined crew", body: "Connected to MV Ocean Star operational manifest.", variant: "success" });
-        navigate("dashboard");
-      }
-    }, 800);
+    }
   };
 
   return (
@@ -352,8 +363,9 @@ export function RegisterScreen() {
 // Register / Business Setup
 // ============================================================================
 export function BusinessSetupScreen() {
-  const { navigate, toast } = useApp();
+  const { navigate, toast, createOwnerBusinessProfile } = useApp();
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     businessName: "Atoll Marine Services",
     vesselName: "MV Ocean Star",
@@ -422,11 +434,18 @@ export function BusinessSetupScreen() {
       </div>
 
       <div className="border-t border-slate-200 bg-white p-4">
-        <Btn fullWidth size="lg" onClick={() => {
+        <Btn fullWidth size="lg" loading={saving} onClick={async () => {
           if (step < steps.length - 1) setStep(step + 1);
           else {
-            toast({ title: "Business profile created", body: "You are now the Owner.", variant: "success" });
-            navigate("dashboard");
+            setSaving(true);
+            try {
+              await createOwnerBusinessProfile(form);
+              toast({ title: "Business profile created", body: "Firestore owner tenant is ready.", variant: "success" });
+            } catch (error) {
+              toast({ title: "Setup failed", body: error instanceof Error ? error.message : "Could not save business profile.", variant: "error" });
+            } finally {
+              setSaving(false);
+            }
           }
         }}>
           {step < steps.length - 1 ? "Continue" : "Finish setup"}

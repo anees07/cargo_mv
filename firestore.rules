@@ -50,6 +50,20 @@ service cloud.firestore {
       return signedInUser().data.role in ['owner', 'admin'];
     }
 
+    function validBusinessUser(data, uid) {
+      return data.keys().hasOnly([
+          'id', 'uid', 'businessProfileId', 'email', 'name', 'role',
+          'avatar', 'online', 'activeStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.uid == uid
+        && data.id == uid
+        && validBusinessProfileId(data)
+        && validString(data.email, 3, 160)
+        && validString(data.name, 1, 120)
+        && data.role in ['owner', 'admin', 'manager', 'cashier', 'loading_staff', 'offloading_staff', 'viewer']
+        && data.activeStatus is bool;
+    }
+
     function hasOnlyAllowedFields(fields) {
       return request.resource.data.keys().hasOnly(fields);
     }
@@ -84,7 +98,7 @@ service cloud.firestore {
           'unitType', 'defaultTaxRate', 'taxInclusive', 'activeStatus', 'icon'
         ])
         && hasOnlyAllowedFields([
-          'businessProfileId', 'itemName', 'itemCode', 'category',
+          'id', 'businessProfileId', 'itemName', 'itemCode', 'category',
           'unitType', 'defaultTaxRate', 'taxInclusive', 'activeStatus',
           'icon', 'createdAt', 'updatedAt'
         ])
@@ -106,7 +120,7 @@ service cloud.firestore {
           'businessProfileId', 'itemId', 'priceLevel', 'priceTaxInclusive'
         ])
         && hasOnlyAllowedFields([
-          'businessProfileId', 'itemId', 'priceLevel', 'destinationId',
+          'id', 'businessProfileId', 'itemId', 'priceLevel', 'destinationId',
           'priceTaxInclusive', 'createdAt', 'updatedAt'
         ])
         && validBusinessProfileId(data)
@@ -121,7 +135,7 @@ service cloud.firestore {
     function validTenantDoc(data) {
       return validBusinessProfileId(data)
         && data.keys().hasOnly([
-          'businessProfileId', 'createdAt', 'updatedAt', 'activeStatus',
+          'id', 'businessProfileId', 'createdAt', 'updatedAt', 'activeStatus',
           'name', 'displayName', 'legalName', 'phone', 'email', 'address',
           'islandName', 'atoll', 'destinationCode', 'sortOrder',
           'customerType', 'nationalIdOrRegNo', 'gstNumber',
@@ -129,7 +143,7 @@ service cloud.firestore {
           'creditLimit', 'outstandingBalance',
           'tripNumber', 'vesselName', 'originDestinationId', 'plannedDepartureAt',
           'actualDepartureAt', 'plannedArrivalAt', 'actualArrivalAt', 'status',
-          'openedBy', 'endedBy', 'closedBy', 'notes',
+          'openedBy', 'endedBy', 'closedBy', 'notes', 'endedAt', 'closedAt',
           'operationType', 'destinationId', 'customerId', 'tripId',
           'items', 'totalTaxInclusive', 'totalTax', 'createdBy', 'synced',
           'operationId', 'itemId', 'itemNameSnapshot', 'unitType', 'quantity',
@@ -140,11 +154,11 @@ service cloud.firestore {
           'finalizedBy', 'finalizedAt', 'itemCount',
           'paymentNumber', 'billId', 'amount', 'method', 'reference',
           'collectedBy', 'collectedAt',
-          'taxName', 'taxRate', 'taxRegistrationStatus', 'effectiveFrom',
+          'taxName', 'taxRate', 'taxRegistrationStatus', 'taxInclusiveEnabled', 'effectiveFrom',
           'numberType', 'prefix', 'currentSequence', 'padding', 'formatTemplate',
           'lastGenerated',
           'actorUserId', 'action', 'entityType', 'entityId', 'summary',
-          'title', 'body', 'read', 'variant', 'fileName', 'fileUrl',
+          'title', 'body', 'read', 'type', 'variant', 'fileName', 'fileUrl',
           'conflictType', 'resolved'
         ]);
     }
@@ -180,17 +194,43 @@ service cloud.firestore {
     }
 
     match /business_users/{uid} {
-      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow read: if isAuthenticated()
+        && (
+          request.auth.uid == uid
+          || isBusinessMember(resource.data.businessProfileId)
+        );
       allow create: if isAuthenticated()
-        && request.auth.uid == uid
-        && request.resource.data.uid == uid
-        && request.resource.data.role == 'owner';
+        && validBusinessUser(request.resource.data, uid)
+        && (
+          (
+            request.auth.uid == uid
+            && request.resource.data.role == 'owner'
+          )
+          || (
+            isOwnerOrAdmin()
+            && request.resource.data.role != 'owner'
+            && request.resource.data.businessProfileId == signedInUser().data.businessProfileId
+          )
+        );
       allow update: if isAuthenticated()
-        && request.auth.uid == uid
+        && validBusinessUser(request.resource.data, uid)
         && request.resource.data.uid == resource.data.uid
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.businessProfileId == resource.data.businessProfileId;
-      allow delete: if false;
+        && request.resource.data.businessProfileId == resource.data.businessProfileId
+        && (
+          (
+            request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+          )
+          || (
+            isOwnerOrAdmin()
+            && resource.data.role != 'owner'
+            && request.resource.data.role != 'owner'
+          )
+        );
+      allow delete: if isOwnerOrAdmin()
+        && request.auth.uid != uid
+        && resource.data.role != 'owner'
+        && resource.data.businessProfileId == signedInUser().data.businessProfileId;
     }
 
     match /catalog_items/{itemId} {

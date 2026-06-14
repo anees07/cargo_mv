@@ -1,5 +1,5 @@
 // ============================================================================
-// Core Domain Types — mirrors the InsForge PostgreSQL schema
+// Core Domain Types — stored in Firebase Auth and Cloud Firestore
 // ============================================================================
 
 export type ID = string;

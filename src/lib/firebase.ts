@@ -1,4 +1,14 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  type Auth,
+  type UserCredential,
+} from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -23,6 +33,7 @@ export const isFirebaseConfigured = requiredConfig.every((key) => Boolean(fireba
 
 let app: FirebaseApp | null = null;
 let firestore: Firestore | null = null;
+let auth: Auth | null = null;
 
 export function getFirebaseApp() {
   if (!isFirebaseConfigured) {
@@ -39,6 +50,31 @@ export function getFirebaseFirestore() {
     firestore = getFirestore(getFirebaseApp());
   }
   return firestore;
+}
+
+export function getFirebaseAuth() {
+  if (!auth) {
+    auth = getAuth(getFirebaseApp());
+  }
+  return auth;
+}
+
+export async function signInWithFirebase(email: string, password: string) {
+  return signInWithEmailAndPassword(getFirebaseAuth(), email.trim(), password);
+}
+
+export async function createFirebaseOwnerAccount(name: string, email: string, password: string): Promise<UserCredential> {
+  const credential = await createUserWithEmailAndPassword(getFirebaseAuth(), email.trim(), password);
+  await updateProfile(credential.user, { displayName: name.trim() });
+  return credential;
+}
+
+export async function sendFirebasePasswordReset(email: string) {
+  return sendPasswordResetEmail(getFirebaseAuth(), email.trim());
+}
+
+export async function signOutFirebase() {
+  return signOut(getFirebaseAuth());
 }
 
 export function getFirebaseProjectId() {
