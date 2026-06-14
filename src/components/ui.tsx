@@ -1,4 +1,4 @@
-import type { ReactNode, ButtonHTMLAttributes, ReactElement } from "react";
+import { useEffect, type ReactNode, type ButtonHTMLAttributes, type ReactElement } from "react";
 import { statusColor, statusLabel } from "../utils/format";
 import type { TripStatus, BillStatus } from "../types";
 import { cn } from "../lib/cn";
@@ -242,20 +242,33 @@ export function Toast({ toasts, onDismiss }: { toasts: { id: string; title: stri
     warning: "bg-amber-500 text-white",
     info: "bg-ocean-700 text-white",
   };
+  const visibleToasts = toasts.filter((toast, index) => {
+    const key = `${toast.variant}:${toast.title}:${toast.body || ""}`;
+    return toasts.findIndex((item, itemIndex) =>
+      itemIndex > index &&
+      `${item.variant}:${item.title}:${item.body || ""}` === key
+    ) === -1;
+  });
+
+  useEffect(() => {
+    const timers = toasts.map(toast => window.setTimeout(() => onDismiss(toast.id), 800));
+    return () => timers.forEach(timer => window.clearTimeout(timer));
+  }, [toasts, onDismiss]);
+
   return (
-    <div className="pointer-events-none fixed left-0 right-0 z-50 flex flex-col items-center gap-2 px-4 safe-toast-top safe-x sm:right-4 sm:left-auto sm:items-end">
-      {toasts.map(t => (
+    <div className="pointer-events-none fixed left-0 right-0 z-50 flex flex-col items-center gap-1.5 px-4 safe-toast-top safe-x sm:right-4 sm:left-auto sm:items-end">
+      {visibleToasts.map(t => (
         <div
           key={t.id}
           onClick={() => onDismiss(t.id)}
-          className={cn("pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl px-4 py-3 shadow-lg animate-slide-down", variants[t.variant])}
+          className={cn("pointer-events-auto flex w-auto min-w-0 max-w-[260px] items-center gap-2 rounded-lg px-3 py-2 shadow-md animate-slide-down", variants[t.variant])}
         >
-          <div className="flex-1">
-            <p className="break-words text-sm font-semibold">{t.title}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold">{t.title}</p>
             {t.body && <p className="mt-0.5 truncate text-xs opacity-90">{t.body}</p>}
           </div>
-          <button onClick={() => onDismiss(t.id)} className="opacity-70 hover:opacity-100">
-            <Icon name="x" className="h-4 w-4" />
+          <button onClick={() => onDismiss(t.id)} className="shrink-0 opacity-70 hover:opacity-100">
+            <Icon name="x" className="h-3.5 w-3.5" />
           </button>
         </div>
       ))}

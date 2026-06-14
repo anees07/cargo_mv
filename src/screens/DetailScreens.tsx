@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR, MVRShort, formatDate, relativeTime } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { isUnfinishedTrip } from "../utils/trips";
 import type { Customer, Destination } from "../types";
 
 // ============================================================================
@@ -582,14 +583,29 @@ function EditDestinationForm({
 // Create Trip Form (proper modal form)
 // ============================================================================
 export function CreateTripScreen() {
-  const { destinations, businessProfile, navigate, createTrip, selectTrip, toast } = useApp();
+  const { destinations, businessProfile, trips, navigate, createTrip, selectTrip, toast } = useApp();
   const [origin, setOrigin] = useState(destinations[0]?.id || "");
   const [notes, setNotes] = useState("");
   const [hours, setHours] = useState(8);
+  const [creating, setCreating] = useState(false);
+  const unfinishedTrip = trips.find(isUnfinishedTrip);
 
   const handleCreate = () => {
+    if (creating) return;
+    if (unfinishedTrip) {
+      selectTrip(unfinishedTrip.id);
+      toast({ title: "Trip already open", body: unfinishedTrip.tripNumber, variant: "warning" });
+      navigate("trip_detail");
+      return;
+    }
+    setCreating(true);
     const arrival = new Date(Date.now() + hours * 3600000).toISOString();
     const trip = createTrip(origin, arrival, notes || "New cargo trip");
+    if (!trip) {
+      setCreating(false);
+      navigate("trip_detail");
+      return;
+    }
     selectTrip(trip.id);
     toast({ title: "Trip created", body: trip.tripNumber, variant: "success" });
     navigate("trip_detail");
@@ -653,13 +669,27 @@ export function CreateTripScreen() {
             </div>
           </div>
         </Card>
+
+        {unfinishedTrip && (
+          <Card className="border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <div className="flex items-start gap-2">
+              <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p className="font-semibold text-amber-950">Finish current trip first</p>
+                <p className="mt-0.5">{unfinishedTrip.tripNumber} is {unfinishedTrip.status}.</p>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
 
       <div className="border-t border-slate-200 bg-white p-4 space-y-2">
-        <Btn fullWidth size="lg" icon="check" onClick={handleCreate}>
-          Create draft trip
+        <Btn fullWidth size="lg" icon={unfinishedTrip ? "ship" : "check"} loading={creating} onClick={handleCreate}>
+          {unfinishedTrip ? "View current trip" : "Create draft trip"}
         </Btn>
-        <p className="text-center text-xs text-slate-400">You can open the trip for loading after creation.</p>
+        <p className="text-center text-xs text-slate-400">
+          {unfinishedTrip ? "End or close it before creating another trip." : "You can open the trip for loading after creation."}
+        </p>
       </div>
     </div>
   );

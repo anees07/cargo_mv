@@ -4,6 +4,7 @@ import { Btn, Card, Icon, Modal, Section, Stat, StatusBadge, TopBar, FirestoreLi
 import type { Trip, TripStatus } from "../types";
 import { MVR, MVRShort, formatDate, formatDateTime, formatTime, relativeTime, statusLabel } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { isUnfinishedTrip } from "../utils/trips";
 
 // ============================================================================
 // Dashboard
@@ -191,7 +192,17 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
 // Trips List + Detail
 // ============================================================================
 export function TripsScreen() {
-  const { trips, navigate, selectTrip } = useApp();
+  const { trips, navigate, selectTrip, toast } = useApp();
+  const unfinishedTrip = trips.find(isUnfinishedTrip);
+  const handleNewTrip = () => {
+    if (unfinishedTrip) {
+      selectTrip(unfinishedTrip.id);
+      toast({ title: "Trip already open", body: unfinishedTrip.tripNumber, variant: "warning" });
+      navigate("trip_detail");
+      return;
+    }
+    navigate("create_trip");
+  };
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -199,14 +210,14 @@ export function TripsScreen() {
         title="Trips"
         subtitle={`${trips.length} total`}
         onBack={() => navigate("dashboard")}
-        trailing={<Btn size="sm" icon="plus" onClick={() => navigate("create_trip")}>New trip</Btn>}
+        trailing={<Btn size="sm" icon={unfinishedTrip ? "ship" : "plus"} onClick={handleNewTrip}>{unfinishedTrip ? "Current trip" : "New trip"}</Btn>}
       />
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
         <div className="mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
           <Card className="p-3 text-center">
             <p className="text-xs uppercase tracking-wider text-slate-500">Active</p>
-            <p className="mt-1 text-2xl font-bold text-ocean-700">{trips.filter(t => ["open", "loading", "sailing", "offloading"].includes(t.status)).length}</p>
+            <p className="mt-1 text-2xl font-bold text-ocean-700">{trips.filter(isUnfinishedTrip).length}</p>
           </Card>
           <Card className="p-3 text-center">
             <p className="text-xs uppercase tracking-wider text-slate-500">Ended</p>
@@ -334,7 +345,7 @@ export function TripDetailScreen() {
 
         {trip.status === "draft" && hasPermission(currentUser.role, "manage_trip") && (
           <div className="mt-4">
-            <Btn variant="primary" size="lg" fullWidth icon="check" onClick={() => { openTrip(trip.id); toast({ title: "Trip opened", body: trip.tripNumber, variant: "success" }); }}>
+            <Btn variant="primary" size="lg" fullWidth icon="check" onClick={() => openTrip(trip.id)}>
               Open trip for loading
             </Btn>
           </div>
@@ -362,7 +373,6 @@ export function TripDetailScreen() {
             <Btn variant="secondary" size="lg" fullWidth icon="save" onClick={() => {
               if (confirm("Close this trip for archive? This action is permanent.")) {
                 closeTrip(trip.id);
-                toast({ title: "Trip archived", variant: "info" });
                 navigate("trips");
               }
             }}>

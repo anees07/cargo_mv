@@ -9,6 +9,7 @@ import {
   signOutFirebase,
 } from "./lib/firebase";
 import { MVR } from "./utils/format";
+import { isUnfinishedTrip } from "./utils/trips";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate,
   Trip, Bill, Payment, TaxSetting, NumberingSequence, AuditLog,
@@ -98,7 +99,7 @@ interface AppActions {
   removeOperationItem: (itemId: string) => void;
   finalizeBill: (billId: string) => void;
   postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => void;
-  createTrip: (originDestinationId: string, plannedArrivalAt: string, notes: string) => Trip;
+  createTrip: (originDestinationId: string, plannedArrivalAt: string, notes: string) => Trip | null;
   addDestination: (islandName: string, atoll: string, code: string) => Destination;
   addCustomer: (customer: Omit<Customer, "id" | "businessProfileId" | "outstandingBalance" | "activeStatus" | "createdAt">) => Customer;
   addCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => CatalogItem;
@@ -189,6 +190,17 @@ const initialState: AppState = {
 const AppContext = createContext<(AppState & AppActions) | null>(null);
 
 const id = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
+const toastTimeoutMs = 800;
+
+function appendToast(toasts: ToastMessage[], toast: ToastMessage) {
+  const duplicateIndex = toasts.findIndex(item =>
+    item.title === toast.title &&
+    item.body === toast.body &&
+    item.variant === toast.variant
+  );
+  if (duplicateIndex === -1) return [...toasts, toast];
+  return [...toasts.slice(0, duplicateIndex), ...toasts.slice(duplicateIndex + 1), toast];
+}
 
 const tenantCollections = {
   users: "business_users",
@@ -396,6 +408,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(initialState);
   const lastRemoteUpdateAt = useRef(0);
+  const pendingTripRef = useRef<Trip | null>(null);
 
   // Simulate splash screen transition
   useEffect(() => {
@@ -429,6 +442,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state.auditLogs,
     state.notifications,
   ]);
+
+  useEffect(() => {
+    if (!pendingTripRef.current) return;
+    const pendingTripStillOpen = state.trips.some(trip => trip.id === pendingTripRef.current?.id && isUnfinishedTrip(trip));
+    if (!pendingTripStillOpen) {
+      pendingTripRef.current = null;
+    }
+  }, [state.trips]);
 
   useEffect(() => {
     if (!state.isAuthed || !state.businessProfile.id) return;
@@ -890,7 +911,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const createTrip = useCallback((originDestinationId: string, plannedArrivalAt: string, notes: string): Trip => {
+  const createTrip = useCallback((originDestinationId: string, plannedArrivalAt: string, notes: string): Trip | null => {
+    const existingTrip = state.trips.find(isUnfinishedTrip) || pendingTripRef.current;
+    if (existingTrip) {
+      setState(s => ({
+        ...s,
+        selectedTripId: existingTrip.id,
+        toasts: [...s.toasts, { id: id("t"), title: "Trip already open", body: existingTrip.tripNumber, variant: "warning" }],
+      }));
+      return null;
+    }
+
     const newSeq = state.numbering.find(n => n.numberType === "trip")!.currentSequence + 1;
     const year = new Date().getFullYear();
     const padded = String(newSeq).padStart(6, "0");
@@ -908,6 +939,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       notes,
       createdAt: new Date().toISOString(),
     };
+    pendingTripRef.current = newTrip;
     setState(s => ({
       ...s,
       trips: [newTrip, ...s.trips],
@@ -919,7 +951,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
     }));
     return newTrip;
-  }, [state.numbering, state.businessProfile, state.currentUser]);
+  }, [state.trips, state.numbering, state.businessProfile, state.currentUser]);
 
   const addDestination = useCallback((islandName: string, atoll: string, code: string): Destination => {
     const newDest: Destination = {
@@ -969,10 +1001,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const toast = useCallback((t: Omit<ToastMessage, "id">) => {
     const newToast = { ...t, id: id("t") };
-    setState(s => ({ ...s, toasts: [...s.toasts, newToast] }));
+    setState(s => ({ ...s, toasts: appendToast(s.toasts, newToast) }));
     setTimeout(() => {
       setState(s => ({ ...s, toasts: s.toasts.filter(x => x.id !== newToast.id) }));
-    }, 3500);
+    }, toastTimeoutMs);
   }, []);
 
   const dismissToast = useCallback((toastId: string) => {
