@@ -188,8 +188,20 @@ service cloud.firestore {
           'lastGenerated',
           'actorUserId', 'action', 'entityType', 'entityId', 'summary',
           'title', 'body', 'read', 'type', 'variant', 'fileName', 'fileUrl',
-          'conflictType', 'resolved'
+          'readBy', 'conflictType', 'resolved'
         ]);
+    }
+
+    function canWriteOps() {
+      return signedInUser().data.role in ['owner', 'admin', 'manager', 'loading_staff', 'offloading_staff'];
+    }
+
+    function canWriteBilling() {
+      return signedInUser().data.role in ['owner', 'admin', 'manager', 'cashier'];
+    }
+
+    function canWritePayments() {
+      return signedInUser().data.role in ['owner', 'admin', 'cashier'];
     }
 
     match /business_profiles/{businessProfileId} {
@@ -278,6 +290,82 @@ service cloud.firestore {
         allow delete: if isBusinessMember(businessProfileId)
           && resource.data.businessProfileId == businessProfileId
           && isOwnerOrAdmin();
+      }
+
+      match /trips/{tripId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create, update: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data)
+          && canWriteOps();
+        allow delete: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && isOwnerOrAdmin();
+      }
+
+      match /operations/{operationId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create, update: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data)
+          && canWriteOps();
+        allow delete: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && canWriteOps();
+      }
+
+      match /bills/{billId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create, update: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data)
+          && canWriteBilling();
+        allow delete: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && isOwnerOrAdmin();
+      }
+
+      match /payments/{paymentId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create, update: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data)
+          && canWritePayments();
+        allow delete: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && canWritePayments();
+      }
+
+      match /numbering_sequences/{sequenceId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create, update: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data)
+          && canWriteBilling();
+        allow delete: if false;
+      }
+
+      match /audit_logs/{auditId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data);
+        allow update, delete: if false;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && validTenantDoc(request.resource.data);
+        allow update: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && request.resource.data.businessProfileId == businessProfileId
+          && businessProfileUnchanged()
+          && createdAtUnchangedIfPresent()
+          && validTenantDoc(request.resource.data);
+        allow delete: if isOwnerOrAdmin()
+          && resource.data.businessProfileId == businessProfileId;
       }
 
       match /{collectionName}/{docId} {

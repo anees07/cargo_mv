@@ -279,4 +279,10 @@ export interface AppNotification {
   type: "info" | "success" | "warning" | "error";
   createdAt: ISODate;
   read: boolean;
+  businessProfileId?: ID;
+  actorUserId?: ID;
+  action?: string;
+  entityType?: string;
+  entityId?: ID;
+  readBy?: ID[];
 }

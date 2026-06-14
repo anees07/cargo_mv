@@ -6,8 +6,10 @@ import { relativeTime } from "../utils/format";
 // Notification screen — can be used both as a routed screen or overlay
 // ============================================================================
 export function NotificationPanel({ onClose }: { onClose?: () => void }) {
-  const { notifications, markNotificationRead, back } = useApp();
-  const unread = notifications.filter(n => !n.read).length;
+  const { notifications, markNotificationRead, back, currentUser } = useApp();
+  const isUnread = (notification: typeof notifications[number]) =>
+    !notification.read && !(notification.readBy || []).includes(currentUser.id);
+  const unread = notifications.filter(isUnread).length;
 
   const handleBack = () => {
     if (onClose) {
@@ -54,15 +56,15 @@ export function NotificationPanel({ onClose }: { onClose?: () => void }) {
               <button
                 key={n.id}
                 onClick={() => markNotificationRead(n.id)}
-                className={`flex w-full items-start gap-3 p-4 text-left transition-colors ${!n.read ? "bg-ocean-50/40" : "bg-white"}`}
+                className={`flex w-full items-start gap-3 p-4 text-left transition-colors ${isUnread(n) ? "bg-ocean-50/40" : "bg-white"}`}
               >
                 <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${info.bg}`}>
                   <Icon name={info.icon} className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className={`text-sm font-semibold ${!n.read ? "text-slate-900" : "text-slate-700"}`}>{n.title}</p>
-                    {!n.read && <span className="h-2 w-2 shrink-0 rounded-full bg-ocean-500" />}
+                    <p className={`text-sm font-semibold ${isUnread(n) ? "text-slate-900" : "text-slate-700"}`}>{n.title}</p>
+                    {isUnread(n) && <span className="h-2 w-2 shrink-0 rounded-full bg-ocean-500" />}
                   </div>
                   <p className="mt-0.5 text-xs text-slate-600">{n.body}</p>
                   <p className="mt-1 text-xs text-slate-400">{relativeTime(n.createdAt)}</p>

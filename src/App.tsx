@@ -13,6 +13,7 @@ import { NotificationPanel } from "./screens/NotificationScreen";
 import { CustomerDetailScreen, DestinationDetailScreen, CreateTripScreen } from "./screens/DetailScreens";
 import { PdfDocumentsScreen, SyncConflictsScreen } from "./screens/SystemScreens";
 import { APP_RELEASE_LABEL } from "./appVersion";
+import { AppUpdatePrompt } from "./components/AppUpdatePrompt";
 
 // ============================================================================
 // Bottom Tab Bar — mirrors Flutter BottomNavigationBar
@@ -254,6 +255,7 @@ export default function App() {
       <ResponsiveAppShell>
         <ScreenRouter />
       </ResponsiveAppShell>
+      <AppUpdatePrompt />
     </AppProvider>
   );
 }

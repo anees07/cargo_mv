@@ -30,7 +30,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
     users,
   } = useApp();
 
-  const unreadNotifications = notifications.filter(n => !n.read).length;
+  const unreadNotifications = notifications.filter(n => !n.read && !(n.readBy || []).includes(currentUser.id)).length;
   const activeTrip = trips.find(t => t.id === activeTripId);
   const outstanding = customers.reduce((s, c) => s + c.outstandingBalance, 0);
 

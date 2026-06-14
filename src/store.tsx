@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
-import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, runTransaction, setDoc, type Unsubscribe } from "firebase/firestore";
+import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, runTransaction, setDoc, updateDoc, type Unsubscribe } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
   createFirebaseOwnerAccount,
@@ -240,7 +240,7 @@ const persistTenantDoc = (collectionName: string, docId: string, data: Record<st
       console.error(`Failed to persist ${collectionName}/${docId}: missing businessProfileId`);
       return;
     }
-    void setDoc(target, stripUndefined(data) as Record<string, unknown>).catch(error => {
+    void setDoc(target, stripUndefined(data) as Record<string, unknown>, { merge: true }).catch(error => {
       console.error(`Failed to persist ${collectionName}/${docId}`, error);
     });
   } catch (error) {
@@ -369,7 +369,46 @@ const addAudit = (
 ) => {
   const auditEntry = { ...entry, id: id("al"), createdAt: new Date().toISOString(), businessProfileId };
   persistTenantDoc(tenantCollections.auditLogs, auditEntry.id, auditEntry);
+  emitTenantNotification(auditEntry);
   return [auditEntry, ...logs];
+};
+
+const notificationTitleForAudit = (action: string) => {
+  if (action.startsWith("trip.")) return "Trip updated";
+  if (action.startsWith("billing.")) return "Bill updated";
+  if (action.startsWith("payment.")) return "Payment updated";
+  if (action.startsWith("catalog.")) return "Catalog updated";
+  if (action.startsWith("customer.")) return "Customer updated";
+  if (action.startsWith("destination.")) return "Destination updated";
+  if (action.startsWith("user.")) return "User updated";
+  if (action.startsWith("users.")) return "User updated";
+  if (action.startsWith("tax.")) return "Tax updated";
+  if (action.startsWith("settings.")) return "Settings updated";
+  return "Business updated";
+};
+
+const notificationTypeForAudit = (action: string): AppNotification["type"] => {
+  if (action.includes("delete") || action.includes("cancel") || action.includes("void")) return "warning";
+  if (action.includes("create") || action.includes("post") || action.includes("finalize")) return "success";
+  return "info";
+};
+
+const emitTenantNotification = (auditEntry: AuditLog) => {
+  const notification: AppNotification = {
+    id: id("n"),
+    businessProfileId: auditEntry.businessProfileId,
+    actorUserId: auditEntry.actorUserId,
+    action: auditEntry.action,
+    entityType: auditEntry.entityType,
+    entityId: auditEntry.entityId,
+    title: notificationTitleForAudit(auditEntry.action),
+    body: auditEntry.summary,
+    type: notificationTypeForAudit(auditEntry.action),
+    createdAt: auditEntry.createdAt,
+    read: false,
+    readBy: [auditEntry.actorUserId],
+  };
+  persistTenantDoc(tenantCollections.notifications, notification.id, notification as unknown as Record<string, unknown>);
 };
 
 async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<string, unknown>) {
@@ -575,8 +614,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
 
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.notifications), snapshot => {
+      const notifications = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as AppNotification)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       markRemoteUpdate();
-      setState(s => ({ ...s, notifications: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as AppNotification) }));
+      setState(s => ({ ...s, notifications }));
     }));
 
     return () => unsubscribers.forEach(unsubscribe => unsubscribe());
@@ -1299,12 +1341,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const current = stateRef.current;
     const updatedNotification = current.notifications.find(n => n.id === notifId);
     if (!updatedNotification) return;
-    const persistedNotification = { ...updatedNotification, read: true };
+    const readBy = Array.from(new Set([...(updatedNotification.readBy || []), current.currentUser.id]));
     setState(s => ({
       ...s,
-      notifications: s.notifications.map(n => n.id === notifId ? { ...n, read: true } : n),
+      notifications: s.notifications.map(n => n.id === notifId ? { ...n, readBy } : n),
     }));
-    persistTenantDoc(tenantCollections.notifications, persistedNotification.id, persistedNotification as unknown as Record<string, unknown>);
+    const db = getFirebaseFirestore();
+    const notificationRef = doc(db, "business_profiles", current.businessProfile.id, tenantCollections.notifications, notifId);
+    void updateDoc(notificationRef, { readBy: arrayUnion(current.currentUser.id) }).catch(error => {
+      console.error(`Failed to mark notification ${notifId} read`, error);
+    });
   }, []);
 
   const createBillFromOperation = useCallback(async (operationId: string, billType: Bill["billType"]): Promise<Bill | null> => {
@@ -1332,33 +1378,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }));
         return null;
       }
-      const existingItems = existingBill.items || [];
-      const mergedItems = [...op.items, ...existingItems];
-      const updatedBill: Bill = {
-        ...existingBill,
-        items: mergedItems,
-        itemCount: mergedItems.length,
-        subtotalTaxInclusive: Number((existingBill.subtotalTaxInclusive + op.totalTaxInclusive).toFixed(2)),
-        taxTotal: Number((existingBill.taxTotal + op.totalTax).toFixed(2)),
-        grandTotal: Number((existingBill.grandTotal + op.totalTaxInclusive).toFixed(2)),
-      };
-      setState(s => ({
-        ...s,
-        selectedBillId: existingBill.id,
-        operations: s.operations.filter(operation => operation.id !== op.id),
-        bills: s.bills.map(b => b.id === existingBill.id ? updatedBill : b),
-        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
-          actorUserId: s.currentUser.id,
-          action: "billing.update_draft",
-          entityType: "bill",
-          entityId: existingBill.id,
-          summary: `Updated draft bill ${existingBill.billNumber}`,
-        }),
-        toasts: [...s.toasts, { id: id("t"), title: "Bill updated", body: existingBill.billNumber, variant: "success" as const }],
-      }));
-      persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
-      deleteTenantDoc(tenantCollections.operations, state.businessProfile.id, op.id);
-      return updatedBill;
+      try {
+        const db = getFirebaseFirestore();
+        const billRef = doc(db, "business_profiles", state.businessProfile.id, tenantCollections.bills, existingBill.id);
+        const opRef = doc(db, "business_profiles", state.businessProfile.id, tenantCollections.operations, op.id);
+        const updatedBill = await runTransaction(db, async transaction => {
+          const [billSnapshot, opSnapshot] = await Promise.all([
+            transaction.get(billRef),
+            transaction.get(opRef),
+          ]);
+          if (!billSnapshot.exists()) {
+            throw new Error("Bill not found.");
+          }
+          if (!opSnapshot.exists()) {
+            throw new Error("Operation already billed.");
+          }
+
+          const remoteBill = { id: billSnapshot.id, ...billSnapshot.data() } as Bill;
+          if (remoteBill.billStatus !== "draft") {
+            throw new Error(`Bill locked: ${remoteBill.billNumber}`);
+          }
+
+          const remoteOperation = { id: opSnapshot.id, ...opSnapshot.data() } as Operation;
+          const mergedItems = [...remoteOperation.items, ...(remoteBill.items || [])];
+          const billToWrite: Bill = {
+            ...remoteBill,
+            items: mergedItems,
+            itemCount: mergedItems.length,
+            subtotalTaxInclusive: Number((Number(remoteBill.subtotalTaxInclusive || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
+            taxTotal: Number((Number(remoteBill.taxTotal || 0) + remoteOperation.totalTax).toFixed(2)),
+            grandTotal: Number((Number(remoteBill.grandTotal || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
+            updatedAt: new Date().toISOString(),
+          };
+
+          transaction.set(billRef, stripUndefined(billToWrite) as Record<string, unknown>, { merge: true });
+          transaction.delete(opRef);
+          return billToWrite;
+        });
+
+        setState(s => ({
+          ...s,
+          selectedBillId: existingBill.id,
+          operations: s.operations.filter(operation => operation.id !== op.id),
+          bills: s.bills.map(b => b.id === existingBill.id ? updatedBill : b),
+          auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+            actorUserId: s.currentUser.id,
+            action: "billing.update_draft",
+            entityType: "bill",
+            entityId: existingBill.id,
+            summary: `Updated draft bill ${updatedBill.billNumber}`,
+          }),
+          toasts: [...s.toasts, { id: id("t"), title: "Bill updated", body: updatedBill.billNumber, variant: "success" as const }],
+        }));
+        return updatedBill;
+      } catch (error) {
+        setState(s => ({
+          ...s,
+          toasts: [...s.toasts, { id: id("t"), title: "Bill not updated", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+        }));
+        return null;
+      }
     }
 
     const businessProfileId = state.businessProfile.id;
