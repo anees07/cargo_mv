@@ -294,7 +294,7 @@ export function InvoicePreviewScreen() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-10 lg:p-8 no-scrollbar">
         <div className="mx-auto max-w-2xl bg-white shadow-lg rounded-lg p-6 text-xs leading-relaxed">
           {/* Letterhead */}
           <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4">

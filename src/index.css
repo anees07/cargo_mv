@@ -97,7 +97,7 @@ body {
 }
 
 .app-bottom-safe {
-  padding-bottom: min(env(safe-area-inset-bottom, 0), 1.75rem);
+  padding-bottom: calc(0.5rem + min(env(safe-area-inset-bottom, 0), 1.75rem));
 }
 
 .safe-left {
