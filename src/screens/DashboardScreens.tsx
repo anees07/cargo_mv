@@ -269,7 +269,7 @@ export function TripsScreen() {
 }
 
 export function TripDetailScreen() {
-  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, customers, bills, operations, toast, currentUser } = useApp();
+  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, customers, bills, operations, currentUser } = useApp();
   const trip = trips.find(t => t.id === (selectedTripId || activeTripId));
   const [showEditStatus, setShowEditStatus] = useState(false);
   const [showEditSpecs, setShowEditSpecs] = useState(false);

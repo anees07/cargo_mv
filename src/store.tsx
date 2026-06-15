@@ -303,43 +303,6 @@ const formatSequenceNumber = (sequence: NumberingSequence, nextSequence: number,
 const operationDocumentId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
   `op_${[tripId, operationType, destinationId, customerId].join("_").replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
-const persistTenantState = (state: AppState) => {
-  if (!state.isAuthed || !state.businessProfile.id) return;
-  const businessProfileId = state.businessProfile.id;
-  persistTenantDoc("business_profiles", businessProfileId, state.businessProfile as unknown as Record<string, unknown>);
-  state.users.forEach(user => persistTenantDoc(tenantCollections.users, user.id, {
-    ...user,
-    uid: user.id,
-    activeStatus: true,
-  }));
-  if (state.currentUser.id) {
-    persistRootBusinessUser(state.currentUser.id, {
-      ...state.currentUser,
-      uid: state.currentUser.id,
-      activeStatus: true,
-    });
-  }
-  state.destinations.forEach(item => persistTenantDoc(tenantCollections.destinations, item.id, item as unknown as Record<string, unknown>));
-  state.customers.forEach(item => persistTenantDoc(tenantCollections.customers, item.id, item as unknown as Record<string, unknown>));
-  state.catalogItems.forEach(item => persistTenantDoc(tenantCollections.catalogItems, item.id, item as unknown as Record<string, unknown>));
-  state.itemPriceRates.forEach(item => persistTenantDoc(tenantCollections.itemPriceRates, item.id, item as unknown as Record<string, unknown>));
-  state.trips.forEach(item => persistTenantDoc(tenantCollections.trips, item.id, item as unknown as Record<string, unknown>));
-  state.operations.forEach(item => persistTenantDoc(tenantCollections.operations, item.id, item as unknown as Record<string, unknown>));
-  state.bills.forEach(item => persistTenantDoc(tenantCollections.bills, item.id, item as unknown as Record<string, unknown>));
-  state.payments.forEach(item => persistTenantDoc(tenantCollections.payments, item.id, item as unknown as Record<string, unknown>));
-  state.taxSettings.forEach(item => persistTenantDoc(tenantCollections.taxSettings, item.id, item as unknown as Record<string, unknown>));
-  state.numbering.forEach(item => persistTenantDoc(tenantCollections.numbering, item.numberType, {
-    ...item,
-    id: item.numberType,
-    businessProfileId,
-  }));
-  state.auditLogs.slice(0, 250).forEach(item => persistTenantDoc(tenantCollections.auditLogs, item.id, item as unknown as Record<string, unknown>));
-  state.notifications.forEach(item => persistTenantDoc(tenantCollections.notifications, item.id, {
-    ...item,
-    businessProfileId,
-  } as unknown as Record<string, unknown>));
-};
-
 const initials = (nameOrEmail: string) =>
   nameOrEmail
     .split(/[\s@.]+/)
@@ -608,7 +571,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.numbering), snapshot => {
       markRemoteUpdate();
-      setState(s => ({ ...s, numbering: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as NumberingSequence) }));
+      setState(s => ({ ...s, numbering: snapshot.docs.map(document => ({ ...document.data(), id: document.id }) as NumberingSequence) }));
     }));
 
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.auditLogs), snapshot => {
@@ -741,14 +704,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       taxInclusiveEnabled: businessProfile.taxInclusivePricingEnabled,
       activeStatus: true,
     };
-    const numberingSequences = [
+    const numberingSeeds: Array<Omit<NumberingSequence, "id" | "businessProfileId">> = [
       { numberType: "trip", prefix: "TRIP", currentSequence: 0, formatTemplate: "TRIP-{YYYY}-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "bill", prefix: "BILL", currentSequence: 0, formatTemplate: "BILL-{DEST}-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "invoice", prefix: "INV", currentSequence: 0, formatTemplate: "INV-{YYYY}-{MM}-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "receipt", prefix: "RCP", currentSequence: 0, formatTemplate: "RCP-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "payment", prefix: "PAY", currentSequence: 0, formatTemplate: "PAY-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "customer", prefix: "CUS", currentSequence: 0, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "" },
-    ].map(sequence => ({ ...sequence, id: sequence.numberType, businessProfileId }));
+    ];
+    const numberingSequences: NumberingSequence[] = numberingSeeds.map(sequence => ({ ...sequence, id: sequence.numberType, businessProfileId }));
     await setDoc(doc(db, "business_users", owner.uid), ownerUser);
     await Promise.all([
       setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.users, owner.uid), ownerUser),

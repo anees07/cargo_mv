@@ -208,7 +208,7 @@ export function CustomersScreen() {
         <AddCustomerForm
           destinations={destinations}
           onAdd={(customer) => {
-            const saved = addCustomer(customer);
+            addCustomer(customer);
             setShowAdd(false);
             toast({ title: "Customer saved", variant: "success" });
           }}
@@ -395,7 +395,7 @@ export function CatalogScreen() {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add catalog item">
         <AddCatalogForm
           onAdd={(item, standardPrice) => {
-            const saved = addCatalogItem(item, standardPrice);
+            addCatalogItem(item, standardPrice);
             setShowAdd(false);
             toast({ title: "Item saved", variant: "success" });
           }}

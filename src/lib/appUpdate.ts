@@ -2,6 +2,8 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { APP_BUILD, APP_VERSION } from "../appVersion";
 import { selectAvailableAppUpdate, type AppUpdateManifest, type AvailableAppUpdate } from "./appUpdatePolicy";
 
+export type { AvailableAppUpdate } from "./appUpdatePolicy";
+
 type AppUpdaterPlugin = {
   downloadAndInstall(options: { url: string; fileName: string }): Promise<{ openedSettings?: boolean }>;
 };

@@ -123,7 +123,9 @@ export interface Trip {
   status: TripStatus;
   openedBy: ID;
   endedBy?: ID;
+  endedAt?: ISODate;
   closedBy?: ID;
+  closedAt?: ISODate;
   notes: string;
   createdAt: ISODate;
 }
@@ -211,6 +213,7 @@ export interface Bill {
   finalizedBy?: ID;
   finalizedAt?: ISODate;
   createdAt: ISODate;
+  updatedAt?: ISODate;
   itemCount: number;
   items?: OperationItem[];
 }
@@ -240,6 +243,8 @@ export interface TaxSetting {
 }
 
 export interface NumberingSequence {
+  id: ID;
+  businessProfileId: ID;
   numberType: "trip" | "bill" | "invoice" | "receipt" | "payment" | "customer";
   prefix: string;
   currentSequence: number;

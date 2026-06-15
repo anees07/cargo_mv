@@ -1,11 +1,11 @@
 {
   "latest": {
-    "versionName": "1.0.11",
-    "buildNumber": 12,
-    "releasedAt": "2026-06-15T14:00:11.578Z",
+    "versionName": "1.0.12",
+    "buildNumber": 13,
+    "releasedAt": "2026-06-15T14:18:04.360Z",
     "notes": [
-      "Outstanding cards now calculate from active bills",
-      "Customer outstanding totals update from bill payments and cancellations"
+      "Audit cleanup and TypeScript compile fixes",
+      "Update policy prevents unnecessary APK installer prompts"
     ]
   },
   "mandatory": false,
@@ -18,7 +18,7 @@
     "android": {
       "enabled": false,
       "requiresNativeUpdate": false,
-      "apkUrl": "https://github.com/anees07/cargo_mv/releases/download/v1.0.11/maldives-cargo-1.0.11-build12.apk"
+      "apkUrl": "https://github.com/anees07/cargo_mv/releases/download/v1.0.12/maldives-cargo-1.0.12-build13.apk"
     }
   }
 }

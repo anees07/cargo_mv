@@ -190,7 +190,7 @@ export function ReportsScreen() {
         <ExportAccountingForm
           businessName={businessProfile.businessName}
           gstNumber={businessProfile.gstNumber}
-          onExport={(format) => {
+          onExport={() => {
             toast({
               title: "Report ready",
               body: "Download ready.",
