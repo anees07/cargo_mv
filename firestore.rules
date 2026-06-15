@@ -170,7 +170,7 @@ service cloud.firestore {
           'customerType', 'nationalIdOrRegNo', 'gstNumber',
           'defaultDestinationId', 'defaultPriceLevelId', 'creditAllowed',
           'creditLimit', 'outstandingBalance',
-          'tripNumber', 'vesselName', 'originDestinationId', 'plannedDepartureAt',
+          'tripNumber', 'vesselName', 'originDestinationId', 'returnDestinationId', 'plannedDepartureAt',
           'actualDepartureAt', 'plannedArrivalAt', 'actualArrivalAt', 'status',
           'openedBy', 'endedBy', 'closedBy', 'notes', 'endedAt', 'closedAt',
           'operationType', 'destinationId', 'customerId', 'tripId',

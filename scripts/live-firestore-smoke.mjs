@@ -118,6 +118,7 @@ async function main() {
     tripNumber: `SMOKE-${stamp}`,
     vesselName: "MV Ocean Star",
     originDestinationId: destination.id,
+    returnDestinationId: destination.id,
     plannedDepartureAt: new Date().toISOString(),
     plannedArrivalAt: new Date(Date.now() + 3600000).toISOString(),
     status: "draft",

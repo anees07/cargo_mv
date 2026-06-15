@@ -139,8 +139,8 @@ async function seed() {
   ]);
 
   const trips = withTenant([
-    { id: "t_001", tripNumber: "TRIP-2026-000142", vesselName: "MV Ocean Star", originDestinationId: "d_001", plannedDepartureAt: today, actualDepartureAt: today, plannedArrivalAt: new Date(Date.now() + 8 * 3600000).toISOString(), status: "loading", openedBy: owner.uid, notes: "Mixed cargo for southern atolls. Fuel and construction priority.", createdAt: today },
-    { id: "t_002", tripNumber: "TRIP-2026-000141", vesselName: "MV Ocean Star", originDestinationId: "d_001", plannedDepartureAt: yesterday, actualDepartureAt: yesterday, plannedArrivalAt: new Date(Date.now() - 16 * 3600000).toISOString(), actualArrivalAt: new Date(Date.now() - 14 * 3600000).toISOString(), status: "ended", openedBy: owner.uid, endedBy: owner.uid, notes: "Hulhumale supply run. All deliveries confirmed.", createdAt: yesterday },
+    { id: "t_001", tripNumber: "TRIP-2026-000142", vesselName: "MV Ocean Star", originDestinationId: "d_003", returnDestinationId: "d_001", plannedDepartureAt: today, actualDepartureAt: today, plannedArrivalAt: new Date(Date.now() + 8 * 3600000).toISOString(), status: "loading", openedBy: owner.uid, notes: "Mixed cargo for southern atolls. Fuel and construction priority.", createdAt: today },
+    { id: "t_002", tripNumber: "TRIP-2026-000141", vesselName: "MV Ocean Star", originDestinationId: "d_002", returnDestinationId: "d_001", plannedDepartureAt: yesterday, actualDepartureAt: yesterday, plannedArrivalAt: new Date(Date.now() - 16 * 3600000).toISOString(), actualArrivalAt: new Date(Date.now() - 14 * 3600000).toISOString(), status: "ended", openedBy: owner.uid, endedBy: owner.uid, notes: "Hulhumale supply run. All deliveries confirmed.", createdAt: yesterday },
   ]);
 
   const operations = withTenant([

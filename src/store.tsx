@@ -100,7 +100,7 @@ interface AppActions {
   finalizeBill: (billId: string) => void;
   postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => Promise<boolean>;
   updateDraftBill: (billId: string, items: OperationItem[], reason: string) => void;
-  createTrip: (originDestinationId: string, plannedArrivalAt: string, notes: string) => Promise<Trip | null>;
+  createTrip: (originDestinationId: string, returnDestinationId: string, plannedArrivalAt: string, notes: string) => Promise<Trip | null>;
   addDestination: (islandName: string, atoll: string, code: string) => Destination;
   addCustomer: (customer: Omit<Customer, "id" | "businessProfileId" | "outstandingBalance" | "activeStatus" | "createdAt">) => Customer;
   addCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => CatalogItem;
@@ -1156,7 +1156,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
   }, [state.bills]);
 
-  const createTrip = useCallback(async (originDestinationId: string, plannedArrivalAt: string, notes: string): Promise<Trip | null> => {
+  const createTrip = useCallback(async (originDestinationId: string, returnDestinationId: string, plannedArrivalAt: string, notes: string): Promise<Trip | null> => {
     const existingTrip = state.trips.find(isUnfinishedTrip) || pendingTripRef.current;
     if (existingTrip) {
       setState(s => ({
@@ -1224,6 +1224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           tripNumber,
           vesselName: state.businessProfile.vesselName,
           originDestinationId,
+          returnDestinationId,
           plannedDepartureAt: new Date().toISOString(),
           plannedArrivalAt,
           status: "draft",

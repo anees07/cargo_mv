@@ -5,13 +5,15 @@ import type { Trip, TripStatus } from "../types";
 import { MVR, MVRShort, formatDate, formatDateTime, formatTime, relativeTime, statusLabel } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { isUnfinishedTrip } from "../utils/trips";
+import { describeCompleteTripRoute } from "../utils/tripRoute";
 
 // ============================================================================
 // Dashboard
 // ============================================================================
 export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
-  const { businessProfile, trips, bills, customers, activeTripId, navigate, currentUser, auditLogs, users, notifications } = useApp();
+  const { businessProfile, trips, bills, customers, destinations, activeTripId, navigate, currentUser, auditLogs, users, notifications } = useApp();
   const activeTrip = trips.find(t => t.id === activeTripId);
+  const activeTripRoute = activeTrip ? describeCompleteTripRoute(activeTrip, destinations) : "";
   const recentBills = bills.slice(0, 4);
   const outstanding = customers.reduce((s, c) => s + c.outstandingBalance, 0);
   const todayRevenue = bills.filter(b => b.paymentStatus === "paid").reduce((s, b) => s + b.paidAmount, 0);
@@ -70,9 +72,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
 
                 <div className="mt-4 flex items-center gap-2 text-sm">
                   <Icon name="island" className="h-4 w-4 text-ocean-200" />
-                  <span className="font-medium">Male'</span>
-                  <Icon name="arrow_up" className="h-4 w-4 text-ocean-200 rotate-90" />
-                  <span className="font-medium">Addu City</span>
+                  <span className="min-w-0 flex-1 font-medium leading-5">{activeTripRoute}</span>
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 text-center">

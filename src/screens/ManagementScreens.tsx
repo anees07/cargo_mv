@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, TopBar } from "../components/ui";
 import type { BusinessProfile, User, UserRole } from "../types";
 import { MVR, MVRShort, formatDate, roleColor, roleLabel } from "../utils/format";
+import { buildQuarterTaxBillRows, quarterPeriod, recentQuarterOptions } from "../utils/taxReport";
 import { APP_RELEASE_DETAIL } from "../appVersion";
 
 // ============================================================================
@@ -275,137 +276,98 @@ function ExportAccountingForm({
   );
 }
 
-// ============================================================================
-// Multi-Period Maldives GST Tax & Compliance Reporting Engine
-// ============================================================================
 function GstReportingSuite() {
-  const { businessProfile, bills } = useApp();
-  const [periodSpan, setPeriodSpan] = useState<"3m" | "6m" | "1y">("3m");
-  const [filingQuarter, setFilingQuarter] = useState("Q1 2025 (Jan - Mar)");
-  const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
-
-  // Filter or snapshot simulate based on period span
-  const totalGross = activeBills.reduce((s, b) => s + b.grandTotal, 0) * (periodSpan === "3m" ? 1 : periodSpan === "6m" ? 2.1 : 4.3);
-  const rawTax = activeBills.reduce((s, b) => s + b.taxTotal, 0) * (periodSpan === "3m" ? 1 : periodSpan === "6m" ? 2.1 : 4.3);
-  
-  // Maldives MIRA Specific split breakdowns
-  const standardGross = totalGross * 0.92;
-  const zeroRatedGross = totalGross * 0.08; // Inter-island government relief or exempted basic food
-  const standardOutputGst = rawTax;
-  const inputTaxCredit = rawTax * 0.12; // Master vessel fuel & dock maintenance GST deductible
-  const netMiraPayableGst = Math.max(0, standardOutputGst - inputTaxCredit);
+  const { businessProfile, bills, trips, customers } = useApp();
+  const quarterOptions = recentQuarterOptions();
+  const [selectedQuarter, setSelectedQuarter] = useState(quarterOptions[0].id);
+  const period = quarterPeriod(selectedQuarter);
+  const rows = buildQuarterTaxBillRows(bills, trips, customers, period);
+  const totalBills = rows.reduce((sum, row) => sum + row.billTotal, 0);
+  const totalTax = rows.reduce((sum, row) => sum + row.taxAmount, 0);
 
   return (
-    <div className="space-y-4">
-      {/* MIRA Tax Header */}
-      <Card className="border-0 bg-gradient-to-br from-violet-900 to-ocean-950 p-5 text-white">
-        <div className="flex items-start justify-between gap-3">
+    <div className="space-y-4 print:bg-white">
+      <Card className="p-4 md:p-5 print:border-0 print:shadow-none">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-violet-300">Official MIRA GST Return Hub</p>
-            <h2 className="mt-1 text-xl font-bold">{businessProfile.businessName}</h2>
-            <p className="mt-0.5 font-mono text-xs text-violet-200">GSTIN: {businessProfile.gstNumber}</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">GST bill register</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-950">{businessProfile.businessName}</h2>
+            <p className="mt-1 text-xs text-slate-600">GST: {businessProfile.gstNumber || "Not registered"}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-800">{period.label}: {period.rangeLabel}</p>
           </div>
-          <div className="rounded-xl bg-white/10 p-2.5 text-center">
-            <p className="text-xs uppercase text-violet-200">Standard GST</p>
-            <p className="text-base font-bold text-emerald-300">{businessProfile.defaultTaxRate}%</p>
-          </div>
+          <Btn size="sm" variant="outline" icon="printer" onClick={() => window.print()}>
+            Print report
+          </Btn>
         </div>
       </Card>
 
-      {/* Audit Period Selector */}
-      <div className="space-y-2">
-        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Select GST Filing & Audit Period</label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
-          {[
-            { id: "3m" as const, label: "3 Months", desc: "Quarterly Filer" },
-            { id: "6m" as const, label: "6 Months", desc: "Semi-Annual" },
-            { id: "1y" as const, label: "1 Year", desc: "Annual / BPT" },
-          ].map(p => (
-            <button
-              key={p.id}
-              onClick={() => setPeriodSpan(p.id)}
-              className={`rounded-xl border p-3 text-left transition-all ${periodSpan === p.id ? "border-violet-600 bg-violet-50 text-violet-950 shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
-            >
-              <p className="text-xs font-bold">{p.label}</p>
-              <p className="text-xs text-slate-500">{p.desc}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {periodSpan === "3m" && (
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-slate-700">Reporting Quarter</label>
-          <select value={filingQuarter} onChange={e => setFilingQuarter(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-violet-500 font-medium">
-            <option value="Q1 2025 (Jan - Mar)">Q1 2025 (Jan - Mar) — Current</option>
-            <option value="Q4 2024 (Oct - Dec)">Q4 2024 (Oct - Dec) — Filed & Archived</option>
-            <option value="Q3 2024 (Jul - Sep)">Q3 2024 (Jul - Sep) — Filed & Archived</option>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 print:hidden">
+        <div className="md:col-span-2">
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Reporting quarter</label>
+          <select value={selectedQuarter} onChange={event => setSelectedQuarter(event.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium outline-none focus:border-ocean-500">
+            {quarterOptions.map(option => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
           </select>
         </div>
-      )}
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-xs uppercase tracking-wider text-slate-500">Period</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">{period.rangeLabel}</p>
+        </div>
+      </div>
 
-      {/* Spectacular Breakdown Manifest */}
-      <Card className="p-4 md:p-6 space-y-3">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Taxable Revenues Manifest Breakdown</p>
-        
-        <div className="space-y-2 text-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="text-slate-700">Gross Billed Sales (Tax-Inclusive)</span>
-            <span className="font-mono font-bold text-slate-900">{MVR(totalGross)}</span>
+      <Card className="overflow-hidden p-0 print:border-0 print:shadow-none">
+        <div className="grid grid-cols-1 gap-3 border-b border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 print:grid-cols-3">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Bills listed</p>
+            <p className="mt-1 text-xl font-bold text-slate-950">{rows.length}</p>
           </div>
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="text-slate-700">Standard 8% GST Taxable Base</span>
-            <span className="font-mono font-medium text-slate-800">{MVR(standardGross)}</span>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Bill total</p>
+            <p className="mt-1 text-xl font-bold text-slate-950">{MVR(totalBills)}</p>
           </div>
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="text-slate-700">Zero-Rated Inter-Island Sales (0% GST)</span>
-            <span className="font-mono font-medium text-emerald-700">{MVR(zeroRatedGross)}</span>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Tax amount</p>
+            <p className="mt-1 text-xl font-bold text-slate-950">{MVR(totalTax)}</p>
           </div>
         </div>
 
-        <p className="pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">Maldives Output & Input GST Reconciliation</p>
-        
-        <div className="space-y-2 text-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="text-slate-700">Standard Output GST Collected (8%)</span>
-            <span className="font-mono font-bold text-violet-700">{MVR(standardOutputGst)}</span>
-          </div>
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="text-slate-700">Deductible Input GST (Vessel Fuel & Repairs)</span>
-            <span className="font-mono font-medium text-rose-600">-{MVR(inputTaxCredit)}</span>
-          </div>
-          <div className="flex items-center justify-between border-t-2 border-slate-900 pt-2 text-sm">
-            <span className="font-bold text-slate-900">Net Payable MIRA Return (MVR)</span>
-            <span className="font-mono text-base font-extrabold text-violet-800">{MVR(netMiraPayableGst)}</span>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] border-collapse text-left text-xs">
+            <thead className="bg-white text-slate-500">
+              <tr className="border-b border-slate-200">
+                <th className="px-3 py-2 font-semibold">Trip no</th>
+                <th className="px-3 py-2 font-semibold">Trip name</th>
+                <th className="px-3 py-2 font-semibold">Bill no</th>
+                <th className="px-3 py-2 font-semibold">Bill name</th>
+                <th className="px-3 py-2 font-semibold">Bill date</th>
+                <th className="px-3 py-2 font-semibold">Status</th>
+                <th className="px-3 py-2 text-right font-semibold">Bill total</th>
+                <th className="px-3 py-2 text-right font-semibold">Tax amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.billId} className="border-b border-slate-100 last:border-0">
+                  <td className="px-3 py-2 font-mono text-slate-900">{row.tripNumber}</td>
+                  <td className="px-3 py-2 text-slate-700">{row.tripName}</td>
+                  <td className="px-3 py-2 font-mono font-semibold text-slate-900">{row.billNumber}</td>
+                  <td className="px-3 py-2 text-slate-700">{row.billName}</td>
+                  <td className="px-3 py-2 text-slate-700">{formatDate(row.billDate)}</td>
+                  <td className="px-3 py-2 capitalize text-slate-700">{row.billStatus.replace("_", " ")}</td>
+                  <td className="px-3 py-2 text-right font-mono text-slate-900">{MVR(row.billTotal)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-slate-900">{MVR(row.taxAmount)}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">No bills found for this quarter.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </Card>
-
-      {/* Action Buttons */}
-      <div className="space-y-2 pt-2">
-        <Btn
-          fullWidth
-          size="lg"
-          icon="check"
-          className="!bg-violet-700 hover:!bg-violet-800 text-white"
-          onClick={() => {
-            alert(`Official MIRA XML electronic return generated for ${businessProfile.businessName}. Ready for secure upload to MIRAConnect portal.`);
-          }}
-        >
-          Export Official MIRA XML Electronic Return
-        </Btn>
-        <Btn
-          fullWidth
-          size="lg"
-          variant="outline"
-          icon="printer"
-          onClick={() => {
-            window.print();
-          }}
-        >
-          Print A4 Official GST Reconciliation Return
-        </Btn>
-      </div>
     </div>
   );
 }

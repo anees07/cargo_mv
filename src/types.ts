@@ -115,6 +115,7 @@ export interface Trip {
   tripNumber: string;
   vesselName: string;
   originDestinationId: ID;
+  returnDestinationId?: ID;
   plannedDepartureAt: ISODate;
   actualDepartureAt?: ISODate;
   plannedArrivalAt: ISODate;

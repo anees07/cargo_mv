@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR, MVRShort, formatDate, relativeTime } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { isUnfinishedTrip } from "../utils/trips";
+import { getDefaultCompleteTripDestinationIds } from "../utils/tripRoute";
 import type { Customer, Destination } from "../types";
 
 // ============================================================================
@@ -584,14 +585,26 @@ function EditDestinationForm({
 // ============================================================================
 export function CreateTripScreen() {
   const { destinations, businessProfile, trips, navigate, createTrip, selectTrip, toast } = useApp();
-  const [origin, setOrigin] = useState(destinations[0]?.id || "");
+  const defaultRoute = getDefaultCompleteTripDestinationIds(destinations);
+  const [origin, setOrigin] = useState(defaultRoute.originDestinationId);
+  const [returnDestination, setReturnDestination] = useState(defaultRoute.returnDestinationId);
   const [notes, setNotes] = useState("");
   const [hours, setHours] = useState(8);
   const [creating, setCreating] = useState(false);
   const unfinishedTrip = trips.find(isUnfinishedTrip);
+  const routeReady = Boolean(origin && returnDestination);
+
+  useEffect(() => {
+    if (!origin && defaultRoute.originDestinationId) setOrigin(defaultRoute.originDestinationId);
+    if (!returnDestination && defaultRoute.returnDestinationId) setReturnDestination(defaultRoute.returnDestinationId);
+  }, [defaultRoute.originDestinationId, defaultRoute.returnDestinationId, origin, returnDestination]);
 
   const handleCreate = async () => {
     if (creating) return;
+    if (!routeReady) {
+      toast({ title: "Trip route missing", body: "Select origin and return destination first.", variant: "warning" });
+      return;
+    }
     if (unfinishedTrip) {
       selectTrip(unfinishedTrip.id);
       toast({ title: "Trip already open", body: unfinishedTrip.tripNumber, variant: "warning" });
@@ -600,7 +613,7 @@ export function CreateTripScreen() {
     }
     setCreating(true);
     const arrival = new Date(Date.now() + hours * 3600000).toISOString();
-    const trip = await createTrip(origin, arrival, notes || "New cargo trip");
+    const trip = await createTrip(origin, returnDestination, arrival, notes || "New cargo trip");
     if (!trip) {
       setCreating(false);
       navigate("trip_detail");
@@ -629,6 +642,13 @@ export function CreateTripScreen() {
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Origin (departure island)</label>
           <select value={origin} onChange={e => setOrigin(e.target.value)} className="h-12 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100">
+            {destinations.map(d => <option key={d.id} value={d.id}>{d.islandName} ({d.destinationCode}) — {d.atoll}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Return destination</label>
+          <select value={returnDestination} onChange={e => setReturnDestination(e.target.value)} className="h-12 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100">
             {destinations.map(d => <option key={d.id} value={d.id}>{d.islandName} ({d.destinationCode}) — {d.atoll}</option>)}
           </select>
         </div>
@@ -684,7 +704,7 @@ export function CreateTripScreen() {
       </div>
 
       <div className="border-t border-slate-200 bg-white p-4 space-y-2">
-        <Btn fullWidth size="lg" icon={unfinishedTrip ? "ship" : "check"} loading={creating} onClick={handleCreate}>
+        <Btn fullWidth size="lg" icon={unfinishedTrip ? "ship" : "check"} loading={creating} disabled={!unfinishedTrip && !routeReady} onClick={handleCreate}>
           {unfinishedTrip ? "View current trip" : "Create draft trip"}
         </Btn>
         <p className="text-center text-xs text-slate-400">
