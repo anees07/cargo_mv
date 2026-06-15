@@ -31,10 +31,17 @@ export function AppUpdatePrompt() {
     void check();
     const interval = window.setInterval(check, appUpdateCheckIntervalMs);
     const onFocus = () => void check();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [check]);
 

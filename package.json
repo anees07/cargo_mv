@@ -1,11 +1,16 @@
 {
   "name": "react-vite-tailwind",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:ci": "vite build",
+    "bump:release": "node scripts/bump-release.mjs",
+    "build:release": "node scripts/bump-release.mjs && npm run build:ci && npx cap sync android && cd android && ./gradlew :app:assembleRelease",
+    "release:android": "bash scripts/release-android.sh",
+    "deploy:release": "DEPLOY_FIREBASE=1 bash scripts/release-android.sh",
     "preview": "vite preview"
   },
   "dependencies": {

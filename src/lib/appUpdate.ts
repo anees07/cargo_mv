@@ -39,7 +39,7 @@ const AppUpdater = registerPlugin<AppUpdaterPlugin>("AppUpdater");
 const currentBuildNumber = Number(APP_BUILD);
 const remoteManifestUrl = "https://cargomv-d41f8.web.app/app-update.json";
 
-export const appUpdateCheckIntervalMs = 300000;
+export const appUpdateCheckIntervalMs = 60000;
 
 function updateManifestUrl() {
   const baseUrl = Capacitor.isNativePlatform() ? remoteManifestUrl : "/app-update.json";
