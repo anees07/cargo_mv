@@ -6,6 +6,7 @@ import { MVR, MVRShort, formatDate, formatDateTime, formatTime, relativeTime, st
 import { hasPermission } from "../utils/permissions";
 import { isUnfinishedTrip } from "../utils/trips";
 import { describeCompleteTripRoute } from "../utils/tripRoute";
+import { getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
 
 // ============================================================================
 // Dashboard
@@ -15,7 +16,8 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
   const activeTrip = trips.find(t => t.id === activeTripId);
   const activeTripRoute = activeTrip ? describeCompleteTripRoute(activeTrip, destinations) : "";
   const recentBills = bills.slice(0, 4);
-  const outstanding = customers.reduce((s, c) => s + c.outstandingBalance, 0);
+  const outstanding = getTotalOutstanding(bills);
+  const outstandingCustomers = getOutstandingCustomerCount(bills);
   const todayRevenue = bills.filter(b => b.paymentStatus === "paid").reduce((s, b) => s + b.paidAmount, 0);
   const onlineCount = users.filter(u => u.online).length;
   const unreadNotifs = notifications.filter(n => !n.read).length;
@@ -106,7 +108,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
         {/* Quick Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 px-4 pt-4">
           <Stat label="Today Revenue" value={MVRShort(todayRevenue)} sub="4 paid bills" icon="cash" color="emerald" />
-          <Stat label="Outstanding" value={MVRShort(outstanding)} sub={`${customers.filter(c => c.outstandingBalance > 0).length} customers`} icon="receipt" color="amber" />
+          <Stat label="Outstanding" value={MVRShort(outstanding)} sub={`${outstandingCustomers} customers`} icon="receipt" color="amber" />
           <Stat label="Active Trip" value={activeTrip?.tripNumber.split("-").pop() || "—"} sub={activeTrip?.status.toUpperCase() || "—"} icon="ship" color="ocean" />
           <Stat label="Destinations" value={String(10)} sub="across Maldives" icon="island" color="violet" />
         </div>

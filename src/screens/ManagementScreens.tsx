@@ -5,6 +5,7 @@ import type { BusinessProfile, User, UserRole } from "../types";
 import { MVR, MVRShort, formatDate, roleColor, roleLabel } from "../utils/format";
 import { buildQuarterTaxBillRows, quarterPeriod, recentQuarterOptions } from "../utils/taxReport";
 import { APP_RELEASE_DETAIL } from "../appVersion";
+import { buildCustomerOutstandingMap, getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
 
 // ============================================================================
 // Reports
@@ -17,7 +18,9 @@ export function ReportsScreen() {
 
   const totalBilled = activeBills.reduce((s, b) => s + b.grandTotal, 0);
   const totalCollected = payments.reduce((s, p) => s + p.amount, 0);
-  const totalOutstanding = customers.reduce((s, c) => s + c.outstandingBalance, 0);
+  const customerOutstanding = buildCustomerOutstandingMap(bills);
+  const totalOutstanding = getTotalOutstanding(bills);
+  const outstandingCustomerCount = getOutstandingCustomerCount(bills);
   const totalTax = activeBills.reduce((s, b) => s + b.taxTotal, 0);
 
   const destinationReport = destinations.map(d => {
@@ -75,7 +78,7 @@ export function ReportsScreen() {
               <Card className="p-4">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Outstanding</p>
                 <p className="mt-1 text-2xl font-bold text-rose-700">{MVRShort(totalOutstanding)}</p>
-                <p className="mt-1 text-xs text-slate-500">{customers.filter(c => c.outstandingBalance > 0).length} customers</p>
+                <p className="mt-1 text-xs text-slate-500">{outstandingCustomerCount} customers</p>
               </Card>
               <Card className="p-4">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Tax collected</p>
@@ -131,16 +134,17 @@ export function ReportsScreen() {
           <Card className="p-0 overflow-hidden">
             <div className="divide-y divide-slate-100">
               {customers
-                .filter(c => c.outstandingBalance > 0)
-                .sort((a, b) => b.outstandingBalance - a.outstandingBalance)
-                .map(c => (
+                .map(c => ({ customer: c, outstanding: customerOutstanding.get(c.id) || 0 }))
+                .filter(row => row.outstanding > 0)
+                .sort((a, b) => b.outstanding - a.outstanding)
+                .map(({ customer: c, outstanding }) => (
                   <div key={c.id} className="flex items-center justify-between p-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{c.displayName}</p>
                       <p className="text-xs text-slate-500 capitalize">{c.customerType.replace("_", " ")} • {c.defaultPriceLevelId}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-rose-700">{MVR(c.outstandingBalance)}</p>
+                      <p className="text-sm font-bold text-rose-700">{MVR(outstanding)}</p>
                       <p className="text-xs text-slate-500">of {MVRShort(c.creditLimit)}</p>
                     </div>
                   </div>

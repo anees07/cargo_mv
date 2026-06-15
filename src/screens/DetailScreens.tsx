@@ -5,6 +5,7 @@ import { MVR, MVRShort, formatDate, relativeTime } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { isUnfinishedTrip } from "../utils/trips";
 import { getDefaultCompleteTripDestinationIds } from "../utils/tripRoute";
+import { buildCustomerOutstandingMap, getCustomerOutstanding } from "../utils/billingSummary";
 import type { Customer, Destination } from "../types";
 
 // ============================================================================
@@ -23,6 +24,8 @@ export function CustomerDetailScreen() {
   const customerOps = operations.filter(o => o.customerId === customer.id);
   const totalBilled = customerBills.reduce((s, b) => s + b.grandTotal, 0);
   const totalPaid = customerBills.reduce((s, b) => s + b.paidAmount, 0);
+  const outstanding = getCustomerOutstanding(bills, customer.id);
+  const creditUsage = customer.creditLimit > 0 ? Math.round((outstanding / customer.creditLimit) * 100) : 0;
   const [tab, setTab] = useState<"overview" | "bills" | "payments" | "operations">("overview");
 
   const typeColors: Record<string, string> = {
@@ -73,7 +76,7 @@ export function CustomerDetailScreen() {
             </div>
             <div className="rounded-lg bg-white/10 p-2">
               <p className="text-xs uppercase opacity-70">Outstanding</p>
-              <p className="mt-0.5 text-sm font-bold">{MVRShort(customer.outstandingBalance)}</p>
+              <p className="mt-0.5 text-sm font-bold">{MVRShort(outstanding)}</p>
             </div>
           </div>
         </div>
@@ -114,14 +117,14 @@ export function CustomerDetailScreen() {
             </div>
           </Card>
 
-          {customer.outstandingBalance > 0 && (
+          {outstanding > 0 && (
             <Card className="border-l-4 border-l-amber-500 bg-amber-50 p-3.5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold text-amber-900">Outstanding balance</p>
-                  <p className="mt-0.5 text-lg font-bold text-amber-800">{MVR(customer.outstandingBalance)}</p>
+                  <p className="mt-0.5 text-lg font-bold text-amber-800">{MVR(outstanding)}</p>
                   <p className="text-xs text-amber-700">
-                    {Math.round((customer.outstandingBalance / customer.creditLimit) * 100)}% of credit limit used
+                    {creditUsage}% of credit limit used
                   </p>
                 </div>
                 <div className="h-12 w-12">
@@ -130,7 +133,7 @@ export function CustomerDetailScreen() {
                     <path
                       d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
                       fill="none" stroke="#f59e0b" strokeWidth="3"
-                      strokeDasharray={`${Math.min(100, (customer.outstandingBalance / customer.creditLimit) * 100)}, 100`}
+                      strokeDasharray={`${Math.min(100, creditUsage)}, 100`}
                     />
                   </svg>
                 </div>
@@ -175,7 +178,7 @@ export function CustomerDetailScreen() {
                   </div>
                   <div className="flex justify-between">
                     <span className="font-semibold text-slate-900">Balance due</span>
-                    <span className="font-mono font-bold text-rose-700">{MVR(customer.outstandingBalance)}</span>
+                    <span className="font-mono font-bold text-rose-700">{MVR(outstanding)}</span>
                   </div>
                 </div>
               </Card>
@@ -389,6 +392,7 @@ export function DestinationDetailScreen() {
   const destCustomers = customers.filter(c => c.defaultDestinationId === dest.id);
   const destOps = operations.filter(o => o.destinationId === dest.id);
   const destBills = bills.filter(b => b.destinationId === dest.id);
+  const customerOutstanding = buildCustomerOutstandingMap(bills);
   const totalRevenue = destBills.reduce((s, b) => s + b.grandTotal, 0);
   const totalItems = destOps.reduce((s, o) => s + o.items.length, 0);
 
@@ -435,28 +439,31 @@ export function DestinationDetailScreen() {
               <Card className="p-6 text-center text-sm text-slate-500">No customers registered at this destination.</Card>
             ) : (
               <div className="space-y-2">
-                {destCustomers.map(c => (
-                  <Card
-                    key={c.id}
-                    className="p-3"
-                    onClick={() => { selectCustomer(c.id); navigate("customer_detail" as any); }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ocean-100 text-xs font-bold text-ocean-700">
-                          {c.displayName.slice(0, 2).toUpperCase()}
+                {destCustomers.map(c => {
+                  const outstanding = customerOutstanding.get(c.id) || 0;
+                  return (
+                    <Card
+                      key={c.id}
+                      className="p-3"
+                      onClick={() => { selectCustomer(c.id); navigate("customer_detail" as any); }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ocean-100 text-xs font-bold text-ocean-700">
+                            {c.displayName.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{c.displayName}</p>
+                            <p className="text-xs text-slate-500 capitalize">{c.customerType.replace("_", " ")} · {c.defaultPriceLevelId}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{c.displayName}</p>
-                          <p className="text-xs text-slate-500 capitalize">{c.customerType.replace("_", " ")} · {c.defaultPriceLevelId}</p>
-                        </div>
+                        {outstanding > 0 && (
+                          <p className="text-xs font-bold text-rose-600">{MVR(outstanding)}</p>
+                        )}
                       </div>
-                      {c.outstandingBalance > 0 && (
-                        <p className="text-xs font-bold text-rose-600">{MVR(c.outstandingBalance)}</p>
-                      )}
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </Section>

@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, TopBar, FirestoreListBuilder } from "../components/ui";
 import { MVR, MVRShort } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { buildCustomerOutstandingMap, getTotalOutstanding } from "../utils/billingSummary";
 import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
 import type { CatalogItem, Customer } from "../types";
 
@@ -106,7 +107,7 @@ function AddDestForm({ onAdd }: { onAdd: (d: { islandName: string; atoll: string
 // Customers
 // ============================================================================
 export function CustomersScreen() {
-  const { customers, destinations, navigate, selectCustomer, addCustomer, back, toast, currentUser } = useApp();
+  const { customers, destinations, bills, navigate, selectCustomer, addCustomer, back, toast, currentUser } = useApp();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
@@ -115,7 +116,8 @@ export function CustomersScreen() {
     const matchesType = typeFilter === "all" || c.customerType === typeFilter;
     return matchesSearch && matchesType;
   });
-  const totalOutstanding = customers.reduce((s, c) => s + c.outstandingBalance, 0);
+  const customerOutstanding = buildCustomerOutstandingMap(bills);
+  const totalOutstanding = getTotalOutstanding(bills);
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -158,6 +160,7 @@ export function CustomersScreen() {
           emptyHint="No registered client ledgers match your search criteria."
           renderItem={(c) => {
             const d = destinations.find(d => d.id === c.defaultDestinationId);
+            const outstanding = customerOutstanding.get(c.id) || 0;
             const typeColors: Record<string, string> = {
               business: "bg-ocean-100 text-ocean-700",
               government: "bg-amber-100 text-amber-700",
@@ -184,10 +187,10 @@ export function CustomersScreen() {
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    {c.outstandingBalance > 0 ? (
+                    {outstanding > 0 ? (
                       <>
                         <p className="text-xs uppercase tracking-wider text-slate-500">Due</p>
-                        <p className="text-sm font-bold text-rose-600">{MVR(c.outstandingBalance)}</p>
+                        <p className="text-sm font-bold text-rose-600">{MVR(outstanding)}</p>
                         <p className="text-xs text-slate-400">/ {MVRShort(c.creditLimit)}</p>
                       </>
                     ) : (

@@ -1,35 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { APP_BUILD, APP_VERSION } from "../appVersion";
-
-type UpdateTarget = {
-  enabled: boolean;
-  url?: string;
-  apkUrl?: string;
-};
-
-type AppUpdateManifest = {
-  latest: {
-    versionName: string;
-    buildNumber: number;
-    releasedAt?: string;
-    notes?: string[];
-  };
-  mandatory?: boolean;
-  checkIntervalMs?: number;
-  targets?: {
-    web?: UpdateTarget;
-    android?: UpdateTarget;
-  };
-};
-
-export type AvailableAppUpdate = {
-  versionName: string;
-  buildNumber: number;
-  notes: string[];
-  mandatory: boolean;
-  platform: "android" | "web";
-  installUrl: string;
-};
+import { selectAvailableAppUpdate, type AppUpdateManifest, type AvailableAppUpdate } from "./appUpdatePolicy";
 
 type AppUpdaterPlugin = {
   downloadAndInstall(options: { url: string; fileName: string }): Promise<{ openedSettings?: boolean }>;
@@ -56,20 +27,7 @@ export async function checkForAppUpdate(): Promise<AvailableAppUpdate | null> {
 
   const manifest = await response.json() as AppUpdateManifest;
   const platform = currentPlatform();
-  const target = platform === "android" ? manifest.targets?.android : manifest.targets?.web;
-  if (!target?.enabled || manifest.latest.buildNumber <= currentBuildNumber) return null;
-
-  const installUrl = platform === "android" ? target.apkUrl : target.url;
-  if (!installUrl) return null;
-
-  return {
-    versionName: manifest.latest.versionName,
-    buildNumber: manifest.latest.buildNumber,
-    notes: manifest.latest.notes || [],
-    mandatory: manifest.mandatory === true,
-    platform,
-    installUrl,
-  };
+  return selectAvailableAppUpdate(manifest, platform, currentBuildNumber);
 }
 
 export async function installAppUpdate(update: AvailableAppUpdate) {
