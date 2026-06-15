@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   buildOffloadAvailability,
   billTypeForOperationType,
+  hasActiveBillForOperation,
+  hasLockedBillForOperation,
+  isBillEditableBeforeFinalize,
   isOperationBillable,
   validatePaymentRequest,
 } from "./operationFlow.js";
@@ -116,12 +119,69 @@ test("offload availability subtracts offloading bill items after offloading is b
   assert.equal(availability.rice?.remaining, 6);
 });
 
-test("bill generation is blocked when an active draft bill already exists for the operation", () => {
+test("offload availability subtracts bill offloaded items without adding them to bill items", () => {
+  const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
+    bill({
+      billType: "loading_bill",
+      items: [item({ id: "loaded_1", itemId: "rice", quantity: 10 })],
+      offloadedItems: [item({ id: "offloaded_1", itemId: "rice", quantity: 4 })],
+    }),
+  ]);
+
+  assert.equal(availability.rice?.loadedQuantity, 10);
+  assert.equal(availability.rice?.offloadedQuantity, 4);
+  assert.equal(availability.rice?.remaining, 6);
+});
+
+test("bill generation remains available when a draft bill can be updated before finalize", () => {
   const loadingOperation = operation({ items: [item({})] });
   assert.equal(
     isOperationBillable(loadingOperation, [trip], [bill({ billType: billTypeForOperationType(loadingOperation.operationType) })]),
+    true
+  );
+});
+
+test("only loading operations are billable", () => {
+  const offloadingOperation = operation({ operationType: "offloading", items: [item({})] });
+  const handlingOperation = operation({ operationType: "cargo_handling", items: [item({})] });
+
+  assert.equal(isOperationBillable(offloadingOperation, [trip], []), false);
+  assert.equal(isOperationBillable(offloadingOperation, [trip], [bill({ billType: "loading_bill" })]), false);
+  assert.equal(isOperationBillable(handlingOperation, [trip], []), false);
+});
+
+test("draft bill matching destination and customer can be updated even when bill type differs", () => {
+  const loadingOperation = operation({ items: [item({})] });
+  const existingCreditBill = bill({ billType: "credit", billStatus: "draft" });
+
+  assert.equal(hasActiveBillForOperation(loadingOperation, [existingCreditBill]), true);
+  assert.equal(hasLockedBillForOperation(loadingOperation, [existingCreditBill]), false);
+  assert.equal(isOperationBillable(loadingOperation, [trip], [existingCreditBill]), true);
+});
+
+test("legacy unfinalized bills remain editable before finalize", () => {
+  const legacyBill = bill({ billStatus: "credit", paymentStatus: "unpaid", finalizedAt: undefined });
+  assert.equal(isBillEditableBeforeFinalize(legacyBill), true);
+});
+
+test("bill generation is blocked when a finalized bill already exists for the operation", () => {
+  const loadingOperation = operation({ items: [item({})] });
+  assert.equal(
+    isOperationBillable(loadingOperation, [trip], [bill({
+      billType: billTypeForOperationType(loadingOperation.operationType),
+      billStatus: "finalized",
+    })]),
     false
   );
+});
+
+test("finalized bill matching destination and customer blocks updates even when bill type differs", () => {
+  const loadingOperation = operation({ items: [item({})] });
+  const finalizedCreditBill = bill({ billType: "credit", billStatus: "finalized" });
+
+  assert.equal(hasActiveBillForOperation(loadingOperation, [finalizedCreditBill]), true);
+  assert.equal(hasLockedBillForOperation(loadingOperation, [finalizedCreditBill]), true);
+  assert.equal(isOperationBillable(loadingOperation, [trip], [finalizedCreditBill]), false);
 });
 
 test("cancelled bills do not block rebilling the same operation", () => {

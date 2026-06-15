@@ -98,6 +98,7 @@ export function buildOffloadAvailability(
     if (bill.billType === "loading_bill") {
       for (const item of items) addLoadedItem(item);
     }
+    for (const item of bill.offloadedItems || []) addOffloadedItem(item);
     if (bill.billType === "offloading_bill") {
       for (const item of items) addOffloadedItem(item);
     }
@@ -119,22 +120,36 @@ export function buildOffloadAvailability(
 }
 
 export function hasActiveBillForOperation(operation: Operation, bills: Bill[]): boolean {
-  const billType = billTypeForOperationType(operation.operationType);
   return bills.some(bill =>
-    bill.tripId === operation.tripId &&
-    bill.destinationId === operation.destinationId &&
-    bill.customerId === operation.customerId &&
-    bill.billType === billType &&
-    bill.billStatus !== "cancelled"
+    sameBillSelection(bill, operation.tripId, operation.destinationId, operation.customerId)
+  );
+}
+
+export function isBillEditableBeforeFinalize(bill: Bill): boolean {
+  return !bill.finalizedAt &&
+    bill.billStatus !== "cancelled" &&
+    bill.billStatus !== "finalized" &&
+    bill.billStatus !== "partially_paid" &&
+    bill.billStatus !== "paid" &&
+    bill.billStatus !== "adjusted" &&
+    bill.paymentStatus !== "partial" &&
+    bill.paymentStatus !== "paid";
+}
+
+export function hasLockedBillForOperation(operation: Operation, bills: Bill[]): boolean {
+  return bills.some(bill =>
+    sameBillSelection(bill, operation.tripId, operation.destinationId, operation.customerId) &&
+    !isBillEditableBeforeFinalize(bill)
   );
 }
 
 export function isOperationBillable(operation: Operation, trips: Trip[], bills: Bill[]): boolean {
   const trip = trips.find(item => item.id === operation.tripId);
-  return operation.items.length > 0 &&
+  return operation.operationType === "loading" &&
+    operation.items.length > 0 &&
     Boolean(trip) &&
     !["ended", "closed"].includes(trip!.status) &&
-    !hasActiveBillForOperation(operation, bills);
+    !hasLockedBillForOperation(operation, bills);
 }
 
 export function validatePaymentRequest(bill: Bill | undefined | null, amount: number): PaymentValidation {

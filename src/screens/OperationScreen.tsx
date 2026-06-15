@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
-import { buildOffloadAvailability, hasActiveBillForOperation, type OffloadAvailability } from "../utils/operationFlow";
+import { buildOffloadAvailability, hasLockedBillForOperation, type OffloadAvailability } from "../utils/operationFlow";
 import {
   cleanWalkInDetails,
   customerMatchesDestination,
@@ -44,7 +44,7 @@ export function OperationScreen() {
     o.destinationId === selectedDestId &&
     o.customerId === selectedCustomerId
   );
-  const currentOpHasActiveBill = currentOp ? hasActiveBillForOperation(currentOp, bills) : false;
+  const currentOpHasLockedBill = currentOp ? hasLockedBillForOperation(currentOp, bills) : false;
   const offloadAvailability = useMemo(
     () => buildOffloadAvailability(operations, activeTripId, selectedDestId, selectedCustomerId, bills),
     [operations, activeTripId, selectedDestId, selectedCustomerId, bills]
@@ -267,7 +267,7 @@ export function OperationScreen() {
         )}
 
         {/* Live items list */}
-        {currentOp && currentOp.items.length > 0 && (
+        {opType !== "offloading" && currentOp && currentOp.items.length > 0 && (
           <Section title={`Items (${currentOp.items.length})`} className="mt-5">
             <Card className="p-0 overflow-hidden">
               <div className="divide-y divide-slate-100">
@@ -385,21 +385,21 @@ export function OperationScreen() {
             <p className="text-xs uppercase tracking-wider text-slate-500">Operation total</p>
             <p className="text-lg font-bold text-slate-900">{MVR(currentOp?.totalTaxInclusive || 0)}</p>
           </div>
-          {hasPermission(currentUser.role, "create_bill") && (
+          {opType === "loading" && hasPermission(currentUser.role, "create_bill") && (
             <Btn
               size="lg"
               icon="receipt"
-              disabled={!currentOp || currentOp.items.length === 0 || currentOpHasActiveBill}
+              disabled={!currentOp || currentOp.items.length === 0 || currentOpHasLockedBill}
               onClick={async () => {
                 if (currentOp) {
-                  const bill = await createBillFromOperation(currentOp.id, opType === "offloading" ? "offloading_bill" : "loading_bill");
+                  const bill = await createBillFromOperation(currentOp.id, "loading_bill");
                   if (bill) {
                     resetOperationForm();
                   }
                 }
               }}
             >
-              {currentOpHasActiveBill ? "Bill already exists" : "Generate bill"}
+              {currentOpHasLockedBill ? "Bill already exists" : "Generate bill"}
             </Btn>
           )}
         </div>

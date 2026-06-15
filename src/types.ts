@@ -216,6 +216,7 @@ export interface Bill {
   updatedAt?: ISODate;
   itemCount: number;
   items?: OperationItem[];
+  offloadedItems?: OperationItem[];
 }
 
 export type PaymentMethod = "cash" | "bank_transfer" | "cheque" | "mobile_wallet" | "other";

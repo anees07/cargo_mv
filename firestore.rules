@@ -180,7 +180,7 @@ service cloud.firestore {
           'originalPrice', 'overridePrice', 'overrideReason',
           'billNumber', 'billType', 'billStatus', 'subtotalTaxInclusive',
           'taxTotal', 'grandTotal', 'paymentStatus', 'paidAmount',
-          'finalizedBy', 'finalizedAt', 'itemCount',
+          'finalizedBy', 'finalizedAt', 'itemCount', 'offloadedItems',
           'paymentNumber', 'billId', 'amount', 'method', 'reference',
           'collectedBy', 'collectedAt',
           'taxName', 'taxRate', 'taxRegistrationStatus', 'taxInclusiveEnabled', 'effectiveFrom',

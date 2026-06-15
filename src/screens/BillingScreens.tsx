@@ -299,7 +299,7 @@ export function InvoicePreviewScreen() {
               </div>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold tracking-tight text-slate-900">{bill.billType === "credit" ? "TAX INVOICE" : "CASH BILL"}</p>
+              <p className="text-2xl font-bold tracking-tight text-slate-900">TAX INVOICE</p>
               <p className="text-slate-700 font-mono mt-1">{bill.billNumber}</p>
               <p className="text-slate-500 text-xs">Date: {formatDate(bill.createdAt)}</p>
               <p className="text-slate-500 text-xs">Trip: {trip?.tripNumber}</p>

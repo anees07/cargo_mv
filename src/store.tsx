@@ -10,7 +10,7 @@ import {
 } from "./lib/firebase";
 import { MVR } from "./utils/format";
 import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
-import { validatePaymentRequest } from "./utils/operationFlow";
+import { isBillEditableBeforeFinalize, validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate,
@@ -209,6 +209,15 @@ function appendToast(toasts: ToastMessage[], toast: ToastMessage) {
   return [...toasts.slice(0, duplicateIndex), ...toasts.slice(duplicateIndex + 1), toast];
 }
 
+function mergeOperationItems(incoming: OperationItem[], existing: OperationItem[] = []) {
+  const seen = new Set<string>();
+  return [...incoming, ...existing].filter(item => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
 const tenantCollections = {
   users: "business_users",
   destinations: "destinations",
@@ -329,6 +338,7 @@ const addAudit = (
 
 const notificationTitleForAudit = (action: string) => {
   if (action.startsWith("trip.")) return "Trip updated";
+  if (action === "billing.generate") return "Bill generated";
   if (action.startsWith("billing.")) return "Bill updated";
   if (action.startsWith("payment.")) return "Payment updated";
   if (action.startsWith("catalog.")) return "Catalog updated";
@@ -691,9 +701,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     const numberingSeeds: Array<Omit<NumberingSequence, "id" | "businessProfileId">> = [
       { numberType: "trip", prefix: "TRIP", currentSequence: 0, formatTemplate: "TRIP-{YYYY}-{000000}", padding: 6, lastGenerated: "" },
-      { numberType: "bill", prefix: "VESSEL", currentSequence: 0, formatTemplate: "{VESSEL}-{DEST}-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "bill", prefix: "BILL", currentSequence: 0, formatTemplate: "BILL-{DEST}-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "invoice", prefix: "INV", currentSequence: 0, formatTemplate: "INV-{YYYY}-{MM}-{000000}", padding: 6, lastGenerated: "" },
-      { numberType: "receipt", prefix: "VESSEL", currentSequence: 0, formatTemplate: "{VESSEL}-RCP-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "receipt", prefix: "RCP", currentSequence: 0, formatTemplate: "RCP-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "payment", prefix: "PAY", currentSequence: 0, formatTemplate: "PAY-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "customer", prefix: "CUS", currentSequence: 0, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "" },
     ];
@@ -804,8 +814,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const generateNextNumber = useCallback((type: NumberingSequence["numberType"], destCode?: string): string => {
     const seq = state.numbering.find(n => n.numberType === type);
-    return seq ? formatSequenceNumber(seq, seq.currentSequence + 1, { destCode, vesselName: state.businessProfile.vesselName }) : "";
-  }, [state.businessProfile.vesselName, state.numbering]);
+    return seq ? formatSequenceNumber(seq, seq.currentSequence + 1, destCode) : "";
+  }, [state.numbering]);
 
   const addOperationItem = useCallback((item: AddOperationItemInput) => {
     const { operationType, walkInDetails, ...operationItem } = item;
@@ -1014,7 +1024,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           remoteMaxSequence,
           localMaxSequence
         ) + 1;
-        const receiptNum = formatSequenceNumber(sequenceData, nextSequence, { vesselName: state.businessProfile.vesselName });
+        const receiptNum = formatSequenceNumber(sequenceData, nextSequence);
         const updatedBill: Bill = {
           ...bill,
           paidAmount: paymentValidation.nextPaidAmount,
@@ -1186,7 +1196,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           remoteMaxSequence,
           localMaxSequence
         ) + 1;
-        const tripNumber = formatSequenceNumber(sequenceData, nextSequence, { vesselName: state.businessProfile.vesselName });
+        const tripNumber = formatSequenceNumber(sequenceData, nextSequence);
         const newTrip: Trip = {
           id: tripId,
           businessProfileId,
@@ -1333,15 +1343,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }));
       return null;
     }
+    if (op.operationType !== "loading") {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Loading only", body: "Bills can only be generated from the loading tab.", variant: "warning" as const }],
+      }));
+      return null;
+    }
     const existingBill = state.bills.find(b =>
       b.tripId === op.tripId &&
       b.destinationId === op.destinationId &&
       b.customerId === op.customerId &&
-      b.billType === billType &&
       b.billStatus !== "cancelled"
     );
     if (existingBill) {
-      if (existingBill.billStatus !== "draft") {
+      if (!isBillEditableBeforeFinalize(existingBill)) {
         setState(s => ({
           ...s,
           selectedBillId: existingBill.id,
@@ -1366,20 +1382,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
 
           const remoteBill = { id: billSnapshot.id, ...billSnapshot.data() } as Bill;
-          if (remoteBill.billStatus !== "draft") {
+          if (!isBillEditableBeforeFinalize(remoteBill)) {
             throw new Error(`Bill locked: ${remoteBill.billNumber}`);
           }
 
           const remoteOperation = { id: opSnapshot.id, ...opSnapshot.data() } as Operation;
-          const mergedItems = [...remoteOperation.items, ...(remoteBill.items || [])];
+          const isOffloadReconciliation = remoteOperation.operationType === "offloading";
+          const mergedItems = isOffloadReconciliation
+            ? (remoteBill.items || [])
+            : mergeOperationItems(remoteOperation.items, remoteBill.items || []);
+          const mergedOffloadedItems = isOffloadReconciliation
+            ? mergeOperationItems(remoteOperation.items, remoteBill.offloadedItems || [])
+            : (remoteBill.offloadedItems || []);
           const billToWrite: Bill = {
             ...remoteBill,
+            billStatus: "draft",
             walkInDetails: remoteOperation.walkInDetails ?? remoteBill.walkInDetails,
             items: mergedItems,
+            offloadedItems: mergedOffloadedItems,
             itemCount: mergedItems.length,
-            subtotalTaxInclusive: Number((Number(remoteBill.subtotalTaxInclusive || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
-            taxTotal: Number((Number(remoteBill.taxTotal || 0) + remoteOperation.totalTax).toFixed(2)),
-            grandTotal: Number((Number(remoteBill.grandTotal || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
+            subtotalTaxInclusive: isOffloadReconciliation
+              ? remoteBill.subtotalTaxInclusive
+              : Number((Number(remoteBill.subtotalTaxInclusive || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
+            taxTotal: isOffloadReconciliation
+              ? remoteBill.taxTotal
+              : Number((Number(remoteBill.taxTotal || 0) + remoteOperation.totalTax).toFixed(2)),
+            grandTotal: isOffloadReconciliation
+              ? remoteBill.grandTotal
+              : Number((Number(remoteBill.grandTotal || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
             updatedAt: new Date().toISOString(),
           };
 
@@ -1395,18 +1425,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           bills: s.bills.map(b => b.id === existingBill.id ? updatedBill : b),
           auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
             actorUserId: s.currentUser.id,
-            action: "billing.update_draft",
+            action: "billing.generate",
             entityType: "bill",
             entityId: existingBill.id,
-            summary: `Updated draft bill ${updatedBill.billNumber}`,
+            summary: `Generated bill ${updatedBill.billNumber}`,
           }),
-          toasts: [...s.toasts, { id: id("t"), title: "Bill updated", body: updatedBill.billNumber, variant: "success" as const }],
+          toasts: [...s.toasts, { id: id("t"), title: "Bill generated", body: updatedBill.billNumber, variant: "success" as const }],
         }));
         return updatedBill;
       } catch (error) {
         setState(s => ({
           ...s,
-          toasts: [...s.toasts, { id: id("t"), title: "Bill not updated", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+          toasts: [...s.toasts, { id: id("t"), title: "Bill not generated", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
         }));
         return null;
       }
@@ -1442,10 +1472,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           remoteMaxSequence,
           localMaxSequence
         ) + 1;
-        const billNumber = formatSequenceNumber(sequenceData, nextSequence, {
-          destCode: dest?.destinationCode,
-          vesselName: state.businessProfile.vesselName,
-        });
+        const billNumber = formatSequenceNumber(sequenceData, nextSequence, dest?.destinationCode);
         const newBill: Bill = {
           id: billId,
           businessProfileId,
