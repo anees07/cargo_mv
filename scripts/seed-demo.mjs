@@ -162,11 +162,11 @@ async function seed() {
   ]);
 
   const bills = withTenant([
-    { id: "b_001", tripId: "t_002", destinationId: "d_002", customerId: "c_001", billNumber: "BILL-HUL-000088", billType: "credit", billStatus: "partially_paid", subtotalTaxInclusive: 32400, taxTotal: 2400, grandTotal: 32400, paymentStatus: "partial", paidAmount: 18000, createdBy: owner.uid, finalizedBy: owner.uid, finalizedAt: yesterday, createdAt: yesterday, itemCount: 12 },
+    { id: "b_001", tripId: "t_002", destinationId: "d_002", customerId: "c_001", billNumber: "OCE-HUL-000088", billType: "credit", billStatus: "partially_paid", subtotalTaxInclusive: 32400, taxTotal: 2400, grandTotal: 32400, paymentStatus: "partial", paidAmount: 18000, createdBy: owner.uid, finalizedBy: owner.uid, finalizedAt: yesterday, createdAt: yesterday, itemCount: 12 },
   ]);
 
   const payments = withTenant([
-    { id: "pm_001", billId: "b_001", paymentNumber: "RCP-000214", amount: 18000, method: "bank_transfer", reference: "BNK-TRF-4521", collectedBy: owner.uid, collectedAt: yesterday, notes: "Partial settlement from STO Maldives" },
+    { id: "pm_001", billId: "b_001", paymentNumber: "OCE-RCP-000214", amount: 18000, method: "bank_transfer", reference: "BNK-TRF-4521", collectedBy: owner.uid, collectedAt: yesterday, notes: "Partial settlement from STO Maldives" },
   ]);
 
   const taxSettings = withTenant([
@@ -175,9 +175,9 @@ async function seed() {
 
   const numbering = withTenant([
     { id: "trip", numberType: "trip", prefix: "TRIP", currentSequence: 142, formatTemplate: "TRIP-{YYYY}-{000000}", padding: 6, lastGenerated: "TRIP-2026-000142" },
-    { id: "bill", numberType: "bill", prefix: "BILL", currentSequence: 88, formatTemplate: "BILL-{DEST}-{000000}", padding: 6, lastGenerated: "BILL-HUL-000088" },
+    { id: "bill", numberType: "bill", prefix: "VESSEL", currentSequence: 88, formatTemplate: "{VESSEL}-{DEST}-{000000}", padding: 6, lastGenerated: "OCE-HUL-000088" },
     { id: "invoice", numberType: "invoice", prefix: "INV", currentSequence: 78, formatTemplate: "INV-{YYYY}-{MM}-{000000}", padding: 6, lastGenerated: "INV-2026-01-000078" },
-    { id: "receipt", numberType: "receipt", prefix: "RCP", currentSequence: 214, formatTemplate: "RCP-{000000}", padding: 6, lastGenerated: "RCP-000214" },
+    { id: "receipt", numberType: "receipt", prefix: "VESSEL", currentSequence: 214, formatTemplate: "{VESSEL}-RCP-{000000}", padding: 6, lastGenerated: "OCE-RCP-000214" },
     { id: "payment", numberType: "payment", prefix: "PAY", currentSequence: 214, formatTemplate: "PAY-{000000}", padding: 6, lastGenerated: "PAY-000214" },
     { id: "customer", numberType: "customer", prefix: "CUS", currentSequence: 4, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "CUS-000004" },
   ]);

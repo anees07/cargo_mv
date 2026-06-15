@@ -9,6 +9,7 @@ import {
   signOutFirebase,
 } from "./lib/firebase";
 import { MVR } from "./utils/format";
+import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
 import { validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
 import type {
@@ -276,11 +277,6 @@ const deleteTenantDoc = (collectionName: string, businessProfileId: string, docI
   });
 };
 
-const sequenceFromNumber = (value?: string) => {
-  const match = value?.match(/(\d+)$/);
-  return match ? Number(match[1]) : 0;
-};
-
 async function getMaxSequenceFromFirestore(businessProfileId: string, collectionName: string, numberField: string) {
   const snapshot = await getDocs(collection(getFirebaseFirestore(), "business_profiles", businessProfileId, collectionName));
   return snapshot.docs.reduce((max, document) => {
@@ -288,17 +284,6 @@ async function getMaxSequenceFromFirestore(businessProfileId: string, collection
     return Math.max(max, sequenceFromNumber(numberValue));
   }, 0);
 }
-
-const formatSequenceNumber = (sequence: NumberingSequence, nextSequence: number, destCode?: string) => {
-  const year = new Date().getFullYear();
-  const month = String(new Date().getMonth() + 1).padStart(2, "0");
-  const padded = String(nextSequence).padStart(sequence.padding, "0");
-  return sequence.formatTemplate
-    .replace("{YYYY}", String(year))
-    .replace("{MM}", month)
-    .replace("{DEST}", destCode || "GEN")
-    .replace("{000000}", padded);
-};
 
 const operationDocumentId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
   `op_${[tripId, operationType, destinationId, customerId].join("_").replace(/[^A-Za-z0-9_-]/g, "_")}`;
@@ -706,9 +691,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     const numberingSeeds: Array<Omit<NumberingSequence, "id" | "businessProfileId">> = [
       { numberType: "trip", prefix: "TRIP", currentSequence: 0, formatTemplate: "TRIP-{YYYY}-{000000}", padding: 6, lastGenerated: "" },
-      { numberType: "bill", prefix: "BILL", currentSequence: 0, formatTemplate: "BILL-{DEST}-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "bill", prefix: "VESSEL", currentSequence: 0, formatTemplate: "{VESSEL}-{DEST}-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "invoice", prefix: "INV", currentSequence: 0, formatTemplate: "INV-{YYYY}-{MM}-{000000}", padding: 6, lastGenerated: "" },
-      { numberType: "receipt", prefix: "RCP", currentSequence: 0, formatTemplate: "RCP-{000000}", padding: 6, lastGenerated: "" },
+      { numberType: "receipt", prefix: "VESSEL", currentSequence: 0, formatTemplate: "{VESSEL}-RCP-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "payment", prefix: "PAY", currentSequence: 0, formatTemplate: "PAY-{000000}", padding: 6, lastGenerated: "" },
       { numberType: "customer", prefix: "CUS", currentSequence: 0, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "" },
     ];
@@ -819,8 +804,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const generateNextNumber = useCallback((type: NumberingSequence["numberType"], destCode?: string): string => {
     const seq = state.numbering.find(n => n.numberType === type);
-    return seq ? formatSequenceNumber(seq, seq.currentSequence + 1, destCode) : "";
-  }, [state.numbering]);
+    return seq ? formatSequenceNumber(seq, seq.currentSequence + 1, { destCode, vesselName: state.businessProfile.vesselName }) : "";
+  }, [state.businessProfile.vesselName, state.numbering]);
 
   const addOperationItem = useCallback((item: AddOperationItemInput) => {
     const { operationType, walkInDetails, ...operationItem } = item;
@@ -1029,7 +1014,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           remoteMaxSequence,
           localMaxSequence
         ) + 1;
-        const receiptNum = formatSequenceNumber(sequenceData, nextSequence);
+        const receiptNum = formatSequenceNumber(sequenceData, nextSequence, { vesselName: state.businessProfile.vesselName });
         const updatedBill: Bill = {
           ...bill,
           paidAmount: paymentValidation.nextPaidAmount,
@@ -1201,7 +1186,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           remoteMaxSequence,
           localMaxSequence
         ) + 1;
-        const tripNumber = formatSequenceNumber(sequenceData, nextSequence);
+        const tripNumber = formatSequenceNumber(sequenceData, nextSequence, { vesselName: state.businessProfile.vesselName });
         const newTrip: Trip = {
           id: tripId,
           businessProfileId,
@@ -1457,7 +1442,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           remoteMaxSequence,
           localMaxSequence
         ) + 1;
-        const billNumber = formatSequenceNumber(sequenceData, nextSequence, dest?.destinationCode);
+        const billNumber = formatSequenceNumber(sequenceData, nextSequence, {
+          destCode: dest?.destinationCode,
+          vesselName: state.businessProfile.vesselName,
+        });
         const newBill: Bill = {
           id: billId,
           businessProfileId,
