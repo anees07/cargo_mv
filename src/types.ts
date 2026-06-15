@@ -152,6 +152,12 @@ export interface OperationItem {
   createdAt: ISODate;
 }
 
+export interface WalkInDetails {
+  name: string;
+  phone: string;
+  description?: string;
+}
+
 export interface Operation {
   id: ID;
   businessProfileId: ID;
@@ -159,6 +165,7 @@ export interface Operation {
   operationType: OperationType;
   destinationId: ID;
   customerId: ID;
+  walkInDetails?: WalkInDetails;
   items: OperationItem[];
   totalTaxInclusive: number;
   totalTax: number;
@@ -191,6 +198,7 @@ export interface Bill {
   tripId: ID;
   destinationId: ID;
   customerId: ID;
+  walkInDetails?: WalkInDetails;
   billNumber: string;
   billType: BillType;
   billStatus: BillStatus;

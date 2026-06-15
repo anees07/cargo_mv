@@ -173,7 +173,7 @@ service cloud.firestore {
           'tripNumber', 'vesselName', 'originDestinationId', 'returnDestinationId', 'plannedDepartureAt',
           'actualDepartureAt', 'plannedArrivalAt', 'actualArrivalAt', 'status',
           'openedBy', 'endedBy', 'closedBy', 'notes', 'endedAt', 'closedAt',
-          'operationType', 'destinationId', 'customerId', 'tripId',
+          'operationType', 'destinationId', 'customerId', 'tripId', 'walkInDetails',
           'items', 'totalTaxInclusive', 'totalTax', 'createdBy', 'synced',
           'operationId', 'itemId', 'itemNameSnapshot', 'unitType', 'quantity',
           'unitPriceTaxInclusive', 'taxRate', 'taxAmount', 'lineTotalTaxInclusive',

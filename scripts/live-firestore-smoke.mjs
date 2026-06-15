@@ -133,6 +133,11 @@ async function main() {
     operationType: "loading",
     destinationId: destination.id,
     customerId: customer.id,
+    walkInDetails: {
+      name: "Smoke Walk-in",
+      phone: "7770000",
+      description: "Rules smoke test",
+    },
     items: [],
     totalTaxInclusive: 0,
     totalTax: 0,
@@ -146,6 +151,11 @@ async function main() {
     tripId: trip.id,
     destinationId: destination.id,
     customerId: customer.id,
+    walkInDetails: {
+      name: "Smoke Walk-in",
+      phone: "7770000",
+      description: "Rules smoke test",
+    },
     billNumber: `SMOKE-BILL-${stamp}`,
     billType: "credit",
     billStatus: "draft",

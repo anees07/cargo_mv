@@ -3,7 +3,14 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
-import type { CatalogItem, Customer, OperationItem } from "../types";
+import {
+  cleanWalkInDetails,
+  customerMatchesDestination,
+  emptyWalkInDetails,
+  isWalkInCustomer,
+  isWalkInDetailsComplete,
+} from "../utils/walkInDetails";
+import type { CatalogItem, Customer, OperationItem, WalkInDetails } from "../types";
 
 // ============================================================================
 // Operation Screen — Loading & Offloading for the active trip
@@ -24,9 +31,12 @@ export function OperationScreen() {
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showAddDest, setShowAddDest] = useState(false);
   const [showOpTypePicker, setShowOpTypePicker] = useState(false);
+  const [walkInByDestination, setWalkInByDestination] = useState<Record<string, WalkInDetails>>({});
 
   const dest = destinations.find(d => d.id === selectedDestId);
   const customer = customers.find(c => c.id === selectedCustomerId);
+  const selectedWalkInDetails = selectedDestId ? walkInByDestination[selectedDestId] || emptyWalkInDetails : emptyWalkInDetails;
+  const selectedCustomerIsWalkIn = isWalkInCustomer(customer);
   const currentOp = operations.find(o =>
     o.tripId === activeTripId &&
     o.operationType === opType &&
@@ -90,9 +100,12 @@ export function OperationScreen() {
     [catalogItems, offloadAvailability]
   );
   const filteredCustomers = useMemo(
-    () => customers.filter(c => !selectedDestId || c.defaultDestinationId === selectedDestId),
+    () => customers.filter(c => customerMatchesDestination(c, selectedDestId)),
     [customers, selectedDestId]
   );
+  const canAddItem = Boolean(selectedCustomerId && selectedDestId) &&
+    isWalkInDetailsComplete(customer, selectedWalkInDetails) &&
+    (opType !== "offloading" || availableOffloadCatalogItems.length > 0);
 
   const getItemPrice = (item: CatalogItem, cust?: Customer) => {
     if (opType === "offloading") {
@@ -109,6 +122,18 @@ export function OperationScreen() {
     setSelectedCustomerId(null);
   };
 
+  const updateWalkInDetail = (field: keyof WalkInDetails, value: string) => {
+    if (!selectedDestId) return;
+    setWalkInByDestination(current => ({
+      ...current,
+      [selectedDestId]: {
+        ...emptyWalkInDetails,
+        ...current[selectedDestId],
+        [field]: value,
+      },
+    }));
+  };
+
   const resetOperationForm = () => {
     setSelectedDestId(null);
     setSelectedCustomerId(null);
@@ -121,6 +146,10 @@ export function OperationScreen() {
 
   const handleAddItem = (item: CatalogItem, qty: number, price: number) => {
     if (!activeTrip || !selectedDestId || !selectedCustomerId) return;
+    if (!isWalkInDetailsComplete(customer, selectedWalkInDetails)) {
+      toast({ title: "Walk-in details required", body: "Add name and phone number before adding cargo.", variant: "warning" });
+      return;
+    }
     const taxRate = businessProfile.defaultTaxRate;
     addOperationItem({
       tripId: activeTrip.id,
@@ -137,6 +166,7 @@ export function OperationScreen() {
       originalPrice: getItemPrice(item, customer),
       overridePrice: price !== getItemPrice(item, customer) ? price : undefined,
       overrideReason: price !== getItemPrice(item, customer) ? "Manual override" : undefined,
+      walkInDetails: selectedCustomerIsWalkIn ? cleanWalkInDetails(selectedWalkInDetails) : undefined,
     });
     setShowItemPicker(false);
     toast({ title: "Item added", body: `${qty} added`, variant: "success" });
@@ -241,6 +271,43 @@ export function OperationScreen() {
           </button>
         </Section>
 
+        {selectedCustomerIsWalkIn && (
+          <Section title="Walk-in customer details" className="mt-5">
+            <Card className="p-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Name *</label>
+                  <input
+                    value={selectedWalkInDetails.name}
+                    onChange={event => updateWalkInDetail("name", event.target.value)}
+                    placeholder="Customer name"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Phone *</label>
+                  <input
+                    value={selectedWalkInDetails.phone}
+                    onChange={event => updateWalkInDetail("phone", event.target.value)}
+                    placeholder="Phone number"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-semibold text-slate-700">Description</label>
+                <textarea
+                  value={selectedWalkInDetails.description || ""}
+                  onChange={event => updateWalkInDetail("description", event.target.value)}
+                  rows={3}
+                  placeholder="Optional cargo or customer note"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-ocean-500"
+                />
+              </div>
+            </Card>
+          </Section>
+        )}
+
         {/* Live items list */}
         {currentOp && currentOp.items.length > 0 && (
           <Section title={`Items (${currentOp.items.length})`} className="mt-5">
@@ -311,7 +378,7 @@ export function OperationScreen() {
             fullWidth
             size="lg"
             icon="plus"
-            disabled={!selectedCustomerId || !selectedDestId || (opType === "offloading" && availableOffloadCatalogItems.length === 0)}
+            disabled={!canAddItem}
             onClick={() => setShowItemPicker(true)}
           >
             {opType === "offloading" ? "Offload item" : "Add item"}

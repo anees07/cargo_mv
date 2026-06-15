@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, StatusBadge, TopBar } from "../components/ui";
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { BillType, Operation, OperationItem, PaymentMethod } from "../types";
 
 // ============================================================================
@@ -106,6 +107,7 @@ export function BillingScreen() {
           )}
           {filtered.map(b => {
             const c = customers.find(c => c.id === b.customerId);
+            const customerName = walkInDisplayName(c, b.walkInDetails);
             const d = destinations.find(d => d.id === b.destinationId);
             const t = trips.find(t => t.id === b.tripId);
             const due = b.grandTotal - b.paidAmount;
@@ -114,7 +116,7 @@ export function BillingScreen() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-900">{c?.displayName}</p>
+                      <p className="truncate text-sm font-semibold text-slate-900">{customerName}</p>
                       <StatusBadge status={b.billStatus === "draft" ? "draft" : b.paymentStatus} />
                     </div>
                     <p className="mt-0.5 text-xs text-slate-500">{b.billNumber} • {b.itemCount} items</p>
@@ -240,11 +242,12 @@ function GenerateBillForm({
           <select value={operationId} onChange={e => setOperationId(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm">
             {billableOperations.map(operation => {
               const customer = customers.find(c => c.id === operation.customerId);
+              const customerName = walkInDisplayName(customer, operation.walkInDetails);
               const destination = destinations.find(d => d.id === operation.destinationId);
               const trip = trips.find(t => t.id === operation.tripId);
               return (
                 <option key={operation.id} value={operation.id}>
-                  {trip?.tripNumber} • {customer?.displayName || "Customer"} • {destination?.islandName || "Island"} • {operation.items.length} item{operation.items.length !== 1 ? "s" : ""}
+                  {trip?.tripNumber} • {customerName} • {destination?.islandName || "Island"} • {operation.items.length} item{operation.items.length !== 1 ? "s" : ""}
                 </option>
               );
             })}
@@ -279,6 +282,9 @@ export function InvoicePreviewScreen() {
   const taxRate = businessProfile.defaultTaxRate;
   const subtotal = bill.subtotalTaxInclusive - bill.taxTotal;
   const billItems = bill.items || [];
+  const billToName = walkInDisplayName(customer, bill.walkInDetails);
+  const billToPhone = walkInPhone(customer, bill.walkInDetails);
+  const billToDescription = isWalkInCustomer(customer) ? bill.walkInDetails?.description : undefined;
 
   return (
     <div className="flex h-full flex-col bg-slate-200">
@@ -321,9 +327,10 @@ export function InvoicePreviewScreen() {
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Bill to</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{customer?.displayName}</p>
-              <p className="text-slate-600">{customer?.legalName}</p>
-              <p className="text-slate-500">Phone: {customer?.phone}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{billToName}</p>
+              {!isWalkInCustomer(customer) && <p className="text-slate-600">{customer?.legalName}</p>}
+              <p className="text-slate-500">Phone: {billToPhone}</p>
+              {billToDescription && <p className="text-slate-500">Description: {billToDescription}</p>}
               {customer?.gstNumber && <p className="text-slate-500">GST: {customer.gstNumber}</p>}
             </div>
             <div className="text-right">

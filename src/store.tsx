@@ -13,7 +13,7 @@ import { isUnfinishedTrip } from "./utils/trips";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate,
   Trip, Bill, Payment, TaxSetting, NumberingSequence, AuditLog,
-  OperationItem, Operation, AppNotification, OperationType
+  OperationItem, Operation, AppNotification, OperationType, WalkInDetails
 } from "./types";
 
 // ============================================================================
@@ -73,6 +73,11 @@ interface AppState {
   pendingOwnerRegistration: { uid: string; name: string; email: string } | null;
 }
 
+type AddOperationItemInput = Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive"> & {
+  operationType: OperationType;
+  walkInDetails?: WalkInDetails;
+};
+
 interface AppActions {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -95,7 +100,7 @@ interface AppActions {
   selectBill: (id: string) => void;
   selectCustomer: (id: string) => void;
   selectDestination: (id: string) => void;
-  addOperationItem: (item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive"> & { operationType: OperationType }) => void;
+  addOperationItem: (item: AddOperationItemInput) => void;
   removeOperationItem: (itemId: string) => void;
   finalizeBill: (billId: string) => void;
   postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => Promise<boolean>;
@@ -852,8 +857,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return seq ? formatSequenceNumber(seq, seq.currentSequence + 1, destCode) : "";
   }, [state.numbering]);
 
-  const addOperationItem = useCallback((item: Omit<OperationItem, "id" | "createdAt" | "businessProfileId" | "createdBy" | "taxAmount" | "lineTotalTaxInclusive"> & { operationType: OperationType }) => {
-    const { operationType, ...operationItem } = item;
+  const addOperationItem = useCallback((item: AddOperationItemInput) => {
+    const { operationType, walkInDetails, ...operationItem } = item;
     const taxAmount = (operationItem.unitPriceTaxInclusive * operationItem.quantity) - (operationItem.unitPriceTaxInclusive * operationItem.quantity) / (1 + operationItem.taxRate / 100);
     const lineTotal = operationItem.unitPriceTaxInclusive * operationItem.quantity;
     const existingOp = state.operations.find(o =>
@@ -875,6 +880,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     const operationToPersist: Operation = existingOp ? {
       ...existingOp,
+      walkInDetails: walkInDetails ?? existingOp.walkInDetails,
       items: [newItem, ...existingOp.items],
       totalTaxInclusive: Number((existingOp.totalTaxInclusive + newItem.lineTotalTaxInclusive).toFixed(2)),
       totalTax: Number((existingOp.totalTax + newItem.taxAmount).toFixed(2)),
@@ -885,6 +891,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       operationType,
       destinationId: operationItem.destinationId,
       customerId: operationItem.customerId,
+      walkInDetails,
       items: [newItem],
       totalTaxInclusive: newItem.lineTotalTaxInclusive,
       totalTax: newItem.taxAmount,
@@ -908,6 +915,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const mergedItems = [newItem, ...remoteItems];
       const operationToWrite: Operation = remoteOperation ? {
         ...remoteOperation,
+        walkInDetails: walkInDetails ?? remoteOperation.walkInDetails,
         items: mergedItems,
         totalTaxInclusive: Number(mergedItems.reduce((sum, opItem) => sum + opItem.lineTotalTaxInclusive, 0).toFixed(2)),
         totalTax: Number(mergedItems.reduce((sum, opItem) => sum + opItem.taxAmount, 0).toFixed(2)),
@@ -1404,6 +1412,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const mergedItems = [...remoteOperation.items, ...(remoteBill.items || [])];
           const billToWrite: Bill = {
             ...remoteBill,
+            walkInDetails: remoteOperation.walkInDetails ?? remoteBill.walkInDetails,
             items: mergedItems,
             itemCount: mergedItems.length,
             subtotalTaxInclusive: Number((Number(remoteBill.subtotalTaxInclusive || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
@@ -1478,6 +1487,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           tripId: op.tripId,
           destinationId: op.destinationId,
           customerId: op.customerId,
+          walkInDetails: op.walkInDetails,
           billNumber,
           billType,
           billStatus: "draft",
