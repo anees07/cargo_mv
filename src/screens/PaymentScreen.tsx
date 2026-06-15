@@ -129,12 +129,25 @@ function RecordStandalonePaymentForm({
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [ref, setRef] = useState("");
   const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const needsReference = ["bank_transfer", "cheque", "mobile_wallet"].includes(method);
+  const canSubmit = Boolean(selectedBillId) && amount > 0 && amount <= maxDue && (!needsReference || Boolean(ref.trim())) && !submitting;
 
   const handleBillChange = (id: string) => {
     setSelectedBillId(id);
     const bill = bills.find(b => b.id === id);
     if (bill) {
       setAmount(bill.grandTotal - bill.paidAmount);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      await onPost(selectedBillId, amount, method, ref.trim() || undefined, notes.trim() || undefined);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -234,10 +247,10 @@ function RecordStandalonePaymentForm({
         fullWidth
         size="lg"
         icon="check"
-        disabled={!selectedBillId || amount <= 0 || amount > maxDue || (["bank_transfer", "cheque", "mobile_wallet"].includes(method) && !ref)}
-        onClick={() => onPost(selectedBillId, amount, method, ref || undefined, notes || undefined)}
+        disabled={!canSubmit}
+        onClick={handleSubmit}
       >
-        Post official payment receipt
+        {submitting ? "Posting payment..." : "Post official payment receipt"}
       </Btn>
     </div>
   );

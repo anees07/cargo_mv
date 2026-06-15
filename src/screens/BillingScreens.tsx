@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, StatusBadge, TopBar } from "../components/ui";
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { BillType, Operation, OperationItem, PaymentMethod } from "../types";
 
@@ -18,21 +19,7 @@ export function BillingScreen() {
   const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
   const editingBill = activeBills.find(bill => bill.id === editingBillId);
   const cancellingBill = activeBills.find(bill => bill.id === cancellingBillId);
-  const billableOperations = operations.filter(operation => {
-    const trip = trips.find(t => t.id === operation.tripId);
-    const billType = billTypeForOperation(operation);
-    return operation.items.length > 0 &&
-      Boolean(trip) &&
-      !["ended", "closed"].includes(trip!.status) &&
-      !bills.some(bill =>
-        bill.tripId === operation.tripId &&
-        bill.destinationId === operation.destinationId &&
-        bill.customerId === operation.customerId &&
-        bill.billType === billType &&
-        bill.billStatus !== "draft" &&
-        bill.billStatus !== "cancelled"
-      );
-  });
+  const billableOperations = operations.filter(operation => isOperationBillable(operation, trips, bills));
 
   const filtered = activeBills.filter(b => {
     if (filter === "all") return true;
@@ -215,10 +202,6 @@ export function BillingScreen() {
   );
 }
 
-function billTypeForOperation(operation: Operation): BillType {
-  return operation.operationType === "offloading" ? "offloading_bill" : "loading_bill";
-}
-
 function GenerateBillForm({
   billableOperations,
   onGenerate,
@@ -257,7 +240,7 @@ function GenerateBillForm({
       <div className="rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-xs text-ocean-900">
         Bills are created from saved operation items only.
       </div>
-      <Btn fullWidth size="lg" icon="check" disabled={!selectedOperation} onClick={() => selectedOperation && onGenerate(selectedOperation.id, billTypeForOperation(selectedOperation))}>
+      <Btn fullWidth size="lg" icon="check" disabled={!selectedOperation} onClick={() => selectedOperation && onGenerate(selectedOperation.id, billTypeForOperationType(selectedOperation.operationType))}>
         Generate bill
       </Btn>
     </div>
@@ -598,7 +581,19 @@ function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: 
   const [amount, setAmount] = useState(maxAmount);
   const [method, setMethod] = useState("cash");
   const [ref, setRef] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const needsReference = ["bank_transfer", "cheque", "mobile_wallet"].includes(method);
+  const canSubmit = amount > 0 && amount <= maxAmount && (!needsReference || Boolean(ref.trim())) && !submitting;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      await onPost(amount, method as PaymentMethod, ref.trim() || undefined);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -654,10 +649,10 @@ function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: 
         fullWidth
         size="lg"
         icon="check"
-        disabled={amount <= 0 || amount > maxAmount || (needsReference && !ref.trim())}
-        onClick={() => onPost(amount, method as PaymentMethod, ref || undefined)}
+        disabled={!canSubmit}
+        onClick={handleSubmit}
       >
-        Post official payment receipt
+        {submitting ? "Posting payment..." : "Post official payment receipt"}
       </Btn>
     </div>
   );

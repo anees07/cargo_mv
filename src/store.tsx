@@ -9,6 +9,7 @@ import {
   signOutFirebase,
 } from "./lib/firebase";
 import { MVR } from "./utils/format";
+import { validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate,
@@ -1023,6 +1024,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const businessProfileId = state.businessProfile.id;
     const localSeq = state.numbering.find(n => n.numberType === "receipt");
     if (!businessProfileId || !localSeq) return false;
+    const localBill = state.bills.find(bill => bill.id === billId);
+    const localValidation = validatePaymentRequest(localBill, amount);
+    if (!localValidation.ok) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Payment not posted", body: localValidation.reason, variant: "error" as const }],
+      }));
+      return false;
+    }
 
     try {
       const db = getFirebaseFirestore();
@@ -1043,6 +1053,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         const bill = { id: billSnapshot.id, ...billSnapshot.data() } as Bill;
+        const paymentValidation = validatePaymentRequest(bill, amount);
+        if (!paymentValidation.ok) {
+          throw new Error(paymentValidation.reason);
+        }
         const sequenceData = seqSnapshot.exists()
           ? ({ ...localSeq, ...seqSnapshot.data() } as NumberingSequence)
           : localSeq;
@@ -1052,13 +1066,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           localMaxSequence
         ) + 1;
         const receiptNum = formatSequenceNumber(sequenceData, nextSequence);
-        const newPaid = Number((Number(bill.paidAmount || 0) + amount).toFixed(2));
-        const isPaid = newPaid >= bill.grandTotal;
         const updatedBill: Bill = {
           ...bill,
-          paidAmount: newPaid,
-          paymentStatus: isPaid ? "paid" : "partial",
-          billStatus: isPaid ? "paid" : "partially_paid",
+          paidAmount: paymentValidation.nextPaidAmount,
+          paymentStatus: paymentValidation.nextPaymentStatus,
+          billStatus: paymentValidation.nextBillStatus,
         };
         const newPayment: Payment = {
           id: paymentId,
@@ -1376,7 +1388,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       b.tripId === op.tripId &&
       b.destinationId === op.destinationId &&
       b.customerId === op.customerId &&
-      b.billType === billType
+      b.billType === billType &&
+      b.billStatus !== "cancelled"
     );
     if (existingBill) {
       if (existingBill.billStatus !== "draft") {

@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { buildOffloadAvailability, hasActiveBillForOperation, type OffloadAvailability } from "../utils/operationFlow";
 import {
   cleanWalkInDetails,
   customerMatchesDestination,
@@ -10,7 +11,7 @@ import {
   isWalkInCustomer,
   isWalkInDetailsComplete,
 } from "../utils/walkInDetails";
-import type { CatalogItem, Customer, OperationItem, WalkInDetails } from "../types";
+import type { CatalogItem, Customer, WalkInDetails } from "../types";
 
 // ============================================================================
 // Operation Screen — Loading & Offloading for the active trip
@@ -18,7 +19,7 @@ import type { CatalogItem, Customer, OperationItem, WalkInDetails } from "../typ
 export function OperationScreen() {
   const {
     trips, activeTripId, customers, destinations, catalogItems, itemPriceRates,
-    businessProfile, addOperationItem, removeOperationItem, operations, addCustomer, addDestination, back, toast,
+    businessProfile, addOperationItem, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
     createBillFromOperation, currentUser,
   } = useApp();
   const activeTrip = trips.find(t => t.id === activeTripId);
@@ -43,61 +44,18 @@ export function OperationScreen() {
     o.destinationId === selectedDestId &&
     o.customerId === selectedCustomerId
   );
-  const loadedItems = useMemo(
-    () => operations
-      .filter(o =>
-        o.tripId === activeTripId &&
-        o.operationType === "loading" &&
-        o.destinationId === selectedDestId &&
-        o.customerId === selectedCustomerId
-      )
-      .flatMap(o => o.items),
-    [operations, activeTripId, selectedDestId, selectedCustomerId]
+  const currentOpHasActiveBill = currentOp ? hasActiveBillForOperation(currentOp, bills) : false;
+  const offloadAvailability = useMemo(
+    () => buildOffloadAvailability(operations, activeTripId, selectedDestId, selectedCustomerId, bills),
+    [operations, activeTripId, selectedDestId, selectedCustomerId, bills]
   );
-  const alreadyOffloadedItems = useMemo(
-    () => operations
-      .filter(o =>
-        o.tripId === activeTripId &&
-        o.operationType === "offloading" &&
-        o.destinationId === selectedDestId &&
-        o.customerId === selectedCustomerId
-      )
-      .flatMap(o => o.items),
-    [operations, activeTripId, selectedDestId, selectedCustomerId]
-  );
-  const offloadAvailability = useMemo(() => {
-    const loaded = new Map<string, OperationItem>();
-    const offloadedQty = new Map<string, number>();
-
-    for (const item of loadedItems) {
-      const existing = loaded.get(item.itemId);
-      if (existing) {
-        loaded.set(item.itemId, {
-          ...existing,
-          quantity: existing.quantity + item.quantity,
-          lineTotalTaxInclusive: existing.lineTotalTaxInclusive + item.lineTotalTaxInclusive,
-          taxAmount: existing.taxAmount + item.taxAmount,
-        });
-      } else {
-        loaded.set(item.itemId, item);
-      }
-    }
-
-    for (const item of alreadyOffloadedItems) {
-      offloadedQty.set(item.itemId, (offloadedQty.get(item.itemId) || 0) + item.quantity);
-    }
-
-    return Array.from(loaded.values()).reduce<Record<string, { remaining: number; source: OperationItem }>>((acc, item) => {
-      const remaining = Number((item.quantity - (offloadedQty.get(item.itemId) || 0)).toFixed(2));
-      if (remaining > 0) {
-        acc[item.itemId] = { remaining, source: item };
-      }
-      return acc;
-    }, {});
-  }, [loadedItems, alreadyOffloadedItems]);
   const availableOffloadCatalogItems = useMemo(
     () => catalogItems.filter(item => offloadAvailability[item.id]?.remaining > 0),
     [catalogItems, offloadAvailability]
+  );
+  const offloadRows = useMemo(
+    () => availableOffloadCatalogItems.map(item => ({ item, availability: offloadAvailability[item.id] })).filter(row => row.availability),
+    [availableOffloadCatalogItems, offloadAvailability]
   );
   const filteredCustomers = useMemo(
     () => customers.filter(c => customerMatchesDestination(c, selectedDestId)),
@@ -373,6 +331,40 @@ export function OperationScreen() {
             </div>
           </Card>
         )}
+        {opType === "offloading" && selectedCustomerId && selectedDestId && offloadRows.length > 0 && (
+          <Section title="Loaded cargo available to offload" className="mt-5">
+            <Card className="p-0 overflow-hidden">
+              <div className="divide-y divide-slate-100">
+                {offloadRows.map(({ item, availability }) => (
+                  <div key={item.id} className="p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{item.itemName}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Loaded {availability.loadedQuantity} {item.unitType}
+                          {availability.offloadedQuantity > 0 && ` • offloaded ${availability.offloadedQuantity}`}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-ocean-800">{availability.remaining}</p>
+                          <p className="text-xs text-slate-500">remaining</p>
+                        </div>
+                        <Btn
+                          size="sm"
+                          icon="check"
+                          onClick={() => handleAddItem(item, availability.remaining, availability.source.unitPriceTaxInclusive)}
+                        >
+                          Offload
+                        </Btn>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </Section>
+        )}
         <div className="mt-5">
           <Btn
             fullWidth
@@ -397,7 +389,7 @@ export function OperationScreen() {
             <Btn
               size="lg"
               icon="receipt"
-              disabled={!currentOp || currentOp.items.length === 0}
+              disabled={!currentOp || currentOp.items.length === 0 || currentOpHasActiveBill}
               onClick={async () => {
                 if (currentOp) {
                   const bill = await createBillFromOperation(currentOp.id, opType === "offloading" ? "offloading_bill" : "loading_bill");
@@ -407,7 +399,7 @@ export function OperationScreen() {
                 }
               }}
             >
-              Generate bill
+              {currentOpHasActiveBill ? "Bill already exists" : "Generate bill"}
             </Btn>
           )}
         </div>
@@ -518,7 +510,7 @@ function ItemPicker({ items, customer, getPrice, operationType, availability, on
   customer?: Customer;
   getPrice: (item: CatalogItem, cust?: Customer) => number;
   operationType: "loading" | "offloading" | "cargo_handling";
-  availability: Record<string, { remaining: number; source: OperationItem }>;
+  availability: Record<string, OffloadAvailability>;
   onPick: (item: CatalogItem, qty: number, price: number) => void;
 }) {
   const [search, setSearch] = useState("");

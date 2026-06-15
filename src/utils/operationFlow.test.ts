@@ -99,6 +99,23 @@ test("offload availability subtracts quantities already offloaded for the same c
   assert.equal(availability.rice.remaining, 6);
 });
 
+test("offload availability includes loading bill items after the loading operation is billed", () => {
+  const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
+    bill({ billType: "loading_bill", items: [item({ itemId: "rice", quantity: 10 })] }),
+  ]);
+
+  assert.equal(availability.rice?.remaining, 10);
+});
+
+test("offload availability subtracts offloading bill items after offloading is billed", () => {
+  const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
+    bill({ billType: "loading_bill", items: [item({ itemId: "rice", quantity: 10 })] }),
+    bill({ id: "bill_2", billType: "offloading_bill", items: [item({ itemId: "rice", quantity: 4 })] }),
+  ]);
+
+  assert.equal(availability.rice?.remaining, 6);
+});
+
 test("bill generation is blocked when an active draft bill already exists for the operation", () => {
   const loadingOperation = operation({ items: [item({})] });
   assert.equal(
