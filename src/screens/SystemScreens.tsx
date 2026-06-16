@@ -1,4 +1,4 @@
-import { useApp } from "../store";
+import { useApp } from "../useApp";
 import { Btn, Card, Section, TopBar } from "../components/ui";
 import { MVR, formatDateTime } from "../utils/format";
 

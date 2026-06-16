@@ -1,4 +1,4 @@
-import { useApp } from "../store";
+import { useApp } from "../useApp";
 import { Icon, TopBar } from "../components/ui";
 import { relativeTime } from "../utils/format";
 

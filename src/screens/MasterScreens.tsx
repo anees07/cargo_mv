@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useApp } from "../store";
+import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, TopBar, FirestoreListBuilder } from "../components/ui";
 import { MVR, MVRShort } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { buildCustomerOutstandingMap, getTotalOutstanding } from "../utils/billingSummary";
 import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
-import type { CatalogItem, Customer } from "../types";
+import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, describePriceLevelAdjustment } from "../data/customerPriceLevels";
+import type { CatalogItem, Customer, CustomerPriceLevel, CustomerPriceLevelCode, PriceLevelAdjustmentType } from "../types";
 
 // ============================================================================
 // Destinations
@@ -307,6 +308,261 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
         placeholder={placeholder}
         className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
       />
+    </div>
+  );
+}
+
+// ============================================================================
+// Price Levels
+// ============================================================================
+export function PriceLevelsScreen() {
+  const { priceLevels, syncCustomerPriceLevels, saveCustomerPriceLevel, back, currentUser, toast } = useApp();
+  const [editingCode, setEditingCode] = useState<CustomerPriceLevelCode | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const canManage = hasPermission(currentUser.role, "manage_master");
+  const syncedCount = CUSTOMER_PRICE_LEVEL_DEFINITIONS.filter(definition =>
+    priceLevels.some(level => level.code === definition.code)
+  ).length;
+  const cardStyles: Record<CustomerPriceLevelCode, string> = {
+    business: "bg-ocean-100 text-ocean-700",
+    government: "bg-amber-100 text-amber-700",
+    individual: "bg-emerald-100 text-emerald-700",
+    walk_in: "bg-slate-100 text-slate-700",
+  };
+
+  const levels = CUSTOMER_PRICE_LEVEL_DEFINITIONS.map(definition => {
+    const saved = priceLevels.find(level => level.code === definition.code);
+    return {
+      ...definition,
+      ...(saved || {}),
+      businessProfileId: saved?.businessProfileId || "",
+      adjustmentType: saved?.adjustmentType || definition.adjustmentType,
+      adjustmentValue: Number.isFinite(saved?.adjustmentValue) ? Number(saved?.adjustmentValue) : definition.adjustmentValue,
+      createdAt: saved?.createdAt || "",
+      updatedAt: saved?.updatedAt || "",
+      synced: Boolean(saved),
+    };
+  });
+  const editingLevel = levels.find(level => level.code === editingCode);
+
+  const handleSync = () => {
+    setSyncing(true);
+    void syncCustomerPriceLevels()
+      .catch(error => {
+        toast({
+          title: "Price levels not synced",
+          body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+          variant: "error",
+        });
+      })
+      .finally(() => setSyncing(false));
+  };
+
+  return (
+    <div className="flex h-full flex-col bg-slate-50">
+      <TopBar
+        title="Price Levels"
+        subtitle={`${syncedCount} of ${CUSTOMER_PRICE_LEVEL_DEFINITIONS.length} backend records synced`}
+        onBack={back}
+        trailing={canManage && (
+          <Btn size="sm" icon="sync" loading={syncing} disabled={syncing} onClick={handleSync}>
+            {syncing ? "Syncing" : "Sync"}
+          </Btn>
+        )}
+      />
+
+      <div className="border-b border-slate-200 bg-white p-4">
+        <p className="text-sm font-semibold text-slate-900">Customer price level master</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          These four fixed records are stored in Firestore and used as the customer-category price level list.
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
+        <FirestoreListBuilder
+          data={levels}
+          keyExtractor={(level) => level.code}
+          icon="chart"
+          emptyTitle="No price levels configured"
+          emptyHint="Sync the fixed customer price level records to Firestore."
+          renderItem={(level) => (
+            <Card className="p-3.5">
+              <div className="flex items-start gap-3">
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${cardStyles[level.code]}`}>
+                  {level.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-slate-900">{level.name}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${level.synced ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {level.synced ? "SYNCED" : "MISSING"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs font-mono text-slate-500">{level.code}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{level.description}</p>
+                  <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    {describePriceLevelAdjustment(level)}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-xs uppercase tracking-wider text-slate-400">Order</p>
+                  <p className="font-mono text-sm font-semibold text-slate-800">{level.sortOrder}</p>
+                </div>
+              </div>
+              {canManage && (
+                <div className="mt-3 flex items-center justify-end border-t border-slate-100 pt-3">
+                  <Btn size="sm" variant="outline" icon={level.synced ? "edit" : "check"} onClick={() => {
+                    if (level.synced) {
+                      setEditingCode(level.code);
+                    } else {
+                      void saveCustomerPriceLevel(level as CustomerPriceLevel).catch(error => {
+                        toast({
+                          title: "Price level not saved",
+                          body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+                          variant: "error",
+                        });
+                      });
+                    }
+                  }}>
+                    {level.synced ? "Edit" : "Save default"}
+                  </Btn>
+                </div>
+              )}
+            </Card>
+          )}
+        />
+      </div>
+
+      <Modal open={Boolean(editingLevel && editingLevel.synced)} onClose={() => setEditingCode(null)} title="Edit price level">
+        {editingLevel && (
+          <EditPriceLevelForm
+            priceLevel={editingLevel as CustomerPriceLevel}
+            onSave={async (nextLevel) => {
+              try {
+                await saveCustomerPriceLevel(nextLevel);
+                setEditingCode(null);
+              } catch {
+                toast({
+                  title: "Price level not saved",
+                  body: "Check Firestore permissions and try again.",
+                  variant: "error",
+                });
+                throw new Error("Price level save failed");
+              }
+            }}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function EditPriceLevelForm({
+  priceLevel,
+  onSave,
+}: {
+  priceLevel: CustomerPriceLevel;
+  onSave: (priceLevel: CustomerPriceLevel) => Promise<void>;
+}) {
+  const [form, setForm] = useState({
+    name: priceLevel.name,
+    description: priceLevel.description,
+    adjustmentType: priceLevel.adjustmentType,
+    adjustmentValue: String(priceLevel.adjustmentValue),
+    activeStatus: priceLevel.activeStatus,
+  });
+  const [saving, setSaving] = useState(false);
+  const adjustmentLabel = form.adjustmentType === "percentage" ? "Percentage on standard price" : "Fixed MVR on standard price";
+  const parsedAdjustmentValue = Number(form.adjustmentValue.trim());
+  const canSave = Boolean(form.name.trim()) && Number.isFinite(parsedAdjustmentValue) && !saving;
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      await onSave({ ...priceLevel, ...form, adjustmentValue: parsedAdjustmentValue });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 p-4 md:p-6">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs uppercase tracking-wider text-slate-500">Fixed code</p>
+        <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{priceLevel.code}</p>
+      </div>
+      <Field label="Display name *" value={form.name} onChange={name => setForm({ ...form, name })} />
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-700">Description</label>
+        <textarea
+          value={form.description}
+          onChange={event => setForm({ ...form, description: event.target.value })}
+          rows={3}
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-ocean-500"
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-700">Price adjustment</label>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            { id: "percentage", label: "Percentage" },
+            { id: "fixed_amount", label: "Fixed MVR" },
+          ] as Array<{ id: PriceLevelAdjustmentType; label: string }>).map(option => (
+            <button
+              key={option.id}
+              onClick={() => setForm({ ...form, adjustmentType: option.id })}
+              className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition-colors ${
+                form.adjustmentType === option.id
+                  ? "border-ocean-500 bg-ocean-50 text-ocean-700"
+                  : "border-slate-200 text-slate-700"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-700">{adjustmentLabel}</label>
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={form.adjustmentValue}
+            onFocus={event => event.currentTarget.select()}
+            onChange={event => setForm({ ...form, adjustmentValue: event.target.value.replace(/[^0-9.-]/g, "") })}
+            placeholder={form.adjustmentType === "percentage" ? "0" : "0.00"}
+            className="h-11 min-w-0 rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500"
+          />
+          <div className="flex h-11 min-w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500">
+            {form.adjustmentType === "percentage" ? "%" : "MVR"}
+          </div>
+        </div>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Use positive values for markup and negative values for discount from the item standard price.
+        </p>
+        {form.adjustmentValue.trim() && !Number.isFinite(parsedAdjustmentValue) && (
+          <p className="mt-1 text-xs font-semibold text-rose-600">Enter a valid number, for example -5, 10, or 12.5.</p>
+        )}
+      </div>
+      <label className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-xs font-medium text-slate-700">
+        <input
+          type="checkbox"
+          checked={form.activeStatus}
+          onChange={event => setForm({ ...form, activeStatus: event.target.checked })}
+        />
+        Active
+      </label>
+      <Btn
+        fullWidth
+        size="lg"
+        icon="check"
+        loading={saving}
+        disabled={!canSave}
+        onClick={handleSave}
+      >
+        {saving ? "Saving price level" : "Save price level"}
+      </Btn>
     </div>
   );
 }

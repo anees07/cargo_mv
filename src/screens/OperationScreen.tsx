@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import { useApp } from "../store";
+import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { buildOffloadAvailability, hasLockedBillForOperation, type OffloadAvailability } from "../utils/operationFlow";
+import { calculatePriceFromStandard } from "../data/customerPriceLevels";
 import {
   cleanWalkInDetails,
   customerMatchesDestination,
@@ -19,6 +20,7 @@ import type { CatalogItem, Customer, WalkInDetails } from "../types";
 export function OperationScreen() {
   const {
     trips, activeTripId, customers, destinations, catalogItems, itemPriceRates,
+    priceLevels,
     businessProfile, addOperationItem, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
     createBillFromOperation, currentUser,
   } = useApp();
@@ -70,9 +72,10 @@ export function OperationScreen() {
       const loaded = offloadAvailability[item.id]?.source;
       if (loaded) return loaded.unitPriceTaxInclusive;
     }
-    const level = cust?.defaultPriceLevelId || "standard";
-    const rate = itemPriceRates.find((r) => r.itemId === item.id && r.priceLevel === level);
-    return rate?.priceTaxInclusive || item.defaultTaxRate * 10; // fallback
+    const standardRate = itemPriceRates.find((r) => r.itemId === item.id && r.priceLevel === "standard" && !r.destinationId);
+    const standardPrice = standardRate?.priceTaxInclusive ?? item.defaultTaxRate * 10;
+    const priceLevel = cust ? priceLevels.find((level) => level.code === cust.defaultPriceLevelId) : null;
+    return calculatePriceFromStandard(standardPrice, priceLevel);
   };
 
   const handleSelectDest = (id: string) => {

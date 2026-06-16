@@ -124,6 +124,13 @@ async function seed() {
     { id: "c_004", customerType: "walk_in", displayName: "Walk-in Customer", legalName: "Walk-in", phone: "-", nationalIdOrRegNo: "-", defaultDestinationId: "d_001", defaultPriceLevelId: "walk_in", creditAllowed: false, creditLimit: 0, outstandingBalance: 0, activeStatus: true, createdAt: today },
   ]);
 
+  const priceLevels = withTenant([
+    { id: "pl_business", code: "business", name: "Business", description: "Registered companies and repeat trade customers.", adjustmentType: "percentage", adjustmentValue: 0, activeStatus: true, sortOrder: 10, createdAt: today, updatedAt: today },
+    { id: "pl_government", code: "government", name: "Government", description: "Councils, ministries, authorities, and public institutions.", adjustmentType: "percentage", adjustmentValue: 0, activeStatus: true, sortOrder: 20, createdAt: today, updatedAt: today },
+    { id: "pl_individual", code: "individual", name: "Individual", description: "Personal cargo customers with named customer records.", adjustmentType: "percentage", adjustmentValue: 0, activeStatus: true, sortOrder: 30, createdAt: today, updatedAt: today },
+    { id: "pl_walk_in", code: "walk_in", name: "Walk-In", description: "One-off counter customers without credit terms.", adjustmentType: "percentage", adjustmentValue: 0, activeStatus: true, sortOrder: 40, createdAt: today, updatedAt: today },
+  ]);
+
   const catalogItems = withTenant([
     { id: "i_001", itemName: "Rice Sack (50kg)", itemCode: "RIC-50", category: "perishable", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🌾", createdAt: today },
     { id: "i_002", itemName: "Cement Bag (50kg)", itemCode: "CEM-50", category: "construction", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🧱", createdAt: today },
@@ -205,6 +212,7 @@ async function seed() {
   await writeMany("business_users", users);
   await writeMany("destinations", destinations);
   await writeMany("customers", customers);
+  await writeMany("price_levels", priceLevels);
   await writeMany("catalog_items", catalogItems);
   await writeMany("item_price_rates", itemPriceRates);
   await writeMany("trips", trips);

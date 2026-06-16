@@ -77,6 +77,23 @@ export interface Customer {
 
 export type PriceLevel = "standard" | "business" | "individual" | "government" | "walk_in" | "custom";
 
+export type CustomerPriceLevelCode = "business" | "government" | "individual" | "walk_in";
+export type PriceLevelAdjustmentType = "percentage" | "fixed_amount";
+
+export interface CustomerPriceLevel {
+  id: ID;
+  businessProfileId: ID;
+  code: CustomerPriceLevelCode;
+  name: string;
+  description: string;
+  adjustmentType: PriceLevelAdjustmentType;
+  adjustmentValue: number;
+  activeStatus: boolean;
+  sortOrder: number;
+  createdAt?: ISODate;
+  updatedAt?: ISODate;
+}
+
 export interface CatalogItem {
   id: ID;
   businessProfileId: ID;

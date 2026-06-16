@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useApp } from "../store";
+import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, Section, TopBar } from "../components/ui";
 import { MVR, relativeTime } from "../utils/format";
 import { hasPermission } from "../utils/permissions";

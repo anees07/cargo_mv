@@ -1,4 +1,5 @@
-import { useApp, type Screen } from "../store";
+import { useApp } from "../useApp";
+import type { Screen } from "../store";
 import { Icon } from "./ui";
 import { MVR, roleLabel, roleColor } from "../utils/format";
 import { APP_RELEASE_DETAIL } from "../appVersion";
@@ -119,6 +120,7 @@ export function Drawer({ open, onClose }: DrawerProps) {
             <NavItem icon="island" label="Destinations" badge={destinations.length} onClick={() => goTo("destinations")} />
             <NavItem icon="users" label="Customers" badge={customers.length} onClick={() => goTo("customers")} />
             <NavItem icon="list" label="Catalog" onClick={() => goTo("catalog")} />
+            <NavItem icon="chart" label="Price Levels" onClick={() => goTo("price_levels")} />
           </div>
 
           <div className="mx-5 border-t border-slate-200" />

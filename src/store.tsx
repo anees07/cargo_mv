@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, runTransaction, setDoc, updateDoc, type Unsubscribe } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
@@ -12,8 +12,10 @@ import { MVR } from "./utils/format";
 import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
 import { isBillEditableBeforeFinalize, validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
+import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, buildCustomerPriceLevel, toFirestoreCustomerPriceLevel } from "./data/customerPriceLevels";
+import { AppContext, type AppContextValue } from "./appContext";
 import type {
-  BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate,
+  BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate, CustomerPriceLevel,
   Trip, Bill, Payment, TaxSetting, NumberingSequence, AuditLog,
   OperationItem, Operation, AppNotification, OperationType, WalkInDetails
 } from "./types";
@@ -26,7 +28,7 @@ import type {
 export type Screen =
   | "splash" | "welcome" | "login" | "register" | "business_setup" | "select_profile"
   | "dashboard" | "trips" | "trip_detail" | "create_trip" | "operation"
-  | "destinations" | "destination_detail" | "customers" | "customer_detail" | "catalog"
+  | "destinations" | "destination_detail" | "customers" | "customer_detail" | "catalog" | "price_levels"
   | "billing" | "invoice_preview" | "payments"
   | "reports" | "settings" | "users" | "audit_logs" | "profile" | "notifications"
   | "sync_conflicts" | "pdf_documents";
@@ -38,7 +40,7 @@ export interface ToastMessage {
   variant: "info" | "success" | "warning" | "error";
 }
 
-interface AppState {
+export interface AppState {
   // auth
   isAuthed: boolean;
   currentUser: User;
@@ -50,6 +52,7 @@ interface AppState {
   customers: Customer[];
   catalogItems: CatalogItem[];
   itemPriceRates: ItemPriceRate[];
+  priceLevels: CustomerPriceLevel[];
   // operations
   trips: Trip[];
   activeTripId: string | null;
@@ -80,7 +83,7 @@ type AddOperationItemInput = Omit<OperationItem, "id" | "createdAt" | "businessP
   walkInDetails?: WalkInDetails;
 };
 
-interface AppActions {
+export interface AppActions {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   registerOwner: (name: string, email: string, password: string) => Promise<void>;
@@ -111,6 +114,8 @@ interface AppActions {
   addDestination: (islandName: string, atoll: string, code: string) => Destination;
   addCustomer: (customer: Omit<Customer, "id" | "businessProfileId" | "outstandingBalance" | "activeStatus" | "createdAt">) => Customer;
   addCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => CatalogItem;
+  syncCustomerPriceLevels: () => Promise<void>;
+  saveCustomerPriceLevel: (priceLevel: CustomerPriceLevel) => Promise<void>;
   toast: (t: Omit<ToastMessage, "id">) => void;
   dismissToast: (id: string) => void;
   markNotificationRead: (id: string) => void;
@@ -173,6 +178,7 @@ const initialState: AppState = {
   customers: [],
   catalogItems: [],
   itemPriceRates: [],
+  priceLevels: [],
   trips: [],
   activeTripId: null,
   operations: [],
@@ -194,10 +200,8 @@ const initialState: AppState = {
   pendingOwnerRegistration: null,
 };
 
-const AppContext = createContext<(AppState & AppActions) | null>(null);
-
 const id = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
-const toastTimeoutMs = 800;
+const toastTimeoutMs = 2500;
 
 function appendToast(toasts: ToastMessage[], toast: ToastMessage) {
   const duplicateIndex = toasts.findIndex(item =>
@@ -224,6 +228,7 @@ const tenantCollections = {
   customers: "customers",
   catalogItems: "catalog_items",
   itemPriceRates: "item_price_rates",
+  priceLevels: "price_levels",
   trips: "trips",
   operations: "operations",
   bills: "bills",
@@ -244,6 +249,12 @@ async function loadTenantCollection<T extends { id?: string }>(
 }
 
 const persistTenantDoc = (collectionName: string, docId: string, data: Record<string, unknown>) => {
+  void persistTenantDocAsync(collectionName, docId, data).catch(error => {
+    console.error(`Failed to persist ${collectionName}/${docId}`, error);
+  });
+};
+
+const persistTenantDocAsync = async (collectionName: string, docId: string, data: Record<string, unknown>) => {
   try {
     const db = getFirebaseFirestore();
     const businessProfileId = String(data.businessProfileId || "");
@@ -256,11 +267,10 @@ const persistTenantDoc = (collectionName: string, docId: string, data: Record<st
       console.error(`Failed to persist ${collectionName}/${docId}: missing businessProfileId`);
       return;
     }
-    void setDoc(target, stripUndefined(data) as Record<string, unknown>, { merge: true }).catch(error => {
-      console.error(`Failed to persist ${collectionName}/${docId}`, error);
-    });
+    await setDoc(target, stripUndefined(data) as Record<string, unknown>, { merge: true });
   } catch (error) {
     console.error(`Failed to persist ${collectionName}/${docId}`, error);
+    throw error;
   }
 };
 
@@ -394,6 +404,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     customers,
     catalogItems,
     itemPriceRates,
+    priceLevels,
     trips,
     operations,
     bills,
@@ -408,6 +419,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     loadTenantCollection<Customer>(tenantCollections.customers, businessProfileId),
     loadTenantCollection<CatalogItem>(tenantCollections.catalogItems, businessProfileId),
     loadTenantCollection<ItemPriceRate>(tenantCollections.itemPriceRates, businessProfileId),
+    loadTenantCollection<CustomerPriceLevel>(tenantCollections.priceLevels, businessProfileId),
     loadTenantCollection<Trip>(tenantCollections.trips, businessProfileId),
     loadTenantCollection<Operation>(tenantCollections.operations, businessProfileId),
     loadTenantCollection<Bill>(tenantCollections.bills, businessProfileId),
@@ -437,6 +449,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     customers,
     catalogItems,
     itemPriceRates,
+    priceLevels: priceLevels.sort((a, b) => a.sortOrder - b.sortOrder),
     trips: trips.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     activeTripId: activeTrip?.id || null,
     operations,
@@ -523,6 +536,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.itemPriceRates), snapshot => {
       markRemoteUpdate();
       setState(s => ({ ...s, itemPriceRates: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as ItemPriceRate) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.priceLevels), snapshot => {
+      const priceLevels = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as CustomerPriceLevel)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      markRemoteUpdate();
+      setState(s => ({ ...s, priceLevels }));
     }));
 
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.trips), snapshot => {
@@ -708,10 +729,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       { numberType: "customer", prefix: "CUS", currentSequence: 0, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "" },
     ];
     const numberingSequences: NumberingSequence[] = numberingSeeds.map(sequence => ({ ...sequence, id: sequence.numberType, businessProfileId }));
+    const customerPriceLevels = CUSTOMER_PRICE_LEVEL_DEFINITIONS.map(level =>
+      buildCustomerPriceLevel(businessProfileId, level.code, {}, createdAt)
+    );
     await setDoc(doc(db, "business_users", owner.uid), ownerUser);
     await Promise.all([
       setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.users, owner.uid), ownerUser),
       setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.taxSettings, taxSetting.id), taxSetting),
+      ...customerPriceLevels.map(level => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.priceLevels, level.id), level)),
       ...numberingSequences.map(sequence => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.numbering, sequence.id), sequence)),
     ]);
 
@@ -723,6 +748,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       users: [currentUser],
       taxSettings: [taxSetting],
       numbering: numberingSequences,
+      priceLevels: customerPriceLevels,
       pendingOwnerRegistration: null,
       screen: "dashboard",
       screenStack: [],
@@ -1304,6 +1330,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
     persistTenantDoc(tenantCollections.itemPriceRates, newRate.id, newRate as unknown as Record<string, unknown>);
     return newItem;
   }, [state.businessProfile]);
+
+  const syncCustomerPriceLevels = useCallback(async () => {
+    const current = stateRef.current;
+    if (!current.businessProfile.id) return;
+    const now = new Date().toISOString();
+    const existingByCode = new Map(current.priceLevels.map(level => [level.code, level]));
+    const nextLevels = CUSTOMER_PRICE_LEVEL_DEFINITIONS.map(definition => {
+      const existing = existingByCode.get(definition.code);
+      return buildCustomerPriceLevel(current.businessProfile.id, definition.code, existing || {}, now);
+    });
+
+    await Promise.all(nextLevels.map(level =>
+      persistTenantDocAsync(tenantCollections.priceLevels, level.id, level as unknown as Record<string, unknown>)
+    ));
+
+    setState(s => ({
+      ...s,
+      priceLevels: nextLevels.sort((a, b) => a.sortOrder - b.sortOrder),
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+        actorUserId: s.currentUser.id,
+        action: "price_level.sync",
+        entityType: "price_level",
+        entityId: "customer_price_levels",
+        summary: "Synced customer price level master records",
+      }),
+      toasts: appendToast(s.toasts, { id: id("t"), title: "Price levels synced", variant: "success" as const }),
+    }));
+  }, []);
+
+  const saveCustomerPriceLevel = useCallback(async (priceLevel: CustomerPriceLevel) => {
+    const current = stateRef.current;
+    if (!current.businessProfile.id) return;
+    const definition = CUSTOMER_PRICE_LEVEL_DEFINITIONS.find(level => level.code === priceLevel.code);
+    if (!definition) return;
+    const existing = current.priceLevels.find(level => level.code === priceLevel.code);
+    const now = new Date().toISOString();
+    const savedLevel: CustomerPriceLevel = {
+      ...definition,
+      ...existing,
+      ...priceLevel,
+      id: definition.id,
+      businessProfileId: current.businessProfile.id,
+      code: definition.code,
+      name: priceLevel.name.trim() || definition.name,
+      description: priceLevel.description.trim() || definition.description,
+      adjustmentType: priceLevel.adjustmentType,
+      adjustmentValue: Number(priceLevel.adjustmentValue.toFixed(2)),
+      sortOrder: definition.sortOrder,
+      createdAt: existing?.createdAt || priceLevel.createdAt || now,
+      updatedAt: now,
+    };
+    await persistTenantDocAsync(tenantCollections.priceLevels, savedLevel.id, toFirestoreCustomerPriceLevel(savedLevel) as unknown as Record<string, unknown>);
+
+    setState(s => ({
+      ...s,
+      priceLevels: [
+        ...s.priceLevels.filter(level => level.code !== savedLevel.code),
+        savedLevel,
+      ].sort((a, b) => a.sortOrder - b.sortOrder),
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+        actorUserId: s.currentUser.id,
+        action: "price_level.update",
+        entityType: "price_level",
+        entityId: savedLevel.id,
+        summary: `Updated ${savedLevel.name} price level`,
+      }),
+      toasts: appendToast(s.toasts, { id: id("t"), title: "Price level saved", variant: "success" as const }),
+    }));
+  }, []);
 
   const toast = useCallback((t: Omit<ToastMessage, "id">) => {
     const newToast = { ...t, id: id("t") };
@@ -1922,14 +2017,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value: AppState & AppActions = {
+  const value: AppContextValue = {
     ...state,
     signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
     addOperationItem, removeOperationItem,
     finalizeBill, postPayment, updateDraftBill, createTrip,
     createBillFromOperation,
-    addDestination, addCustomer, addCatalogItem,
+    addDestination, addCustomer, addCatalogItem, syncCustomerPriceLevels, saveCustomerPriceLevel,
     toast, dismissToast, markNotificationRead,
     generateNextNumber, toggleOnline,
     updateBusinessProfile, inviteUser, updateTripStatus, alterBillAfterTripEnd,
@@ -1939,10 +2034,4 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
-}
-
-export function useApp() {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useApp must be inside AppProvider");
-  return ctx;
 }

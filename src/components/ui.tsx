@@ -236,6 +236,7 @@ export function Modal({ open, onClose, title, children, full = false }: { open: 
 }
 
 export function Toast({ toasts, onDismiss }: { toasts: { id: string; title: string; body?: string; variant: string }[]; onDismiss: (id: string) => void }) {
+  const autoDismissMs = 2500;
   const variants: Record<string, string> = {
     success: "bg-emerald-600 text-white",
     error: "bg-rose-600 text-white",
@@ -251,7 +252,7 @@ export function Toast({ toasts, onDismiss }: { toasts: { id: string; title: stri
   });
 
   useEffect(() => {
-    const timers = toasts.map(toast => window.setTimeout(() => onDismiss(toast.id), 800));
+    const timers = toasts.map(toast => window.setTimeout(() => onDismiss(toast.id), autoDismissMs));
     return () => timers.forEach(timer => window.clearTimeout(timer));
   }, [toasts, onDismiss]);
 

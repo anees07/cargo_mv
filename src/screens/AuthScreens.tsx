@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useApp } from "../store";
+import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, TopBar } from "../components/ui";
 import { APP_RELEASE_DETAIL } from "../appVersion";
 

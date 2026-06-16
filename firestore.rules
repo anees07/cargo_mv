@@ -21,7 +21,7 @@ service cloud.firestore {
     // Tenant-scoped collections:
     //   business_profiles/{businessProfileId}/{collectionName}/{docId}
     //
-    //   destinations, customers, catalog_items, item_price_rates, trips,
+    //   destinations, customers, catalog_items, item_price_rates, price_levels, trips,
     //   operations, operation_items, bills, payments, tax_settings,
     //   numbering_sequences, audit_logs, notifications, pdf_documents,
     //   sync_conflicts.
@@ -161,6 +161,34 @@ service cloud.firestore {
         && data.priceTaxInclusive <= 10000000;
     }
 
+    function validCustomerPriceLevel(data) {
+      return hasRequiredFields([
+          'id', 'businessProfileId', 'code', 'name', 'description',
+          'adjustmentType', 'adjustmentValue', 'activeStatus', 'sortOrder'
+        ])
+        && hasOnlyAllowedFields([
+          'id', 'businessProfileId', 'code', 'name', 'description',
+          'adjustmentType', 'adjustmentValue', 'activeStatus', 'sortOrder',
+          'createdAt', 'updatedAt'
+        ])
+        && validBusinessProfileId(data)
+        && data.id in ['pl_business', 'pl_government', 'pl_individual', 'pl_walk_in']
+        && data.code in ['business', 'government', 'individual', 'walk_in']
+        && (
+          (data.id == 'pl_business' && data.code == 'business' && data.sortOrder == 10) ||
+          (data.id == 'pl_government' && data.code == 'government' && data.sortOrder == 20) ||
+          (data.id == 'pl_individual' && data.code == 'individual' && data.sortOrder == 30) ||
+          (data.id == 'pl_walk_in' && data.code == 'walk_in' && data.sortOrder == 40)
+        )
+        && validString(data.name, 1, 80)
+        && validString(data.description, 0, 220)
+        && data.adjustmentType in ['percentage', 'fixed_amount']
+        && data.adjustmentValue is number
+        && data.adjustmentValue >= -100000
+        && data.adjustmentValue <= 100000
+        && data.activeStatus is bool;
+    }
+
     function validTenantDoc(data) {
       return validBusinessProfileId(data)
         && data.keys().hasOnly([
@@ -290,6 +318,26 @@ service cloud.firestore {
         allow delete: if isBusinessMember(businessProfileId)
           && resource.data.businessProfileId == businessProfileId
           && isOwnerOrAdmin();
+      }
+
+      match /price_levels/{priceLevelId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && request.resource.data.id == priceLevelId
+          && isManagerOrAbove()
+          && validCustomerPriceLevel(request.resource.data);
+        allow update: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && request.resource.data.businessProfileId == businessProfileId
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.code == resource.data.code
+          && request.resource.data.sortOrder == resource.data.sortOrder
+          && isManagerOrAbove()
+          && businessProfileUnchanged()
+          && createdAtUnchangedIfPresent()
+          && validCustomerPriceLevel(request.resource.data);
+        allow delete: if false;
       }
 
       match /trips/{tripId} {

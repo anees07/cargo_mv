@@ -1,5 +1,6 @@
 import { useState, type ReactElement } from "react";
-import { AppProvider, useApp } from "./store";
+import { AppProvider } from "./store";
+import { useApp } from "./useApp";
 import { AppShell, DesktopNav, Icon, NavigationItem, Toast } from "./components/ui";
 import { Drawer } from "./components/Drawer";
 import { SplashScreen, WelcomeScreen, LoginScreen, RegisterScreen, BusinessSetupScreen, SelectProfileScreen } from "./screens/AuthScreens";
@@ -7,7 +8,7 @@ import { DashboardScreen, TripsScreen, TripDetailScreen } from "./screens/Dashbo
 import { OperationScreen } from "./screens/OperationScreen";
 import { BillingScreen, InvoicePreviewScreen } from "./screens/BillingScreens";
 import { PaymentsScreen } from "./screens/PaymentScreen";
-import { DestinationsScreen, CustomersScreen, CatalogScreen } from "./screens/MasterScreens";
+import { DestinationsScreen, CustomersScreen, CatalogScreen, PriceLevelsScreen } from "./screens/MasterScreens";
 import { ReportsScreen, SettingsScreen, UsersScreen, AuditLogsScreen, ProfileScreen } from "./screens/ManagementScreens";
 import { NotificationPanel } from "./screens/NotificationScreen";
 import { CustomerDetailScreen, DestinationDetailScreen, CreateTripScreen } from "./screens/DetailScreens";
@@ -116,6 +117,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
       { id: "destinations", label: "Destinations", icon: "island" },
       { id: "customers", label: "Customers", icon: "users" },
       { id: "catalog", label: "Catalog", icon: "list" },
+      { id: "price_levels", label: "Price Levels", icon: "chart" },
     ]},
     { group: "Reports & Admin", items: [
       { id: "reports", label: "Reports", icon: "chart" },
@@ -225,6 +227,7 @@ function ScreenRouter() {
     customer_detail: <CustomerDetailScreen />,
     destination_detail: <DestinationDetailScreen />,
     catalog: <CatalogScreen />,
+    price_levels: <PriceLevelsScreen />,
     reports: <ReportsScreen />,
     settings: <SettingsScreen />,
     users: <UsersScreen />,

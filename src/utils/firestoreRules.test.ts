@@ -8,3 +8,15 @@ test("bill reconciliation fields are allowed by Firestore tenant writes", () => 
 
   assert.match(validTenantDoc, /'offloadedItems'/);
 });
+
+test("customer price level adjustment writes are covered by Firestore rules", () => {
+  const rules = readFileSync("firestore.rules", "utf8");
+  const priceLevelRule = rules.match(/match \/price_levels\/\{priceLevelId\} \{[\s\S]*?allow delete: if false;\n      \}/)?.[0] || "";
+  const validator = rules.match(/function validCustomerPriceLevel\(data\) \{[\s\S]*?\n    \}/)?.[0] || "";
+
+  assert.match(priceLevelRule, /allow update:/);
+  assert.match(validator, /'adjustmentType'/);
+  assert.match(validator, /'adjustmentValue'/);
+  assert.match(validator, /'fixed_amount'/);
+  assert.match(validator, /data\.adjustmentValue >= -100000/);
+});

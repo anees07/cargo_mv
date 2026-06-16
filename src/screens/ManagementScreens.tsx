@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useApp } from "../store";
+import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, Section, TopBar } from "../components/ui";
 import type { BusinessProfile, User, UserRole } from "../types";
 import { MVR, MVRShort, formatDate, roleColor, roleLabel } from "../utils/format";
@@ -1059,6 +1059,7 @@ export function ProfileScreen() {
         { icon: "island", label: "Destinations", screen: "destinations", desc: "Maldives islands" },
         { icon: "users", label: "Customers", screen: "customers", desc: "Customer directory" },
         { icon: "list", label: "Catalog", screen: "catalog", desc: "Cargo items & prices" },
+        { icon: "chart", label: "Price Levels", screen: "price_levels", desc: "Customer level records" },
       ],
     },
     {
