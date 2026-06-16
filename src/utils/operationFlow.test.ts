@@ -10,6 +10,7 @@ import {
   isOperationBillable,
   validatePaymentRequest,
 } from "./operationFlow.js";
+import { SYSTEM_OTHER_ITEM_ID } from "../data/systemCatalogItems.js";
 import type { Bill, Operation, OperationItem, Trip } from "../types.js";
 
 const item = (overrides: Partial<OperationItem>): OperationItem => ({
@@ -131,6 +132,87 @@ test("offload availability subtracts bill offloaded items without adding them to
   assert.equal(availability.rice?.loadedQuantity, 10);
   assert.equal(availability.rice?.offloadedQuantity, 4);
   assert.equal(availability.rice?.remaining, 6);
+});
+
+test("system others entries remain isolated by source operation line", () => {
+  const availability = buildOffloadAvailability([
+    operation({
+      items: [
+        item({
+          id: "other_loaded_1",
+          itemId: SYSTEM_OTHER_ITEM_ID,
+          itemNameSnapshot: "Others",
+          lineDescription: "Blue box",
+          quantity: 2,
+          lineTotalTaxInclusive: 200,
+        }),
+        item({
+          id: "other_loaded_2",
+          itemId: SYSTEM_OTHER_ITEM_ID,
+          itemNameSnapshot: "Others",
+          lineDescription: "Loose parts",
+          quantity: 3,
+          lineTotalTaxInclusive: 300,
+        }),
+      ],
+    }),
+    operation({
+      id: "op_offloading",
+      operationType: "offloading",
+      items: [
+        item({
+          id: "other_offloaded_1",
+          itemId: SYSTEM_OTHER_ITEM_ID,
+          sourceOperationItemId: "other_loaded_1",
+          itemNameSnapshot: "Others",
+          lineDescription: "Blue box",
+          quantity: 1,
+        }),
+      ],
+    }),
+  ], "trip_1", "dest_1", "customer_1");
+
+  assert.equal(availability.other_loaded_1?.remaining, 1);
+  assert.equal(availability.other_loaded_1?.source.lineDescription, "Blue box");
+  assert.equal(availability.other_loaded_2?.remaining, 3);
+  assert.equal(availability.other_loaded_2?.source.lineDescription, "Loose parts");
+});
+
+test("offload availability uses only the newest loaded manifest for the selected customer and destination", () => {
+  const availability = buildOffloadAvailability([
+    operation({
+      id: "older_loading",
+      createdAt: "2026-06-15T08:00:00.000Z",
+      items: [
+        item({
+          id: "old_other_1",
+          itemId: SYSTEM_OTHER_ITEM_ID,
+          itemNameSnapshot: "Others",
+          lineDescription: "Old box",
+          quantity: 1,
+        }),
+      ],
+    }),
+    operation({
+      id: "latest_loading",
+      createdAt: "2026-06-16T08:00:00.000Z",
+      items: [
+        item({ id: "latest_carton", itemId: "general_carton", itemNameSnapshot: "General Cargo Carton", quantity: 1 }),
+        item({
+          id: "latest_other_1",
+          itemId: SYSTEM_OTHER_ITEM_ID,
+          itemNameSnapshot: "Others",
+          lineDescription: "1 noodle case huskuri foshi",
+          quantity: 1,
+        }),
+      ],
+    }),
+  ], "trip_1", "dest_1", "customer_1");
+
+  assert.deepEqual(Object.keys(availability), ["general_carton", "latest_other_1"]);
+  assert.equal(availability.general_carton?.remaining, 1);
+  assert.equal(availability.latest_other_1?.source.lineDescription, "1 noodle case huskuri foshi");
+  assert.equal(availability.old_other_1, undefined);
 });
 
 test("bill generation remains available when a draft bill can be updated before finalize", () => {

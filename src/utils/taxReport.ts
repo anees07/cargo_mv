@@ -13,8 +13,9 @@ export interface TaxBillRow {
   billNumber: string;
   billName: string;
   billStatus: Bill["billStatus"];
-  billTotal: number;
+  subtotalAmount: number;
   taxAmount: number;
+  totalAmount: number;
   billDate: string;
   tripNumber: string;
   tripName: string;
@@ -72,8 +73,9 @@ export function buildQuarterTaxBillRows(
         billNumber: bill.billNumber,
         billName: customer?.displayName || bill.billType.replace(/_/g, " "),
         billStatus: bill.billStatus,
-        billTotal: bill.grandTotal,
+        subtotalAmount: Number((bill.grandTotal - bill.taxTotal).toFixed(2)),
         taxAmount: bill.taxTotal,
+        totalAmount: bill.grandTotal,
         billDate: bill.createdAt,
         tripNumber: trip?.tripNumber || "No trip",
         tripName: trip?.vesselName || "Unassigned trip",

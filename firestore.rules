@@ -227,7 +227,7 @@ service cloud.firestore {
           'items', 'totalTaxInclusive', 'totalTax', 'createdBy', 'synced',
           'operationId', 'itemId', 'itemNameSnapshot', 'unitType', 'quantity',
           'unitPriceTaxInclusive', 'taxRate', 'taxAmount', 'lineTotalTaxInclusive',
-          'originalPrice', 'overridePrice', 'overrideReason',
+          'sourceOperationItemId', 'originalPrice', 'overridePrice', 'overrideReason',
           'billNumber', 'billType', 'billStatus', 'subtotalTaxInclusive',
           'taxTotal', 'grandTotal', 'paymentStatus', 'paidAmount',
           'finalizedBy', 'finalizedAt', 'itemCount', 'offloadedItems',

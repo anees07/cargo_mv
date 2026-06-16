@@ -12,6 +12,7 @@ import { MVR } from "./utils/format";
 import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
 import { isBillEditableBeforeFinalize, validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
+import { buildDestinationWalkInCustomer, ensureDestinationWalkInCustomers } from "./utils/walkInDetails";
 import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, buildCustomerPriceLevel, toFirestoreCustomerPriceLevel } from "./data/customerPriceLevels";
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, buildCatalogCategory, makeUniqueCatalogCategoryCode, toFirestoreCatalogCategory } from "./data/catalogCategories";
 import { SYSTEM_OTHER_ITEM_ID, buildSystemOtherCatalogItem, buildSystemOtherStandardRate } from "./data/systemCatalogItems";
@@ -286,6 +287,20 @@ async function ensureSystemOtherCatalogItem(
   await Promise.all(writes);
 }
 
+async function ensureTenantWalkInCustomers(
+  businessProfileId: string,
+  destinations: Destination[],
+  customers: Customer[],
+) {
+  const missingWalkIns = ensureDestinationWalkInCustomers(businessProfileId, destinations, customers);
+  if (missingWalkIns.length === 0) return;
+
+  await Promise.all(missingWalkIns.map(customer =>
+    persistTenantDocAsync(tenantCollections.customers, customer.id, customer as unknown as Record<string, unknown>)
+  ));
+  customers.push(...missingWalkIns);
+}
+
 const persistTenantDocAsync = async (collectionName: string, docId: string, data: Record<string, unknown>) => {
   try {
     const db = getFirebaseFirestore();
@@ -338,6 +353,21 @@ async function getMaxSequenceFromFirestore(businessProfileId: string, collection
 
 const operationDocumentId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
   `op_${[tripId, operationType, destinationId, customerId].join("_").replace(/[^A-Za-z0-9_-]/g, "_")}`;
+
+const isolatedSystemOtherOperationId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
+  `${operationDocumentId(tripId, operationType, destinationId, customerId)}_${id("other")}`;
+
+function isIsolatedSystemOtherLoading(items: Array<Pick<AddOperationItemInput, "operationType" | "itemId">>) {
+  return items.length === 1 &&
+    items[0].operationType === "loading" &&
+    items[0].itemId === SYSTEM_OTHER_ITEM_ID;
+}
+
+function isSystemOtherOnlyOperation(operation: Pick<Operation, "operationType" | "items">) {
+  return operation.operationType === "loading" &&
+    operation.items.length === 1 &&
+    operation.items[0].itemId === SYSTEM_OTHER_ITEM_ID;
+}
 
 const initials = (nameOrEmail: string) =>
   nameOrEmail
@@ -465,6 +495,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
   ]);
 
   await ensureSystemOtherCatalogItem(businessProfileId, catalogItems, itemPriceRates);
+  await ensureTenantWalkInCustomers(businessProfileId, destinations, customers);
 
   const currentUser = businessUserFromDoc({
     uid: firebaseUser.uid,
@@ -904,12 +935,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const current = stateRef.current;
     const first = items[0];
     const { operationType, walkInDetails } = first;
-    const operationId = current.operations.find(o =>
+    const shouldIsolateSystemOther = isIsolatedSystemOtherLoading(items);
+    const reusableOperation = shouldIsolateSystemOther ? null : current.operations.find(o =>
       o.tripId === first.tripId &&
       o.operationType === operationType &&
       o.destinationId === first.destinationId &&
-      o.customerId === first.customerId
-    )?.id || operationDocumentId(first.tripId, operationType, first.destinationId, first.customerId);
+      o.customerId === first.customerId &&
+      !isSystemOtherOnlyOperation(o)
+    );
+    const operationId = reusableOperation?.id || (
+      shouldIsolateSystemOther
+        ? isolatedSystemOtherOperationId(first.tripId, operationType, first.destinationId, first.customerId)
+        : operationDocumentId(first.tripId, operationType, first.destinationId, first.customerId)
+    );
     const existingOp = current.operations.find(o => o.id === operationId);
     const createdAt = new Date().toISOString();
     const newItems: OperationItem[] = items.map(item => {
@@ -1350,14 +1388,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.trips, state.numbering, state.businessProfile.id, state.businessProfile.vesselName, state.currentUser.id]);
 
   const addDestination = useCallback((islandName: string, atoll: string, code: string): Destination => {
+    const createdAt = new Date().toISOString();
     const newDest: Destination = {
       id: id("d"),
       businessProfileId: state.businessProfile.id,
       islandName, atoll, destinationCode: code.toUpperCase(),
       activeStatus: true, sortOrder: state.destinations.length + 1,
     };
-    setState(s => ({ ...s, destinations: [...s.destinations, newDest] }));
+    const walkInCustomer = buildDestinationWalkInCustomer(state.businessProfile.id, newDest, createdAt);
+    setState(s => ({
+      ...s,
+      destinations: [...s.destinations, newDest],
+      customers: [...s.customers, walkInCustomer],
+    }));
     persistTenantDoc(tenantCollections.destinations, newDest.id, newDest as unknown as Record<string, unknown>);
+    persistTenantDoc(tenantCollections.customers, walkInCustomer.id, walkInCustomer as unknown as Record<string, unknown>);
     return newDest;
   }, [state.businessProfile, state.destinations.length]);
 
@@ -1588,7 +1633,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }));
       return null;
     }
-    const existingBill = state.bills.find(b =>
+    const shouldCreateSeparateSystemOtherBill = op.operationType === "loading" &&
+      op.items.length === 1 &&
+      op.items[0].itemId === SYSTEM_OTHER_ITEM_ID;
+    const existingBill = shouldCreateSeparateSystemOtherBill ? undefined : state.bills.find(b =>
       b.tripId === op.tripId &&
       b.destinationId === op.destinationId &&
       b.customerId === op.customerId &&

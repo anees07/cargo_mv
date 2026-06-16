@@ -121,7 +121,21 @@ async function seed() {
     { id: "c_001", customerType: "business", displayName: "STO Maldives", legalName: "State Trading Organization Plc", phone: "+960 334 4000", nationalIdOrRegNo: "GST-MV-2001451", gstNumber: "GST-MV-2001451", defaultDestinationId: "d_001", defaultPriceLevelId: "business", creditAllowed: true, creditLimit: 250000, outstandingBalance: 42500, activeStatus: true, createdAt: today },
     { id: "c_002", customerType: "government", displayName: "Addu City Council", legalName: "Addu City Council", phone: "+960 689 8888", nationalIdOrRegNo: "GOV-2014-1100", defaultDestinationId: "d_003", defaultPriceLevelId: "government", creditAllowed: true, creditLimit: 500000, outstandingBalance: 132000, activeStatus: true, createdAt: today },
     { id: "c_003", customerType: "business", displayName: "Fuvahmulah Hardware", legalName: "Fuvahmulah Hardware & Trading", phone: "+960 682 2233", nationalIdOrRegNo: "BRN-2019-4455", defaultDestinationId: "d_004", defaultPriceLevelId: "business", creditAllowed: true, creditLimit: 75000, outstandingBalance: 12400, activeStatus: true, createdAt: today },
-    { id: "c_004", customerType: "walk_in", displayName: "Walk-in Customer", legalName: "Walk-in", phone: "-", nationalIdOrRegNo: "-", defaultDestinationId: "d_001", defaultPriceLevelId: "walk_in", creditAllowed: false, creditLimit: 0, outstandingBalance: 0, activeStatus: true, createdAt: today },
+    ...destinations.map(destination => ({
+      id: `walk_in_${destination.id}`,
+      customerType: "walk_in",
+      displayName: `Walk-in Customer - ${destination.islandName}`,
+      legalName: "Walk-in",
+      phone: "-",
+      nationalIdOrRegNo: "-",
+      defaultDestinationId: destination.id,
+      defaultPriceLevelId: "walk_in",
+      creditAllowed: false,
+      creditLimit: 0,
+      outstandingBalance: 0,
+      activeStatus: true,
+      createdAt: today,
+    })),
   ]);
 
   const priceLevels = withTenant([

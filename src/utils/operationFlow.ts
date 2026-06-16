@@ -1,6 +1,8 @@
 import type { Bill, BillStatus, Operation, OperationItem, OperationType, Trip } from "../types.js";
+import { SYSTEM_OTHER_ITEM_ID } from "../data/systemCatalogItems.js";
 
 export interface OffloadAvailability {
+  key: string;
   remaining: number;
   loadedQuantity: number;
   offloadedQuantity: number;
@@ -39,6 +41,23 @@ export function billTypeForOperationType(operationType: OperationType): Bill["bi
   return operationType === "offloading" ? "offloading_bill" : "loading_bill";
 }
 
+function offloadAvailabilityKey(item: Pick<OperationItem, "id" | "itemId" | "sourceOperationItemId">): string {
+  return item.itemId === SYSTEM_OTHER_ITEM_ID
+    ? item.sourceOperationItemId || item.id
+    : item.itemId;
+}
+
+type LoadedManifestSource = {
+  createdAt: string;
+  items: OperationItem[];
+};
+
+function newestLoadedManifestSource(sources: LoadedManifestSource[]): LoadedManifestSource | null {
+  return sources
+    .filter(source => source.items.length > 0)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] || null;
+}
+
 export function buildOffloadAvailability(
   operations: Operation[],
   tripId: string | null | undefined,
@@ -52,43 +71,43 @@ export function buildOffloadAvailability(
   const offloadedQty = new Map<string, number>();
   const loadedLineIds = new Set<string>();
   const offloadedLineIds = new Set<string>();
+  const loadedSources: LoadedManifestSource[] = [];
+  const offloadedSources: LoadedManifestSource[] = [];
 
   const addLoadedItem = (item: OperationItem) => {
     if (loadedLineIds.has(item.id)) return;
     loadedLineIds.add(item.id);
-    const existing = loaded.get(item.itemId);
+    const key = offloadAvailabilityKey(item);
+    const existing = loaded.get(key);
     if (existing) {
-      loaded.set(item.itemId, {
+      loaded.set(key, {
         ...existing,
         quantity: Number((existing.quantity + item.quantity).toFixed(2)),
         lineTotalTaxInclusive: Number((existing.lineTotalTaxInclusive + item.lineTotalTaxInclusive).toFixed(2)),
         taxAmount: Number((existing.taxAmount + item.taxAmount).toFixed(2)),
       });
     } else {
-      loaded.set(item.itemId, item);
+      loaded.set(key, item);
     }
   };
 
   const addOffloadedItem = (item: OperationItem) => {
     if (offloadedLineIds.has(item.id)) return;
     offloadedLineIds.add(item.id);
-    offloadedQty.set(item.itemId, Number(((offloadedQty.get(item.itemId) || 0) + item.quantity).toFixed(2)));
+    const key = offloadAvailabilityKey(item);
+    offloadedQty.set(key, Number(((offloadedQty.get(key) || 0) + item.quantity).toFixed(2)));
   };
 
   for (const operation of operations) {
     if (!sameSelection(operation, tripId, destinationId, customerId)) continue;
 
     if (operation.operationType === "loading") {
-      for (const item of operation.items) {
-        addLoadedItem(item);
-      }
+      loadedSources.push({ createdAt: operation.createdAt, items: operation.items });
       continue;
     }
 
     if (operation.operationType === "offloading") {
-      for (const item of operation.items) {
-        addOffloadedItem(item);
-      }
+      offloadedSources.push({ createdAt: operation.createdAt, items: operation.items });
     }
   }
 
@@ -96,19 +115,31 @@ export function buildOffloadAvailability(
     if (!sameBillSelection(bill, tripId, destinationId, customerId)) continue;
     const items = bill.items || [];
     if (bill.billType === "loading_bill") {
-      for (const item of items) addLoadedItem(item);
+      loadedSources.push({ createdAt: bill.createdAt, items });
     }
-    for (const item of bill.offloadedItems || []) addOffloadedItem(item);
+    if (bill.offloadedItems?.length) {
+      offloadedSources.push({ createdAt: bill.createdAt, items: bill.offloadedItems });
+    }
     if (bill.billType === "offloading_bill") {
-      for (const item of items) addOffloadedItem(item);
+      offloadedSources.push({ createdAt: bill.createdAt, items });
     }
   }
 
+  const loadedSource = newestLoadedManifestSource(loadedSources);
+  for (const item of loadedSource?.items || []) {
+    addLoadedItem(item);
+  }
+  for (const source of offloadedSources.filter(source => !loadedSource || source.createdAt >= loadedSource.createdAt)) {
+    for (const item of source.items) addOffloadedItem(item);
+  }
+
   return Array.from(loaded.values()).reduce<Record<string, OffloadAvailability>>((acc, item) => {
-    const offloadedQuantity = offloadedQty.get(item.itemId) || 0;
+    const key = offloadAvailabilityKey(item);
+    const offloadedQuantity = offloadedQty.get(key) || 0;
     const remaining = Number((item.quantity - offloadedQuantity).toFixed(2));
     if (remaining > 0) {
-      acc[item.itemId] = {
+      acc[key] = {
+        key,
         remaining,
         loadedQuantity: item.quantity,
         offloadedQuantity,

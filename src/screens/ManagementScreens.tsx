@@ -286,8 +286,9 @@ function GstReportingSuite() {
   const [selectedQuarter, setSelectedQuarter] = useState(quarterOptions[0].id);
   const period = quarterPeriod(selectedQuarter);
   const rows = buildQuarterTaxBillRows(bills, trips, customers, period);
-  const totalBills = rows.reduce((sum, row) => sum + row.billTotal, 0);
+  const totalSubtotal = rows.reduce((sum, row) => sum + row.subtotalAmount, 0);
   const totalTax = rows.reduce((sum, row) => sum + row.taxAmount, 0);
+  const totalAmount = rows.reduce((sum, row) => sum + row.totalAmount, 0);
 
   return (
     <div className="space-y-4 print:bg-white">
@@ -321,23 +322,27 @@ function GstReportingSuite() {
       </div>
 
       <Card className="overflow-hidden p-0 print:border-0 print:shadow-none">
-        <div className="grid grid-cols-1 gap-3 border-b border-slate-200 bg-slate-50 p-4 sm:grid-cols-3 print:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 border-b border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4">
           <div>
             <p className="text-xs uppercase tracking-wider text-slate-500">Bills listed</p>
             <p className="mt-1 text-xl font-bold text-slate-950">{rows.length}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wider text-slate-500">Bill total</p>
-            <p className="mt-1 text-xl font-bold text-slate-950">{MVR(totalBills)}</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Subtotal</p>
+            <p className="mt-1 text-xl font-bold text-slate-950">{MVR(totalSubtotal)}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wider text-slate-500">Tax amount</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Tax</p>
             <p className="mt-1 text-xl font-bold text-slate-950">{MVR(totalTax)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Total</p>
+            <p className="mt-1 text-xl font-bold text-slate-950">{MVR(totalAmount)}</p>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] border-collapse text-left text-xs">
+          <table className="w-full min-w-[1040px] border-collapse text-left text-xs">
             <thead className="bg-white text-slate-500">
               <tr className="border-b border-slate-200">
                 <th className="px-3 py-2 font-semibold">Trip no</th>
@@ -346,8 +351,9 @@ function GstReportingSuite() {
                 <th className="px-3 py-2 font-semibold">Bill name</th>
                 <th className="px-3 py-2 font-semibold">Bill date</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 text-right font-semibold">Bill total</th>
-                <th className="px-3 py-2 text-right font-semibold">Tax amount</th>
+                <th className="px-3 py-2 text-right font-semibold">Subtotal</th>
+                <th className="px-3 py-2 text-right font-semibold">Tax</th>
+                <th className="px-3 py-2 text-right font-semibold">Total</th>
               </tr>
             </thead>
             <tbody>
@@ -359,13 +365,14 @@ function GstReportingSuite() {
                   <td className="px-3 py-2 text-slate-700">{row.billName}</td>
                   <td className="px-3 py-2 text-slate-700">{formatDate(row.billDate)}</td>
                   <td className="px-3 py-2 capitalize text-slate-700">{row.billStatus.replace("_", " ")}</td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-900">{MVR(row.billTotal)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-slate-900">{MVR(row.subtotalAmount)}</td>
                   <td className="px-3 py-2 text-right font-mono text-slate-900">{MVR(row.taxAmount)}</td>
+                  <td className="px-3 py-2 text-right font-mono font-semibold text-slate-900">{MVR(row.totalAmount)}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">No bills found for this quarter.</td>
+                  <td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-500">No bills found for this quarter.</td>
                 </tr>
               )}
             </tbody>

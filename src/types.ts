@@ -180,6 +180,7 @@ export interface OperationItem {
   taxAmount: number;
   lineTotalTaxInclusive: number;
   lineDescription?: string;
+  sourceOperationItemId?: ID;
   originalPrice?: number;
   overridePrice?: number;
   overrideReason?: string;

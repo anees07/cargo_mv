@@ -7,6 +7,7 @@ import { buildOffloadAvailability, hasLockedBillForOperation, type OffloadAvaila
 import { calculatePriceFromStandard } from "../data/customerPriceLevels";
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel } from "../data/catalogCategories";
 import { isSystemOtherItem } from "../data/systemCatalogItems";
+import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
 import {
   cleanWalkInDetails,
   customerMatchesDestination,
@@ -24,7 +25,7 @@ export function OperationScreen() {
     trips, activeTripId, customers, destinations, catalogItems, catalogCategories, itemPriceRates,
     priceLevels,
     businessProfile, addOperationItem, addOperationItems, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
-    createBillFromOperation, currentUser,
+    createBillFromOperation, currentUser, addCatalogItem,
   } = useApp();
   const activeTrip = trips.find(t => t.id === activeTripId);
 
@@ -42,24 +43,27 @@ export function OperationScreen() {
   const customer = customers.find(c => c.id === selectedCustomerId);
   const selectedWalkInDetails = selectedDestId ? walkInByDestination[selectedDestId] || emptyWalkInDetails : emptyWalkInDetails;
   const selectedCustomerIsWalkIn = isWalkInCustomer(customer);
-  const currentOp = operations.find(o =>
-    o.tripId === activeTripId &&
-    o.operationType === opType &&
-    o.destinationId === selectedDestId &&
-    o.customerId === selectedCustomerId
-  );
+  const currentOp = operations
+    .filter(o =>
+      o.tripId === activeTripId &&
+      o.operationType === opType &&
+      o.destinationId === selectedDestId &&
+      o.customerId === selectedCustomerId
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   const currentOpHasLockedBill = currentOp ? hasLockedBillForOperation(currentOp, bills) : false;
   const offloadAvailability = useMemo(
     () => buildOffloadAvailability(operations, activeTripId, selectedDestId, selectedCustomerId, bills),
     [operations, activeTripId, selectedDestId, selectedCustomerId, bills]
   );
-  const availableOffloadCatalogItems = useMemo(
-    () => catalogItems.filter(item => offloadAvailability[item.id]?.remaining > 0),
-    [catalogItems, offloadAvailability]
-  );
   const offloadRows = useMemo(
-    () => availableOffloadCatalogItems.map(item => ({ item, availability: offloadAvailability[item.id] })).filter(row => row.availability),
-    [availableOffloadCatalogItems, offloadAvailability]
+    () => Object.values(offloadAvailability)
+      .map(availability => ({
+        item: catalogItems.find(item => item.id === availability.source.itemId),
+        availability,
+      }))
+      .filter((row): row is { item: CatalogItem; availability: OffloadAvailability } => Boolean(row.item)),
+    [catalogItems, offloadAvailability]
   );
   const filteredCustomers = useMemo(
     () => customers.filter(c => customerMatchesDestination(c, selectedDestId)),
@@ -67,7 +71,7 @@ export function OperationScreen() {
   );
   const canAddItem = Boolean(selectedCustomerId && selectedDestId) &&
     isWalkInDetailsComplete(customer, selectedWalkInDetails) &&
-    (opType !== "offloading" || availableOffloadCatalogItems.length > 0);
+    (opType !== "offloading" || offloadRows.length > 0);
 
   const getItemPrice = (item: CatalogItem, cust?: Customer) => {
     if (opType === "offloading") {
@@ -122,6 +126,7 @@ export function OperationScreen() {
         unitPriceTaxInclusive: entry.availability.source.unitPriceTaxInclusive,
         taxRate: entry.availability.source.taxRate || businessProfile.defaultTaxRate,
         lineDescription: entry.availability.source.lineDescription,
+        sourceOperationItemId: entry.availability.source.id,
         originalPrice: entry.availability.source.unitPriceTaxInclusive,
         walkInDetails: selectedCustomerIsWalkIn ? cleanWalkInDetails(selectedWalkInDetails) : undefined,
       })));
@@ -354,7 +359,7 @@ export function OperationScreen() {
         )}
 
         {/* Add item button */}
-        {opType === "offloading" && selectedCustomerId && selectedDestId && availableOffloadCatalogItems.length === 0 && (
+        {opType === "offloading" && selectedCustomerId && selectedDestId && offloadRows.length === 0 && (
           <Card className="mt-5 border-amber-200 bg-amber-50 p-3">
             <div className="flex gap-2">
               <Icon name="warning" className="mt-0.5 h-4 w-4 text-amber-700" />
@@ -480,13 +485,18 @@ export function OperationScreen() {
 
       <Modal open={showItemPicker} onClose={() => setShowItemPicker(false)} title="Pick catalog item">
         <ItemPicker
-          items={opType === "offloading" ? availableOffloadCatalogItems : catalogItems}
+          items={catalogItems}
           catalogCategories={catalogCategories}
           customer={customer}
           getPrice={getItemPrice}
           operationType={opType}
           availability={offloadAvailability}
           onPick={handleAddItem}
+          onAddCatalogItem={(item, standardPrice) => {
+            const newItem = addCatalogItem(item, standardPrice);
+            toast({ title: "Catalog item saved", body: newItem.itemName, variant: "success" });
+            return newItem;
+          }}
         />
       </Modal>
 
@@ -527,7 +537,7 @@ function OffloadTally({
   const entries = rows
     .map(row => ({
       ...row,
-      quantity: Math.min(Math.max(Number(quantities[row.item.id] || 0), 0), row.availability.remaining),
+      quantity: Math.min(Math.max(Number(quantities[row.availability.key] || 0), 0), row.availability.remaining),
     }))
     .filter(row => row.quantity > 0);
   const tallyTotal = entries.reduce((sum, row) => sum + row.quantity * row.availability.source.unitPriceTaxInclusive, 0);
@@ -548,10 +558,10 @@ function OffloadTally({
     <Card className="overflow-hidden p-0">
       <div className="divide-y divide-slate-100">
         {rows.map(({ item, availability }) => {
-          const value = quantities[item.id] || "";
+          const value = quantities[availability.key] || "";
           const source = availability.source;
           return (
-            <div key={item.id} className="p-3">
+            <div key={availability.key} className="p-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px] sm:items-center">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-900">{source.itemNameSnapshot || item.itemName}</p>
@@ -585,12 +595,12 @@ function OffloadTally({
                       step={1}
                       value={value}
                       onFocus={event => event.currentTarget.select()}
-                      onChange={event => updateQuantity(item.id, availability.remaining, Number(event.target.value))}
+                      onChange={event => updateQuantity(availability.key, availability.remaining, Number(event.target.value))}
                       className="h-11 min-w-0 flex-1 rounded-xl border border-slate-300 px-3 text-sm font-semibold outline-none focus:border-ocean-500"
                     />
                     <button
                       type="button"
-                      onClick={() => updateQuantity(item.id, availability.remaining, availability.remaining)}
+                      onClick={() => updateQuantity(availability.key, availability.remaining, availability.remaining)}
                       className="h-11 shrink-0 rounded-xl border border-slate-300 px-3 text-xs font-semibold text-ocean-700 hover:bg-ocean-50"
                     >
                       All
@@ -616,7 +626,7 @@ function OffloadTally({
   );
 }
 
-function ItemPicker({ items, catalogCategories, customer, getPrice, operationType, availability, onPick }: {
+function ItemPicker({ items, catalogCategories, customer, getPrice, operationType, availability, onPick, onAddCatalogItem }: {
   items: CatalogItem[];
   catalogCategories: Array<{ code: string; name: string; activeStatus: boolean; sortOrder: number }>;
   customer?: Customer;
@@ -624,10 +634,12 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
   operationType: "loading" | "offloading" | "cargo_handling";
   availability: Record<string, OffloadAvailability>;
   onPick: (item: CatalogItem, qty: number, price: number, lineDescription?: string) => void;
+  onAddCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => CatalogItem;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("all");
   const [selected, setSelected] = useState<CatalogItem | null>(null);
+  const [showAddItem, setShowAddItem] = useState(false);
   const [qty, setQty] = useState(1);
   const [price, setPrice] = useState(0);
   const [lineDescription, setLineDescription] = useState("");
@@ -662,6 +674,25 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
         .sort((a, b) => a.sortOrder - b.sortOrder),
     ];
   }, [catalogCategories, items]);
+
+  const addableCategories = categories.filter(category => category.code !== "all");
+
+  if (showAddItem) {
+    return (
+      <InlineCatalogItemForm
+        categories={addableCategories}
+        onCancel={() => setShowAddItem(false)}
+        onAdd={(item, standardPrice) => {
+          const newItem = onAddCatalogItem(item, standardPrice);
+          setShowAddItem(false);
+          setSelected(newItem);
+          setPrice(standardPrice);
+          setSearch("");
+          setCategory("all");
+        }}
+      />
+    );
+  }
 
   if (selected) {
     const defaultPrice = getPrice(selected, customer);
@@ -751,18 +782,27 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
     <div className="p-2 space-y-2">
       {/* QR Barcode Simulation shortcut */}
       <div className="px-2 pt-1">
-        <button
-          onClick={() => {
-            const scannedItem = items.find(i => i.itemCode === "FLR-50") || items[1] || items[0];
-            if (scannedItem) {
-              setSelected(scannedItem);
-              setPrice(getPrice(scannedItem, customer));
-            }
-          }}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-ocean-400 bg-ocean-50/60 py-2.5 text-xs font-bold text-ocean-900 hover:bg-ocean-100/80 active:bg-ocean-200"
-        >
-          <span className="text-base">📷</span> Scan QR Manifest / Barcode (Simulate: FLR-50)
-        </button>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+          <button
+            onClick={() => {
+              const scannedItem = items.find(i => i.itemCode === "FLR-50") || items[1] || items[0];
+              if (scannedItem) {
+                setSelected(scannedItem);
+                setPrice(getPrice(scannedItem, customer));
+              }
+            }}
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-ocean-400 bg-ocean-50/60 px-3 py-2.5 text-xs font-bold text-ocean-900 hover:bg-ocean-100/80 active:bg-ocean-200"
+          >
+            <span className="text-base">📷</span> Scan QR Manifest / Barcode (Simulate: FLR-50)
+          </button>
+          <button
+            onClick={() => setShowAddItem(true)}
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+          >
+            <Icon name="plus" className="h-4 w-4 text-ocean-700" />
+            Add item
+          </button>
+        </div>
       </div>
 
       <div className="px-2">
@@ -813,6 +853,162 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function InlineCatalogItemForm({
+  categories,
+  onCancel,
+  onAdd,
+}: {
+  categories: Array<{ code: string; name: string; activeStatus: boolean; sortOrder: number }>;
+  onCancel: () => void;
+  onAdd: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => void;
+}) {
+  const activeCategories = categories.filter(category => category.activeStatus);
+  const [form, setForm] = useState({
+    itemName: "",
+    itemCode: "",
+    category: activeCategories[0]?.code || categories[0]?.code || "general_cargo",
+    unitType: "piece" as CatalogItem["unitType"],
+    defaultTaxRate: 8,
+    taxInclusive: true,
+    icon: DEFAULT_CATALOG_ICON,
+  });
+  const [standardPrice, setStandardPrice] = useState(0);
+  const categoryIcons = categories.map(category => DEFAULT_CATALOG_CATEGORY_DEFINITIONS.find(definition => definition.code === category.code)?.icon).filter(Boolean) as string[];
+  const canSave = Boolean(form.itemName.trim() && form.itemCode.trim() && standardPrice > 0);
+
+  const updateName = (itemName: string) => {
+    setForm(current => ({
+      ...current,
+      itemName,
+      icon: isCatalogAutoIcon(current.icon, categoryIcons)
+        ? catalogIconForItem(itemName, current.category, DEFAULT_CATALOG_CATEGORY_DEFINITIONS.find(definition => definition.code === current.category)?.icon)
+        : current.icon,
+    }));
+  };
+
+  const updateCategory = (categoryCode: string) => {
+    const categoryIcon = DEFAULT_CATALOG_CATEGORY_DEFINITIONS.find(definition => definition.code === categoryCode)?.icon;
+    setForm(current => ({
+      ...current,
+      category: categoryCode,
+      icon: isCatalogAutoIcon(current.icon, categoryIcons)
+        ? catalogIconForItem(current.itemName, categoryCode, categoryIcon)
+        : current.icon,
+    }));
+  };
+
+  return (
+    <div className="space-y-3 p-4">
+      <button onClick={onCancel} className="flex items-center gap-1 text-xs font-semibold text-ocean-700">
+        <Icon name="back" className="h-3 w-3" /> Back to items
+      </button>
+
+      <div className="rounded-xl border border-ocean-200 bg-ocean-50 p-3">
+        <p className="text-sm font-bold text-ocean-950">Add catalog item</p>
+        <p className="mt-0.5 text-xs text-ocean-900">Save a new standard item and add it to this operation immediately.</p>
+      </div>
+
+      <div className="grid grid-cols-[64px_1fr] gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Icon</label>
+          <input
+            value={form.icon}
+            onChange={event => setForm({ ...form, icon: event.target.value.slice(0, 4) || DEFAULT_CATALOG_ICON })}
+            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-center text-xl outline-none focus:border-ocean-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Item name *</label>
+          <input
+            value={form.itemName}
+            onChange={event => updateName(event.target.value)}
+            placeholder="e.g. Water case"
+            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Item code *</label>
+          <input
+            value={form.itemCode}
+            onChange={event => setForm({ ...form, itemCode: event.target.value.toUpperCase().replace(/\s/g, "-").slice(0, 12) })}
+            placeholder="WTR-CASE"
+            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-mono outline-none focus:border-ocean-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Standard price *</label>
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            value={standardPrice || ""}
+            onFocus={event => event.currentTarget.select()}
+            onChange={event => setStandardPrice(Number(event.target.value))}
+            placeholder="0.00"
+            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold outline-none focus:border-ocean-500"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Category</label>
+          <select value={form.category} onChange={event => updateCategory(event.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
+            {categories.map(category => (
+              <option key={category.code} value={category.code}>
+                {category.name || catalogCategoryLabel(category.code)}{category.activeStatus ? "" : " (inactive)"}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Unit</label>
+          <select value={form.unitType} onChange={event => setForm({ ...form, unitType: event.target.value as CatalogItem["unitType"] })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
+            {(["kg", "ton", "piece", "crate", "sack", "litre", "m3", "trip"] as const).map(unit => <option key={unit} value={unit}>{unit}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Tax rate %</label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={form.defaultTaxRate}
+            onFocus={event => event.currentTarget.select()}
+            onChange={event => setForm({ ...form, defaultTaxRate: Number(event.target.value) })}
+            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+          />
+        </div>
+        <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-700 sm:mt-5">
+          <input type="checkbox" checked={form.taxInclusive} onChange={event => setForm({ ...form, taxInclusive: event.target.checked })} />
+          Tax inclusive
+        </label>
+      </div>
+
+      <Btn
+        fullWidth
+        size="lg"
+        icon="check"
+        disabled={!canSave}
+        onClick={() => onAdd({
+          ...form,
+          itemName: form.itemName.trim(),
+          itemCode: form.itemCode.trim(),
+          icon: form.icon.trim() || DEFAULT_CATALOG_ICON,
+        }, standardPrice)}
+      >
+        Save and add item
+      </Btn>
     </div>
   );
 }

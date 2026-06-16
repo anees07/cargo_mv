@@ -122,4 +122,15 @@ test("buildQuarterTaxBillRows includes cancelled bills and sorts by trip name th
 
   assert.deepEqual(rows.map(row => row.billNumber), ["BILL-001", "BILL-002"]);
   assert.equal(rows[1].billStatus, "cancelled");
+  assert.deepEqual(
+    rows.map(row => ({
+      subtotalAmount: row.subtotalAmount,
+      taxAmount: row.taxAmount,
+      totalAmount: row.totalAmount,
+    })),
+    [
+      { subtotalAmount: 92.59, taxAmount: 7.41, totalAmount: 100 },
+      { subtotalAmount: 185.19, taxAmount: 14.81, totalAmount: 200 },
+    ],
+  );
 });
