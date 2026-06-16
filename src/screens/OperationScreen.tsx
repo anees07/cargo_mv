@@ -23,7 +23,7 @@ export function OperationScreen() {
   const {
     trips, activeTripId, customers, destinations, catalogItems, catalogCategories, itemPriceRates,
     priceLevels,
-    businessProfile, addOperationItem, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
+    businessProfile, addOperationItem, addOperationItems, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
     createBillFromOperation, currentUser,
   } = useApp();
   const activeTrip = trips.find(t => t.id === activeTripId);
@@ -105,6 +105,31 @@ export function OperationScreen() {
     setShowAddCustomer(false);
     setShowAddDest(false);
     setShowOpTypePicker(false);
+  };
+
+  const saveOffloadTally = (entries: Array<{ item: CatalogItem; quantity: number; availability: OffloadAvailability }>) => {
+    if (!activeTrip || !selectedDestId || !selectedCustomerId || entries.length === 0) return;
+    addOperationItems(entries.map(entry => ({
+        tripId: activeTrip.id,
+        operationId: currentOp?.id || "pending",
+        operationType: "offloading",
+        destinationId: selectedDestId,
+        customerId: selectedCustomerId,
+        itemId: entry.item.id,
+        itemNameSnapshot: entry.availability.source.itemNameSnapshot || entry.item.itemName,
+        unitType: entry.availability.source.unitType || entry.item.unitType,
+        quantity: entry.quantity,
+        unitPriceTaxInclusive: entry.availability.source.unitPriceTaxInclusive,
+        taxRate: entry.availability.source.taxRate || businessProfile.defaultTaxRate,
+        lineDescription: entry.availability.source.lineDescription,
+        originalPrice: entry.availability.source.unitPriceTaxInclusive,
+        walkInDetails: selectedCustomerIsWalkIn ? cleanWalkInDetails(selectedWalkInDetails) : undefined,
+      })));
+    toast({
+      title: "Offload tally saved",
+      body: `${entries.length} item${entries.length !== 1 ? "s" : ""} recorded`,
+      variant: "success",
+    });
   };
 
   const handleAddItem = (item: CatalogItem, qty: number, price: number, lineDescription?: string) => {
@@ -342,49 +367,25 @@ export function OperationScreen() {
         )}
         {opType === "offloading" && selectedCustomerId && selectedDestId && offloadRows.length > 0 && (
           <Section title="Loaded cargo available to offload" className="mt-5">
-            <Card className="p-0 overflow-hidden">
-              <div className="divide-y divide-slate-100">
-                {offloadRows.map(({ item, availability }) => (
-                  <div key={item.id} className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-900">{item.itemName}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          Loaded {availability.loadedQuantity} {item.unitType}
-                          {availability.offloadedQuantity > 0 && ` • offloaded ${availability.offloadedQuantity}`}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-ocean-800">{availability.remaining}</p>
-                          <p className="text-xs text-slate-500">remaining</p>
-                        </div>
-                        <Btn
-                          size="sm"
-                          icon="check"
-                          onClick={() => handleAddItem(item, availability.remaining, availability.source.unitPriceTaxInclusive)}
-                        >
-                          Offload
-                        </Btn>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
+            <OffloadTally
+              rows={offloadRows}
+              onSave={saveOffloadTally}
+            />
           </Section>
         )}
-        <div className="mt-5">
-          <Btn
-            fullWidth
-            size="lg"
-            icon="plus"
-            disabled={!canAddItem}
-            onClick={() => setShowItemPicker(true)}
-          >
-            {opType === "offloading" ? "Offload item" : "Add item"}
-          </Btn>
-        </div>
+        {opType !== "offloading" && (
+          <div className="mt-5">
+            <Btn
+              fullWidth
+              size="lg"
+              icon="plus"
+              disabled={!canAddItem}
+              onClick={() => setShowItemPicker(true)}
+            >
+              Add item
+            </Btn>
+          </div>
+        )}
       </div>
 
       {/* Sticky action bar */}
@@ -512,6 +513,106 @@ export function OperationScreen() {
         />
       </Modal>
     </div>
+  );
+}
+
+function OffloadTally({
+  rows,
+  onSave,
+}: {
+  rows: Array<{ item: CatalogItem; availability: OffloadAvailability }>;
+  onSave: (entries: Array<{ item: CatalogItem; quantity: number; availability: OffloadAvailability }>) => void;
+}) {
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const entries = rows
+    .map(row => ({
+      ...row,
+      quantity: Math.min(Math.max(Number(quantities[row.item.id] || 0), 0), row.availability.remaining),
+    }))
+    .filter(row => row.quantity > 0);
+  const tallyTotal = entries.reduce((sum, row) => sum + row.quantity * row.availability.source.unitPriceTaxInclusive, 0);
+  const canSave = entries.length > 0;
+
+  const updateQuantity = (itemId: string, remaining: number, value: number) => {
+    const quantity = Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), remaining);
+    setQuantities(current => ({ ...current, [itemId]: quantity }));
+  };
+
+  const save = () => {
+    if (!canSave) return;
+    onSave(entries);
+    setQuantities({});
+  };
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="divide-y divide-slate-100">
+        {rows.map(({ item, availability }) => {
+          const value = quantities[item.id] || "";
+          const source = availability.source;
+          return (
+            <div key={item.id} className="p-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px] sm:items-center">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">{source.itemNameSnapshot || item.itemName}</p>
+                  {source.lineDescription && <p className="mt-0.5 text-xs text-slate-600">{source.lineDescription}</p>}
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Loaded {availability.loadedQuantity} {source.unitType || item.unitType}
+                    {availability.offloadedQuantity > 0 && ` • already offloaded ${availability.offloadedQuantity}`}
+                  </p>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-lg bg-slate-50 px-2 py-1">
+                      <p className="font-semibold text-slate-900">{availability.loadedQuantity}</p>
+                      <p className="text-slate-500">loaded</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 px-2 py-1">
+                      <p className="font-semibold text-slate-900">{availability.offloadedQuantity}</p>
+                      <p className="text-slate-500">offloaded</p>
+                    </div>
+                    <div className="rounded-lg bg-ocean-50 px-2 py-1">
+                      <p className="font-semibold text-ocean-800">{availability.remaining}</p>
+                      <p className="text-slate-500">remaining</p>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Offload now</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={availability.remaining}
+                      step={1}
+                      value={value}
+                      onFocus={event => event.currentTarget.select()}
+                      onChange={event => updateQuantity(item.id, availability.remaining, Number(event.target.value))}
+                      className="h-11 min-w-0 flex-1 rounded-xl border border-slate-300 px-3 text-sm font-semibold outline-none focus:border-ocean-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateQuantity(item.id, availability.remaining, availability.remaining)}
+                      className="h-11 shrink-0 rounded-xl border border-slate-300 px-3 text-xs font-semibold text-ocean-700 hover:bg-ocean-50"
+                    >
+                      All
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">{source.unitType || item.unitType} • {MVR(source.unitPriceTaxInclusive)} each</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="border-t border-slate-200 bg-slate-50 p-3">
+        <div className="mb-3 flex items-center justify-between text-sm">
+          <span className="font-semibold text-slate-700">Tally total</span>
+          <span className="font-bold text-ocean-800">{MVR(tallyTotal)}</span>
+        </div>
+        <Btn fullWidth size="lg" icon="check" disabled={!canSave} onClick={save}>
+          Save offload tally
+        </Btn>
+      </div>
+    </Card>
   );
 }
 

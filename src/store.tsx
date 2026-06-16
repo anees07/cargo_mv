@@ -109,6 +109,7 @@ export interface AppActions {
   selectCustomer: (id: string) => void;
   selectDestination: (id: string) => void;
   addOperationItem: (item: AddOperationItemInput) => void;
+  addOperationItems: (items: AddOperationItemInput[]) => void;
   removeOperationItem: (itemId: string) => void;
   finalizeBill: (billId: string) => void;
   postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => Promise<boolean>;
@@ -898,47 +899,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return seq ? formatSequenceNumber(seq, seq.currentSequence + 1, destCode) : "";
   }, [state.numbering]);
 
-  const addOperationItem = useCallback((item: AddOperationItemInput) => {
-    const { operationType, walkInDetails, ...operationItem } = item;
-    const taxAmount = (operationItem.unitPriceTaxInclusive * operationItem.quantity) - (operationItem.unitPriceTaxInclusive * operationItem.quantity) / (1 + operationItem.taxRate / 100);
-    const lineTotal = operationItem.unitPriceTaxInclusive * operationItem.quantity;
-    const existingOp = state.operations.find(o =>
-      o.tripId === operationItem.tripId &&
+  const addOperationItems = useCallback((items: AddOperationItemInput[]) => {
+    if (items.length === 0) return;
+    const current = stateRef.current;
+    const first = items[0];
+    const { operationType, walkInDetails } = first;
+    const operationId = current.operations.find(o =>
+      o.tripId === first.tripId &&
       o.operationType === operationType &&
-      o.destinationId === operationItem.destinationId &&
-      o.customerId === operationItem.customerId
-    );
-    const operationId = existingOp?.id || operationDocumentId(operationItem.tripId, operationType, operationItem.destinationId, operationItem.customerId);
-    const newItem: OperationItem = {
-      ...operationItem,
-      id: id("oi"),
-      operationId,
-      businessProfileId: state.businessProfile.id,
-      createdBy: state.currentUser.id,
-      createdAt: new Date().toISOString(),
-      taxAmount: Number(taxAmount.toFixed(2)),
-      lineTotalTaxInclusive: Number(lineTotal.toFixed(2)),
-    };
+      o.destinationId === first.destinationId &&
+      o.customerId === first.customerId
+    )?.id || operationDocumentId(first.tripId, operationType, first.destinationId, first.customerId);
+    const existingOp = current.operations.find(o => o.id === operationId);
+    const createdAt = new Date().toISOString();
+    const newItems: OperationItem[] = items.map(item => {
+      const { operationType: _operationType, walkInDetails: _walkInDetails, ...operationItem } = item;
+      const taxAmount = (operationItem.unitPriceTaxInclusive * operationItem.quantity) - (operationItem.unitPriceTaxInclusive * operationItem.quantity) / (1 + operationItem.taxRate / 100);
+      const lineTotal = operationItem.unitPriceTaxInclusive * operationItem.quantity;
+      return {
+        ...operationItem,
+        id: id("oi"),
+        operationId,
+        businessProfileId: current.businessProfile.id,
+        createdBy: current.currentUser.id,
+        createdAt,
+        taxAmount: Number(taxAmount.toFixed(2)),
+        lineTotalTaxInclusive: Number(lineTotal.toFixed(2)),
+      };
+    });
+    const mergedLocalItems = [...newItems, ...(existingOp?.items || [])];
     const operationToPersist: Operation = existingOp ? {
       ...existingOp,
       walkInDetails: walkInDetails ?? existingOp.walkInDetails,
-      items: [newItem, ...existingOp.items],
-      totalTaxInclusive: Number((existingOp.totalTaxInclusive + newItem.lineTotalTaxInclusive).toFixed(2)),
-      totalTax: Number((existingOp.totalTax + newItem.taxAmount).toFixed(2)),
+      items: mergedLocalItems,
+      totalTaxInclusive: Number(mergedLocalItems.reduce((sum, opItem) => sum + opItem.lineTotalTaxInclusive, 0).toFixed(2)),
+      totalTax: Number(mergedLocalItems.reduce((sum, opItem) => sum + opItem.taxAmount, 0).toFixed(2)),
     } : {
-      id: newItem.operationId,
-      businessProfileId: state.businessProfile.id,
-      tripId: operationItem.tripId,
+      id: operationId,
+      businessProfileId: current.businessProfile.id,
+      tripId: first.tripId,
       operationType,
-      destinationId: operationItem.destinationId,
-      customerId: operationItem.customerId,
+      destinationId: first.destinationId,
+      customerId: first.customerId,
       walkInDetails,
-      items: [newItem],
-      totalTaxInclusive: newItem.lineTotalTaxInclusive,
-      totalTax: newItem.taxAmount,
-      createdBy: state.currentUser.id,
-      createdAt: new Date().toISOString(),
-      synced: state.isOnline,
+      items: newItems,
+      totalTaxInclusive: Number(newItems.reduce((sum, opItem) => sum + opItem.lineTotalTaxInclusive, 0).toFixed(2)),
+      totalTax: Number(newItems.reduce((sum, opItem) => sum + opItem.taxAmount, 0).toFixed(2)),
+      createdBy: current.currentUser.id,
+      createdAt,
+      synced: current.isOnline,
     };
     setState(s => existingOp ? {
       ...s,
@@ -948,12 +957,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       operations: [operationToPersist, ...s.operations],
     });
     const db = getFirebaseFirestore();
-    const opRef = doc(db, "business_profiles", state.businessProfile.id, tenantCollections.operations, operationToPersist.id);
+    const opRef = doc(db, "business_profiles", current.businessProfile.id, tenantCollections.operations, operationToPersist.id);
     void runTransaction(db, async transaction => {
       const snapshot = await transaction.get(opRef);
       const remoteOperation = snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Operation) : null;
       const remoteItems = remoteOperation?.items || [];
-      const mergedItems = [newItem, ...remoteItems];
+      const mergedItems = [...newItems, ...remoteItems];
       const operationToWrite: Operation = remoteOperation ? {
         ...remoteOperation,
         walkInDetails: walkInDetails ?? remoteOperation.walkInDetails,
@@ -965,10 +974,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }).catch(error => {
       setState(s => ({
         ...s,
-        toasts: [...s.toasts, { id: id("t"), title: "Item not saved", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+        toasts: [...s.toasts, { id: id("t"), title: "Items not saved", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
       }));
     });
-  }, [state.businessProfile.id, state.currentUser.id, state.isOnline, state.operations]);
+  }, []);
+
+  const addOperationItem = useCallback((item: AddOperationItemInput) => {
+    addOperationItems([item]);
+  }, [addOperationItems]);
 
   const removeOperationItem = useCallback((itemId: string) => {
     const current = stateRef.current;
@@ -2151,7 +2164,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ...state,
     signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
-    addOperationItem, removeOperationItem,
+    addOperationItem, addOperationItems, removeOperationItem,
     finalizeBill, postPayment, updateDraftBill, createTrip,
     createBillFromOperation,
     addDestination, addCustomer, syncCatalogCategories, saveCatalogCategory, addCatalogItem, syncCustomerPriceLevels, saveCustomerPriceLevel,
