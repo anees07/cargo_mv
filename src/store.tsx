@@ -230,6 +230,94 @@ function mergeOperationItems(incoming: OperationItem[], existing: OperationItem[
   });
 }
 
+function normalizeBillingPhone(phone?: string | null) {
+  const normalized = String(phone || "").replace(/\D/g, "");
+  return normalized || String(phone || "").trim().toLowerCase();
+}
+
+function billingCustomerIdentity(
+  customerId: string,
+  walkInDetails: WalkInDetails | undefined,
+  customers: Customer[]
+) {
+  const walkInPhone = normalizeBillingPhone(walkInDetails?.phone);
+  if (walkInPhone) return `phone:${walkInPhone}`;
+  const customer = customers.find(item => item.id === customerId);
+  const customerPhone = normalizeBillingPhone(customer?.phone);
+  return customerPhone ? `phone:${customerPhone}` : `customer:${customerId}`;
+}
+
+function billMatchesOperationIdentity(bill: Bill, operation: Operation, customers: Customer[]) {
+  return bill.tripId === operation.tripId &&
+    bill.destinationId === operation.destinationId &&
+    billingCustomerIdentity(bill.customerId, bill.walkInDetails, customers) ===
+      billingCustomerIdentity(operation.customerId, operation.walkInDetails, customers);
+}
+
+function draftBillMergeKey(bill: Bill, customers: Customer[]) {
+  return [
+    bill.tripId,
+    bill.destinationId,
+    billingCustomerIdentity(bill.customerId, bill.walkInDetails, customers),
+  ].join("::");
+}
+
+function mergeDuplicateDraftBills(bills: Bill[], customers: Customer[]) {
+  const groups = new Map<string, Bill[]>();
+  for (const bill of bills) {
+    if (bill.billStatus !== "draft" || !isBillEditableBeforeFinalize(bill)) continue;
+    const key = draftBillMergeKey(bill, customers);
+    groups.set(key, [...(groups.get(key) || []), bill]);
+  }
+
+  const mergedBills = new Map<string, Bill>();
+  const deletedBillIds = new Set<string>();
+  const now = new Date().toISOString();
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const [target, ...duplicates] = [...group].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const allBills = [target, ...duplicates];
+    const items = allBills.reduce<OperationItem[]>(
+      (mergedItems, bill) => mergeOperationItems(bill.items || [], mergedItems),
+      []
+    );
+    const offloadedItems = allBills.reduce<OperationItem[]>(
+      (mergedItems, bill) => mergeOperationItems(bill.offloadedItems || [], mergedItems),
+      []
+    );
+    const mergedBill: Bill = {
+      ...target,
+      walkInDetails: target.walkInDetails || allBills.find(bill => bill.walkInDetails)?.walkInDetails,
+      items,
+      offloadedItems: offloadedItems.length ? offloadedItems : undefined,
+      itemCount: items.length,
+      subtotalTaxInclusive: Number(allBills.reduce((sum, bill) => sum + Number(bill.subtotalTaxInclusive || 0), 0).toFixed(2)),
+      taxTotal: Number(allBills.reduce((sum, bill) => sum + Number(bill.taxTotal || 0), 0).toFixed(2)),
+      grandTotal: Number(allBills.reduce((sum, bill) => sum + Number(bill.grandTotal || 0), 0).toFixed(2)),
+      paidAmount: Number(allBills.reduce((sum, bill) => sum + Number(bill.paidAmount || 0), 0).toFixed(2)),
+      updatedAt: now,
+    };
+    mergedBills.set(target.id, mergedBill);
+    for (const duplicate of duplicates) {
+      deletedBillIds.add(duplicate.id);
+    }
+  }
+
+  if (mergedBills.size === 0) {
+    return { bills, merged: [] as Bill[], deletedIds: [] as string[] };
+  }
+
+  return {
+    bills: bills
+      .filter(bill => !deletedBillIds.has(bill.id))
+      .map(bill => mergedBills.get(bill.id) || bill)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    merged: Array.from(mergedBills.values()),
+    deletedIds: Array.from(deletedBillIds),
+  };
+}
+
 const tenantCollections = {
   users: "business_users",
   destinations: "destinations",
@@ -353,21 +441,6 @@ async function getMaxSequenceFromFirestore(businessProfileId: string, collection
 
 const operationDocumentId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
   `op_${[tripId, operationType, destinationId, customerId].join("_").replace(/[^A-Za-z0-9_-]/g, "_")}`;
-
-const isolatedSystemOtherOperationId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
-  `${operationDocumentId(tripId, operationType, destinationId, customerId)}_${id("other")}`;
-
-function isIsolatedSystemOtherLoading(items: Array<Pick<AddOperationItemInput, "operationType" | "itemId">>) {
-  return items.length === 1 &&
-    items[0].operationType === "loading" &&
-    items[0].itemId === SYSTEM_OTHER_ITEM_ID;
-}
-
-function isSystemOtherOnlyOperation(operation: Pick<Operation, "operationType" | "items">) {
-  return operation.operationType === "loading" &&
-    operation.items.length === 1 &&
-    operation.items[0].itemId === SYSTEM_OTHER_ITEM_ID;
-}
 
 const initials = (nameOrEmail: string) =>
   nameOrEmail
@@ -644,8 +717,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const bills = snapshot.docs
         .map(document => ({ id: document.id, ...document.data() }) as Bill)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const dedupedBills = mergeDuplicateDraftBills(bills, stateRef.current.customers);
       markRemoteUpdate();
-      setState(s => ({ ...s, bills }));
+      setState(s => ({ ...s, bills: dedupedBills.bills }));
+      for (const bill of dedupedBills.merged) {
+        persistTenantDoc(tenantCollections.bills, bill.id, bill as unknown as Record<string, unknown>);
+      }
+      for (const billId of dedupedBills.deletedIds) {
+        deleteTenantDoc(tenantCollections.bills, stateRef.current.businessProfile.id, billId);
+      }
     }));
 
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.payments), snapshot => {
@@ -935,19 +1015,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const current = stateRef.current;
     const first = items[0];
     const { operationType, walkInDetails } = first;
-    const shouldIsolateSystemOther = isIsolatedSystemOtherLoading(items);
-    const reusableOperation = shouldIsolateSystemOther ? null : current.operations.find(o =>
+    const reusableOperation = current.operations.find(o =>
       o.tripId === first.tripId &&
       o.operationType === operationType &&
       o.destinationId === first.destinationId &&
-      o.customerId === first.customerId &&
-      !isSystemOtherOnlyOperation(o)
+      o.customerId === first.customerId
     );
-    const operationId = reusableOperation?.id || (
-      shouldIsolateSystemOther
-        ? isolatedSystemOtherOperationId(first.tripId, operationType, first.destinationId, first.customerId)
-        : operationDocumentId(first.tripId, operationType, first.destinationId, first.customerId)
-    );
+    const operationId = reusableOperation?.id || operationDocumentId(first.tripId, operationType, first.destinationId, first.customerId);
     const existingOp = current.operations.find(o => o.id === operationId);
     const createdAt = new Date().toISOString();
     const newItems: OperationItem[] = items.map(item => {
@@ -1097,6 +1171,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       paymentStatus: bill.paidAmount >= bill.grandTotal ? "paid" : bill.paidAmount > 0 ? "partial" : "unpaid",
       finalizedBy: current.currentUser.id,
       finalizedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     setState(s => ({
       ...s,
@@ -1112,10 +1187,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const postPayment = useCallback(async (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => {
-    const businessProfileId = state.businessProfile.id;
-    const localSeq = state.numbering.find(n => n.numberType === "receipt");
+    const current = stateRef.current;
+    const businessProfileId = current.businessProfile.id;
+    const localSeq = current.numbering.find(n => n.numberType === "receipt");
     if (!businessProfileId || !localSeq) return false;
-    const localBill = state.bills.find(bill => bill.id === billId);
+    const localBill = current.bills.find(bill => bill.id === billId);
     const localValidation = validatePaymentRequest(localBill, amount);
     if (!localValidation.ok) {
       setState(s => ({
@@ -1128,7 +1204,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const db = getFirebaseFirestore();
       const remoteMaxSequence = await getMaxSequenceFromFirestore(businessProfileId, tenantCollections.payments, "paymentNumber");
-      const localMaxSequence = state.payments.reduce((max, payment) => Math.max(max, sequenceFromNumber(payment.paymentNumber)), 0);
+      const localMaxSequence = stateRef.current.payments.reduce((max, payment) => Math.max(max, sequenceFromNumber(payment.paymentNumber)), 0);
       const paymentId = id("pm");
       const billRef = doc(db, "business_profiles", businessProfileId, tenantCollections.bills, billId);
       const paymentRef = doc(db, "business_profiles", businessProfileId, tenantCollections.payments, paymentId);
@@ -1143,7 +1219,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           throw new Error("Bill not found.");
         }
 
-        const bill = { id: billSnapshot.id, ...billSnapshot.data() } as Bill;
+        const remoteBill = { id: billSnapshot.id, ...billSnapshot.data() } as Bill;
+        const latestLocalBill = stateRef.current.bills.find(item => item.id === billId);
+        const bill = remoteBill.billStatus === "draft" && latestLocalBill && latestLocalBill.billStatus !== "draft"
+          ? {
+              ...remoteBill,
+              billStatus: latestLocalBill.billStatus,
+              paymentStatus: latestLocalBill.paymentStatus,
+              finalizedBy: latestLocalBill.finalizedBy,
+              finalizedAt: latestLocalBill.finalizedAt,
+            }
+          : remoteBill;
         const paymentValidation = validatePaymentRequest(bill, amount);
         if (!paymentValidation.ok) {
           throw new Error(paymentValidation.reason);
@@ -1172,7 +1258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           method,
           reference,
           notes,
-          collectedBy: state.currentUser.id,
+          collectedBy: stateRef.current.currentUser.id,
           collectedAt: new Date().toISOString(),
         };
         const updatedSequence: NumberingSequence & { id: string; businessProfileId: string } = {
@@ -1212,7 +1298,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }));
       return false;
     }
-  }, [state.businessProfile.id, state.currentUser.id, state.numbering, state.payments]);
+  }, []);
 
   const updateDraftBill = useCallback((billId: string, items: OperationItem[], reason: string) => {
     const bill = state.bills.find(b => b.id === billId);
@@ -1617,7 +1703,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const createBillFromOperation = useCallback(async (operationId: string, billType: Bill["billType"]): Promise<Bill | null> => {
-    const op = state.operations.find(o => o.id === operationId);
+    const current = stateRef.current;
+    const op = current.operations.find(o => o.id === operationId);
     if (!op) return null;
     if (op.items.length === 0) {
       setState(s => ({
@@ -1633,15 +1720,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }));
       return null;
     }
-    const shouldCreateSeparateSystemOtherBill = op.operationType === "loading" &&
-      op.items.length === 1 &&
-      op.items[0].itemId === SYSTEM_OTHER_ITEM_ID;
-    const existingBill = shouldCreateSeparateSystemOtherBill ? undefined : state.bills.find(b =>
-      b.tripId === op.tripId &&
-      b.destinationId === op.destinationId &&
-      b.customerId === op.customerId &&
+    const businessProfileId = current.businessProfile.id;
+    let existingBill = current.bills.find(b =>
+      billMatchesOperationIdentity(b, op, current.customers) &&
       b.billStatus !== "cancelled"
     );
+    if (!existingBill && businessProfileId) {
+      const remoteBills = await loadTenantCollection<Bill>(tenantCollections.bills, businessProfileId);
+      existingBill = remoteBills.find(bill =>
+        billMatchesOperationIdentity(bill, op, current.customers) &&
+        bill.billStatus !== "cancelled"
+      );
+    }
     if (existingBill) {
       if (!isBillEditableBeforeFinalize(existingBill)) {
         setState(s => ({
@@ -1653,8 +1743,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       try {
         const db = getFirebaseFirestore();
-        const billRef = doc(db, "business_profiles", state.businessProfile.id, tenantCollections.bills, existingBill.id);
-        const opRef = doc(db, "business_profiles", state.businessProfile.id, tenantCollections.operations, op.id);
+        const billRef = doc(db, "business_profiles", businessProfileId, tenantCollections.bills, existingBill.id);
+        const opRef = doc(db, "business_profiles", businessProfileId, tenantCollections.operations, op.id);
         const updatedBill = await runTransaction(db, async transaction => {
           const [billSnapshot, opSnapshot] = await Promise.all([
             transaction.get(billRef),
@@ -1708,7 +1798,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...s,
           selectedBillId: existingBill.id,
           operations: s.operations.filter(operation => operation.id !== op.id),
-          bills: s.bills.map(b => b.id === existingBill.id ? updatedBill : b),
+          bills: s.bills.some(b => b.id === existingBill.id)
+            ? s.bills.map(b => b.id === existingBill.id ? updatedBill : b)
+            : [updatedBill, ...s.bills],
           auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
             actorUserId: s.currentUser.id,
             action: "billing.generate",
@@ -1728,15 +1820,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const businessProfileId = state.businessProfile.id;
-    const dest = state.destinations.find(d => d.id === op.destinationId);
-    const localSeq = state.numbering.find(n => n.numberType === "bill");
+    const dest = current.destinations.find(d => d.id === op.destinationId);
+    const localSeq = current.numbering.find(n => n.numberType === "bill");
     if (!businessProfileId || !localSeq) return null;
 
     try {
       const db = getFirebaseFirestore();
       const remoteMaxSequence = await getMaxSequenceFromFirestore(businessProfileId, tenantCollections.bills, "billNumber");
-      const localMaxSequence = state.bills.reduce((max, bill) => Math.max(max, sequenceFromNumber(bill.billNumber)), 0);
+      const localMaxSequence = stateRef.current.bills.reduce((max, bill) => Math.max(max, sequenceFromNumber(bill.billNumber)), 0);
       const billId = id("b");
       const billRef = doc(db, "business_profiles", businessProfileId, tenantCollections.bills, billId);
       const opRef = doc(db, "business_profiles", businessProfileId, tenantCollections.operations, op.id);
@@ -1774,7 +1865,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           grandTotal: op.totalTaxInclusive,
           paymentStatus: "unpaid",
           paidAmount: 0,
-          createdBy: state.currentUser.id,
+          createdBy: stateRef.current.currentUser.id,
           createdAt: new Date().toISOString(),
           itemCount: op.items.length,
           items: op.items,

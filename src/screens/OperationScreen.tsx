@@ -43,15 +43,28 @@ export function OperationScreen() {
   const customer = customers.find(c => c.id === selectedCustomerId);
   const selectedWalkInDetails = selectedDestId ? walkInByDestination[selectedDestId] || emptyWalkInDetails : emptyWalkInDetails;
   const selectedCustomerIsWalkIn = isWalkInCustomer(customer);
-  const currentOp = operations
-    .filter(o =>
-      o.tripId === activeTripId &&
-      o.operationType === opType &&
-      o.destinationId === selectedDestId &&
-      o.customerId === selectedCustomerId
-    )
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  const currentOpHasLockedBill = currentOp ? hasLockedBillForOperation(currentOp, bills) : false;
+  const currentOperations = useMemo(
+    () => operations
+      .filter(o =>
+        o.tripId === activeTripId &&
+        o.operationType === opType &&
+        o.destinationId === selectedDestId &&
+        o.customerId === selectedCustomerId
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [operations, activeTripId, opType, selectedDestId, selectedCustomerId]
+  );
+  const currentOp = currentOperations[0];
+  const currentItems = useMemo(() => currentOperations.flatMap(operation => operation.items), [currentOperations]);
+  const currentTotalTaxInclusive = useMemo(
+    () => Number(currentOperations.reduce((sum, operation) => sum + operation.totalTaxInclusive, 0).toFixed(2)),
+    [currentOperations]
+  );
+  const currentTotalTax = useMemo(
+    () => Number(currentOperations.reduce((sum, operation) => sum + operation.totalTax, 0).toFixed(2)),
+    [currentOperations]
+  );
+  const currentOpHasLockedBill = currentOperations.some(operation => hasLockedBillForOperation(operation, bills));
   const offloadAvailability = useMemo(
     () => buildOffloadAvailability(operations, activeTripId, selectedDestId, selectedCustomerId, bills),
     [operations, activeTripId, selectedDestId, selectedCustomerId, bills]
@@ -216,10 +229,10 @@ export function OperationScreen() {
               <button
                 key={o.id}
                 onClick={() => setOpType(o.id)}
-                className={`relative overflow-hidden rounded-xl p-3 text-white text-left transition-all ${opType === o.id ? `bg-gradient-to-br ${o.color} shadow-md` : "bg-slate-100 text-slate-700"}`}
+                className={`relative overflow-hidden rounded-xl p-3 text-left transition-all ${opType === o.id ? `bg-gradient-to-br ${o.color} text-white shadow-md` : "bg-slate-100 text-slate-800 hover:bg-slate-200"}`}
               >
-                <Icon name={o.icon} className={`h-5 w-5 ${opType === o.id ? "" : "text-slate-500"}`} />
-                <p className="mt-2 text-xs font-semibold capitalize">{o.label}</p>
+                <Icon name={o.icon} className={`h-5 w-5 ${opType === o.id ? "text-white" : "text-slate-500"}`} />
+                <p className={`mt-2 text-xs font-semibold capitalize ${opType === o.id ? "text-white" : "text-slate-800"}`}>{o.label}</p>
               </button>
             ))}
           </div>
@@ -303,18 +316,18 @@ export function OperationScreen() {
         )}
 
         {/* Live items list */}
-        {opType !== "offloading" && currentOp && currentOp.items.length > 0 && (
-          <Section title={`Items (${currentOp.items.length})`} className="mt-5">
+        {opType !== "offloading" && currentItems.length > 0 && (
+          <Section title={`Items (${currentItems.length})`} className="mt-5">
             <Card className="p-0 overflow-hidden">
               <div className="divide-y divide-slate-100">
-                {currentOp.items.map((it, idx) => {
+                {currentItems.map((it, idx) => {
                   const isOverridden = it.overridePrice && it.overridePrice !== it.originalPrice;
                   return (
                     <div key={it.id} className="p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-slate-400">#{currentOp.items.length - idx}</span>
+                            <span className="text-xs font-semibold text-slate-400">#{currentItems.length - idx}</span>
                             <p className="truncate text-sm font-semibold text-slate-900">{it.itemNameSnapshot}</p>
                           </div>
                           <p className="mt-0.5 text-xs text-slate-500">
@@ -343,15 +356,15 @@ export function OperationScreen() {
               <div className="border-t-2 border-dashed border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-center justify-between text-xs text-slate-600">
                   <span>Subtotal (tax-inclusive)</span>
-                  <span className="font-semibold text-slate-900">{MVR(currentOp.totalTaxInclusive)}</span>
+                  <span className="font-semibold text-slate-900">{MVR(currentTotalTaxInclusive)}</span>
                 </div>
                 <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
                   <span>GST 8% (extracted)</span>
-                  <span>{MVR(currentOp.totalTax)}</span>
+                  <span>{MVR(currentTotalTax)}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
                   <span className="text-sm font-semibold text-slate-900">Total</span>
-                  <span className="text-lg font-bold text-ocean-700">{MVR(currentOp.totalTaxInclusive)}</span>
+                  <span className="text-lg font-bold text-ocean-700">{MVR(currentTotalTaxInclusive)}</span>
                 </div>
               </div>
             </Card>
@@ -398,20 +411,22 @@ export function OperationScreen() {
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-xs uppercase tracking-wider text-slate-500">Operation total</p>
-            <p className="text-lg font-bold text-slate-900">{MVR(currentOp?.totalTaxInclusive || 0)}</p>
+            <p className="text-lg font-bold text-slate-900">{MVR(currentTotalTaxInclusive)}</p>
           </div>
           {opType === "loading" && hasPermission(currentUser.role, "create_bill") && (
             <Btn
               size="lg"
               icon="receipt"
-              disabled={!currentOp || currentOp.items.length === 0 || currentOpHasLockedBill}
+              disabled={currentItems.length === 0 || currentOpHasLockedBill}
               onClick={async () => {
-                if (currentOp) {
-                  const bill = await createBillFromOperation(currentOp.id, "loading_bill");
+                let billCreated = false;
+                for (const operation of [...currentOperations].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+                  const bill = await createBillFromOperation(operation.id, "loading_bill");
                   if (bill) {
-                    resetOperationForm();
+                    billCreated = true;
                   }
                 }
+                if (billCreated) resetOperationForm();
               }}
             >
               {currentOpHasLockedBill ? "Bill already exists" : "Generate bill"}

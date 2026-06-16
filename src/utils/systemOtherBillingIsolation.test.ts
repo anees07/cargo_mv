@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-test("system other loading lines are isolated from grouped operation and draft bill merge paths", () => {
+test("system other loading lines stay in the normal operation and draft bill merge path", () => {
   const store = readFileSync("src/store.tsx", "utf8");
 
-  assert.match(store, /function isIsolatedSystemOtherLoading/);
-  assert.match(store, /isolatedSystemOtherOperationId\(first\.tripId, operationType, first\.destinationId, first\.customerId\)/);
-  assert.match(store, /const shouldCreateSeparateSystemOtherBill = op\.operationType === "loading"/);
-  assert.match(store, /const existingBill = shouldCreateSeparateSystemOtherBill \? undefined : state\.bills\.find/);
-  assert.match(store, /!isSystemOtherOnlyOperation\(o\)/);
+  assert.doesNotMatch(store, /function isIsolatedSystemOtherLoading/);
+  assert.doesNotMatch(store, /isolatedSystemOtherOperationId/);
+  assert.match(store, /const operationId = reusableOperation\?\.id \|\| operationDocumentId\(first\.tripId, operationType, first\.destinationId, first\.customerId\)/);
+  assert.match(store, /const existingBill = current\.bills\.find\(b =>\s+billMatchesOperationIdentity\(b, op, current\.customers\)/);
+  assert.match(store, /function mergeDuplicateDraftBills/);
 });
