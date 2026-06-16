@@ -5,6 +5,7 @@ import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { buildOffloadAvailability, hasLockedBillForOperation, type OffloadAvailability } from "../utils/operationFlow";
 import { calculatePriceFromStandard } from "../data/customerPriceLevels";
+import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel } from "../data/catalogCategories";
 import {
   cleanWalkInDetails,
   customerMatchesDestination,
@@ -19,7 +20,7 @@ import type { CatalogItem, Customer, WalkInDetails } from "../types";
 // ============================================================================
 export function OperationScreen() {
   const {
-    trips, activeTripId, customers, destinations, catalogItems, itemPriceRates,
+    trips, activeTripId, customers, destinations, catalogItems, catalogCategories, itemPriceRates,
     priceLevels,
     businessProfile, addOperationItem, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
     createBillFromOperation, currentUser,
@@ -474,6 +475,7 @@ export function OperationScreen() {
       <Modal open={showItemPicker} onClose={() => setShowItemPicker(false)} title="Pick catalog item">
         <ItemPicker
           items={opType === "offloading" ? availableOffloadCatalogItems : catalogItems}
+          catalogCategories={catalogCategories}
           customer={customer}
           getPrice={getItemPrice}
           operationType={opType}
@@ -508,8 +510,9 @@ export function OperationScreen() {
   );
 }
 
-function ItemPicker({ items, customer, getPrice, operationType, availability, onPick }: {
+function ItemPicker({ items, catalogCategories, customer, getPrice, operationType, availability, onPick }: {
   items: CatalogItem[];
+  catalogCategories: Array<{ code: string; name: string; activeStatus: boolean; sortOrder: number }>;
   customer?: Customer;
   getPrice: (item: CatalogItem, cust?: Customer) => number;
   operationType: "loading" | "offloading" | "cargo_handling";
@@ -527,7 +530,31 @@ function ItemPicker({ items, customer, getPrice, operationType, availability, on
     (i.itemName.toLowerCase().includes(search.toLowerCase()) || i.itemCode.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const categories = ["all", "perishable", "construction", "fuel", "vehicle", "general_cargo"];
+  const categories = useMemo(() => {
+    const defaults = DEFAULT_CATALOG_CATEGORY_DEFINITIONS.map(definition => {
+      const saved = catalogCategories.find(category => category.code === definition.code);
+      return {
+        code: definition.code,
+        name: saved?.name || definition.name,
+        activeStatus: saved?.activeStatus ?? definition.activeStatus,
+        sortOrder: saved?.sortOrder ?? definition.sortOrder,
+      };
+    });
+    const custom = catalogCategories
+      .filter(category => !DEFAULT_CATALOG_CATEGORY_DEFINITIONS.some(definition => definition.code === category.code))
+      .map(category => ({
+        code: category.code,
+        name: category.name,
+        activeStatus: category.activeStatus,
+        sortOrder: category.sortOrder,
+      }));
+    return [
+      { code: "all", name: "All", activeStatus: true, sortOrder: 0 },
+      ...[...defaults, ...custom]
+        .filter(category => category.activeStatus || items.some(item => item.category === category.code))
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    ];
+  }, [catalogCategories, items]);
 
   if (selected) {
     const defaultPrice = getPrice(selected, customer);
@@ -624,11 +651,11 @@ function ItemPicker({ items, customer, getPrice, operationType, availability, on
       <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-2 py-2">
         {categories.map(c => (
           <button
-            key={c}
-            onClick={() => setCategory(c)}
-            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${category === c ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"}`}
+            key={c.code}
+            onClick={() => setCategory(c.code)}
+            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${category === c.code ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"}`}
           >
-            {c.replace("_", " ")}
+            {c.name || catalogCategoryLabel(c.code)}
           </button>
         ))}
       </div>

@@ -21,7 +21,7 @@ service cloud.firestore {
     // Tenant-scoped collections:
     //   business_profiles/{businessProfileId}/{collectionName}/{docId}
     //
-    //   destinations, customers, catalog_items, item_price_rates, price_levels, trips,
+    //   destinations, customers, catalog_categories, catalog_items, item_price_rates, price_levels, trips,
     //   operations, operation_items, bills, payments, tax_settings,
     //   numbering_sequences, audit_logs, notifications, pdf_documents,
     //   sync_conflicts.
@@ -134,7 +134,7 @@ service cloud.firestore {
         && validBusinessProfileId(data)
         && validString(data.itemName, 1, 120)
         && validString(data.itemCode, 1, 24)
-        && data.category in ['general_cargo', 'perishable', 'construction', 'fuel', 'vehicle', 'other']
+        && validString(data.category, 1, 80)
         && data.unitType in ['kg', 'ton', 'piece', 'crate', 'sack', 'litre', 'm3', 'trip']
         && data.defaultTaxRate is number
         && data.defaultTaxRate >= 0
@@ -142,6 +142,27 @@ service cloud.firestore {
         && data.taxInclusive is bool
         && data.activeStatus is bool
         && validString(data.icon, 1, 8);
+    }
+
+    function validCatalogCategory(data) {
+      return hasRequiredFields([
+          'id', 'businessProfileId', 'code', 'name', 'icon',
+          'activeStatus', 'sortOrder'
+        ])
+        && hasOnlyAllowedFields([
+          'id', 'businessProfileId', 'code', 'name', 'icon',
+          'activeStatus', 'sortOrder', 'createdAt', 'updatedAt'
+        ])
+        && validBusinessProfileId(data)
+        && validString(data.id, 1, 80)
+        && validString(data.code, 1, 80)
+        && data.id == data.code
+        && validString(data.name, 1, 80)
+        && validString(data.icon, 1, 8)
+        && data.activeStatus is bool
+        && data.sortOrder is number
+        && data.sortOrder >= 0
+        && data.sortOrder <= 100000;
     }
 
     function validPriceRate(data) {
@@ -300,6 +321,26 @@ service cloud.firestore {
         allow delete: if isBusinessMember(businessProfileId)
           && resource.data.businessProfileId == businessProfileId
           && isOwnerOrAdmin();
+      }
+
+      match /catalog_categories/{categoryId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow create: if isBusinessMember(businessProfileId)
+          && request.resource.data.businessProfileId == businessProfileId
+          && request.resource.data.id == categoryId
+          && request.resource.data.code == categoryId
+          && isManagerOrAbove()
+          && validCatalogCategory(request.resource.data);
+        allow update: if isBusinessMember(businessProfileId)
+          && resource.data.businessProfileId == businessProfileId
+          && request.resource.data.businessProfileId == businessProfileId
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.code == resource.data.code
+          && isManagerOrAbove()
+          && businessProfileUnchanged()
+          && createdAtUnchangedIfPresent()
+          && validCatalogCategory(request.resource.data);
+        allow delete: if false;
       }
 
       match /item_price_rates/{rateId} {

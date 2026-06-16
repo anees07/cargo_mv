@@ -94,12 +94,24 @@ export interface CustomerPriceLevel {
   updatedAt?: ISODate;
 }
 
+export interface CatalogCategory {
+  id: ID;
+  businessProfileId: ID;
+  code: string;
+  name: string;
+  icon: string;
+  activeStatus: boolean;
+  sortOrder: number;
+  createdAt?: ISODate;
+  updatedAt?: ISODate;
+}
+
 export interface CatalogItem {
   id: ID;
   businessProfileId: ID;
   itemName: string;
   itemCode: string;
-  category: "general_cargo" | "perishable" | "construction" | "fuel" | "vehicle" | "other";
+  category: string;
   unitType: "kg" | "ton" | "piece" | "crate" | "sack" | "litre" | "m3" | "trip";
   defaultTaxRate: number;
   taxInclusive: boolean;

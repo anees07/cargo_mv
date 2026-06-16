@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, TopBar, FirestoreListBuilder } from "../components/ui";
 import { MVR, MVRShort } from "../utils/format";
@@ -6,7 +6,8 @@ import { hasPermission } from "../utils/permissions";
 import { buildCustomerOutstandingMap, getTotalOutstanding } from "../utils/billingSummary";
 import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
 import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, describePriceLevelAdjustment } from "../data/customerPriceLevels";
-import type { CatalogItem, Customer, CustomerPriceLevel, CustomerPriceLevelCode, PriceLevelAdjustmentType } from "../types";
+import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel, makeUniqueCatalogCategoryCode } from "../data/catalogCategories";
+import type { CatalogCategory, CatalogItem, Customer, CustomerPriceLevel, CustomerPriceLevelCode, PriceLevelAdjustmentType } from "../types";
 
 // ============================================================================
 // Destinations
@@ -570,19 +571,57 @@ function EditPriceLevelForm({
 // ============================================================================
 // Catalog
 // ============================================================================
+type CatalogCategoryView = CatalogCategory & { synced: boolean; builtIn: boolean };
+
+function mergeCatalogCategories(savedCategories: CatalogCategory[]): CatalogCategoryView[] {
+  const defaultCodes = new Set(DEFAULT_CATALOG_CATEGORY_DEFINITIONS.map(category => category.code));
+  const mergedDefaults = DEFAULT_CATALOG_CATEGORY_DEFINITIONS.map(definition => {
+    const saved = savedCategories.find(category => category.code === definition.code);
+    return {
+      ...definition,
+      businessProfileId: saved?.businessProfileId || "",
+      createdAt: saved?.createdAt || "",
+      updatedAt: saved?.updatedAt || "",
+      synced: Boolean(saved),
+      builtIn: true,
+    } satisfies CatalogCategoryView;
+  });
+  const customCategories = savedCategories
+    .filter(category => !defaultCodes.has(category.code))
+    .map(category => ({
+      ...category,
+      synced: true,
+      builtIn: false,
+    } satisfies CatalogCategoryView));
+  return [...mergedDefaults, ...customCategories].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function nextCatalogCategorySortOrder(categories: CatalogCategoryView[]) {
+  return (Math.max(0, ...categories.map(category => category.sortOrder)) + 10);
+}
+
 export function CatalogScreen() {
-  const { catalogItems, itemPriceRates, addCatalogItem, updateCatalogItem, deleteCatalogItem, toast, back, currentUser } = useApp();
+  const {
+    catalogCategories, catalogItems, itemPriceRates,
+    addCatalogItem, updateCatalogItem, deleteCatalogItem,
+    syncCatalogCategories, saveCatalogCategory,
+    toast, back, currentUser,
+  } = useApp();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
-  const editingItem = catalogItems.find(i => i.id === editingItemId);
-  const currentStandardPrice = itemPriceRates.find(r => r.itemId === editingItemId && r.priceLevel === "standard")?.priceTaxInclusive || 0;
-  const filtered = catalogItems.filter(i =>
-    (category === "all" || i.category === category) &&
-    (i.itemName.toLowerCase().includes(search.toLowerCase()) || i.itemCode.toLowerCase().includes(search.toLowerCase()))
+  const mergedCategories = useMemo(() => mergeCatalogCategories(catalogCategories), [catalogCategories]);
+  const categoryIconMap = useMemo(() => new Map(mergedCategories.map(cat => [cat.code, cat.icon])), [mergedCategories]);
+  const editingItem = catalogItems.find(item => item.id === editingItemId);
+  const currentStandardPrice = itemPriceRates.find(rate => rate.itemId === editingItemId && rate.priceLevel === "standard")?.priceTaxInclusive || 0;
+  const filtered = catalogItems.filter(item =>
+    (category === "all" || item.category === category) &&
+    (item.itemName.toLowerCase().includes(search.toLowerCase()) || item.itemCode.toLowerCase().includes(search.toLowerCase()))
   );
+  const canManage = hasPermission(currentUser.role, "manage_master");
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -590,7 +629,16 @@ export function CatalogScreen() {
         title="Catalog"
         subtitle={`${catalogItems.length} items`}
         onBack={back}
-        trailing={hasPermission(currentUser.role, "manage_master") && <Btn size="sm" icon="plus" onClick={() => setShowAdd(true)}>Add item</Btn>}
+        trailing={canManage && (
+          <div className="flex items-center gap-2">
+            <Btn size="sm" variant="outline" icon="list" onClick={() => setShowCategories(true)}>
+              Categories
+            </Btn>
+            <Btn size="sm" icon="plus" onClick={() => setShowAdd(true)}>
+              Add item
+            </Btn>
+          </div>
+        )}
       />
 
       <div className="border-b border-slate-200 bg-white p-3">
@@ -604,13 +652,19 @@ export function CatalogScreen() {
           />
         </div>
         <div className="no-scrollbar mt-2 flex gap-1.5 overflow-x-auto">
-          {["all", "perishable", "construction", "fuel", "vehicle", "general_cargo"].map(t => (
+          <button
+            onClick={() => setCategory("all")}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${category === "all" ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"}`}
+          >
+            All
+          </button>
+          {mergedCategories.map(cat => (
             <button
-              key={t}
-              onClick={() => setCategory(t)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium capitalize ${category === t ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"}`}
+              key={cat.code}
+              onClick={() => setCategory(cat.code)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${category === cat.code ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"} ${cat.activeStatus ? "" : "opacity-60"}`}
             >
-              {t.replace("_", " ")}
+              {cat.name}
             </button>
           ))}
         </div>
@@ -624,8 +678,9 @@ export function CatalogScreen() {
           emptyTitle="No catalog items found"
           emptyHint="Build your master cargo catalog to start populating loading manifests."
           renderItem={(item) => {
-            const rateCount = itemPriceRates.filter(r => r.itemId === item.id).length;
-            const minPrice = Math.min(...itemPriceRates.filter(r => r.itemId === item.id).map(r => r.priceTaxInclusive), 99999);
+            const rateCount = itemPriceRates.filter(rate => rate.itemId === item.id).length;
+            const minPrice = Math.min(...itemPriceRates.filter(rate => rate.itemId === item.id).map(rate => rate.priceTaxInclusive), 99999);
+            const categoryLabel = mergedCategories.find(cat => cat.code === item.category)?.name || catalogCategoryLabel(item.category);
             return (
               <Card className="p-3.5" onClick={() => setEditingItemId(item.id)}>
                 <div className="flex items-center gap-3">
@@ -634,10 +689,10 @@ export function CatalogScreen() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-900">{item.itemName}</p>
-                    <p className="text-xs text-slate-500 font-mono">{item.itemCode} • {item.unitType}</p>
-                    <p className="mt-1 text-xs text-slate-400 capitalize">{item.category.replace("_", " ")} • {rateCount} price level{rateCount !== 1 ? "s" : ""}</p>
+                    <p className="text-xs font-mono text-slate-500">{item.itemCode} • {item.unitType}</p>
+                    <p className="mt-1 text-xs text-slate-400">{categoryLabel} • {rateCount} price level{rateCount !== 1 ? "s" : ""}</p>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="shrink-0 text-right">
                     <p className="text-sm font-bold text-ocean-700">from {MVR(minPrice === 99999 ? 0 : minPrice)}</p>
                     <p className="text-xs text-slate-400">tax-incl</p>
                   </div>
@@ -650,6 +705,8 @@ export function CatalogScreen() {
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add catalog item">
         <AddCatalogForm
+          categories={mergedCategories}
+          categoryIconMap={categoryIconMap}
           onAdd={(item, standardPrice) => {
             addCatalogItem(item, standardPrice);
             setShowAdd(false);
@@ -662,6 +719,8 @@ export function CatalogScreen() {
         {editingItem && (
           <EditCatalogForm
             item={editingItem}
+            categories={mergedCategories}
+            categoryIconMap={categoryIconMap}
             currentPrice={currentStandardPrice}
             onSave={(updates, price) => {
               updateCatalogItem(editingItem.id, updates, price);
@@ -676,17 +735,51 @@ export function CatalogScreen() {
           />
         )}
       </Modal>
+
+      <Modal open={showCategories} onClose={() => setShowCategories(false)} title="Catalog categories">
+        <CatalogCategoryManager
+          categories={mergedCategories}
+          onSyncDefaults={async () => {
+            try {
+              await syncCatalogCategories();
+            } catch (error) {
+              toast({
+                title: "Categories not synced",
+                body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+                variant: "error",
+              });
+            }
+          }}
+          onSave={async (categoryRecord) => {
+            try {
+              await saveCatalogCategory(categoryRecord);
+              setShowCategories(false);
+            } catch (error) {
+              toast({
+                title: "Category not saved",
+                body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+                variant: "error",
+              });
+              throw error;
+            }
+          }}
+        />
+      </Modal>
     </div>
   );
 }
 
 function EditCatalogForm({
   item,
+  categories,
+  categoryIconMap,
   currentPrice,
   onSave,
   onDelete,
 }: {
   item: CatalogItem;
+  categories: CatalogCategoryView[];
+  categoryIconMap: Map<string, string>;
   currentPrice: number;
   onSave: (updates: Partial<CatalogItem>, price?: number) => void;
   onDelete: () => void;
@@ -701,18 +794,20 @@ function EditCatalogForm({
     icon: item.icon,
   });
   const [standardPrice, setStandardPrice] = useState(currentPrice);
+  const selectedCategory = categories.find(cat => cat.code === form.category);
   const handleNameChange = (itemName: string) => {
     setForm(current => ({
       ...current,
       itemName,
-      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(itemName, current.category) : current.icon,
+      icon: isCatalogAutoIcon(current.icon, Array.from(categoryIconMap.values())) ? catalogIconForItem(itemName, current.category, selectedCategory?.icon) : current.icon,
     }));
   };
-  const handleCategoryChange = (category: CatalogItem["category"]) => {
+  const handleCategoryChange = (categoryCode: string) => {
+    const nextCategory = categories.find(cat => cat.code === categoryCode);
     setForm(current => ({
       ...current,
-      category,
-      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(current.itemName, category) : current.icon,
+      category: categoryCode,
+      icon: isCatalogAutoIcon(current.icon, Array.from(categoryIconMap.values())) ? catalogIconForItem(current.itemName, categoryCode, nextCategory?.icon) : current.icon,
     }));
   };
 
@@ -729,28 +824,39 @@ function EditCatalogForm({
         </div>
         <Field label="Item Name *" value={form.itemName} onChange={handleNameChange} />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
         <Field label="Item Code *" value={form.itemCode} onChange={v => setForm({ ...form, itemCode: v.toUpperCase().replace(/\s/g, "-").slice(0, 12) })} />
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Standard Price (MVR)</label>
-          <input type="number" step={0.5} value={standardPrice} onFocus={e => e.currentTarget.select()} onChange={e => setStandardPrice(Number(e.target.value))} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500 font-mono" />
+          <input
+            type="number"
+            step={0.5}
+            value={standardPrice}
+            onFocus={e => e.currentTarget.select()}
+            onChange={e => setStandardPrice(Number(e.target.value))}
+            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500 font-mono"
+          />
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Category</label>
-          <select value={form.category} onChange={e => handleCategoryChange(e.target.value as CatalogItem["category"])} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500 capitalize">
-            {(["general_cargo", "perishable", "construction", "fuel", "vehicle", "other"] as const).map(cat => <option key={cat} value={cat}>{cat.replace("_", " ")}</option>)}
+          <select value={form.category} onChange={e => handleCategoryChange(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
+            {categories.map(cat => (
+              <option key={cat.code} value={cat.code}>
+                {cat.name}{cat.activeStatus ? "" : " (inactive)"}
+              </option>
+            ))}
           </select>
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Unit Type</label>
           <select value={form.unitType} onChange={e => setForm({ ...form, unitType: e.target.value as CatalogItem["unitType"] })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
-            {(["kg", "ton", "piece", "crate", "sack", "litre", "m3", "trip"] as const).map(u => <option key={u} value={u}>{u}</option>)}
+            {(["kg", "ton", "piece", "crate", "sack", "litre", "m3", "trip"] as const).map(unit => <option key={unit} value={unit}>{unit}</option>)}
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">GST Rate %</label>
           <input type="number" value={form.defaultTaxRate} onFocus={e => e.currentTarget.select()} onChange={e => setForm({ ...form, defaultTaxRate: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
@@ -773,33 +879,39 @@ function EditCatalogForm({
 }
 
 function AddCatalogForm({
+  categories,
+  categoryIconMap,
   onAdd,
 }: {
+  categories: CatalogCategoryView[];
+  categoryIconMap: Map<string, string>;
   onAdd: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => void;
 }) {
   const [form, setForm] = useState({
     itemName: "",
     itemCode: "",
-    category: "general_cargo" as CatalogItem["category"],
+    category: categories.find(category => category.activeStatus)?.code || "general_cargo",
     unitType: "piece" as CatalogItem["unitType"],
     defaultTaxRate: 8,
     taxInclusive: true,
     icon: DEFAULT_CATALOG_ICON,
   });
   const [standardPrice, setStandardPrice] = useState(0);
+  const selectedCategory = categories.find(category => category.code === form.category);
   const canSave = Boolean(form.itemName && form.itemCode && standardPrice > 0);
   const handleNameChange = (itemName: string) => {
     setForm(current => ({
       ...current,
       itemName,
-      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(itemName, current.category) : current.icon,
+      icon: isCatalogAutoIcon(current.icon, Array.from(categoryIconMap.values())) ? catalogIconForItem(itemName, current.category, selectedCategory?.icon) : current.icon,
     }));
   };
-  const handleCategoryChange = (category: CatalogItem["category"]) => {
+  const handleCategoryChange = (categoryCode: string) => {
+    const nextCategory = categories.find(category => category.code === categoryCode);
     setForm(current => ({
       ...current,
-      category,
-      icon: isCatalogAutoIcon(current.icon) ? catalogIconForItem(current.itemName, category) : current.icon,
+      category: categoryCode,
+      icon: isCatalogAutoIcon(current.icon, Array.from(categoryIconMap.values())) ? catalogIconForItem(current.itemName, categoryCode, nextCategory?.icon) : current.icon,
     }));
   };
 
@@ -830,16 +942,15 @@ function AddCatalogForm({
           className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-900 outline-none focus:border-ocean-500 font-mono"
         />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Category</label>
-          <select value={form.category} onChange={e => handleCategoryChange(e.target.value as CatalogItem["category"])} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
-            <option value="general_cargo">General cargo</option>
-            <option value="perishable">Perishable</option>
-            <option value="construction">Construction</option>
-            <option value="fuel">Fuel</option>
-            <option value="vehicle">Vehicle</option>
-            <option value="other">Other</option>
+          <select value={form.category} onChange={e => handleCategoryChange(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
+            {categories.map(category => (
+              <option key={category.code} value={category.code}>
+                {category.name}{category.activeStatus ? "" : " (inactive)"}
+              </option>
+            ))}
           </select>
         </div>
         <div>
@@ -849,7 +960,7 @@ function AddCatalogForm({
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">Tax rate %</label>
           <input type="number" value={form.defaultTaxRate} onFocus={e => e.currentTarget.select()} onChange={e => setForm({ ...form, defaultTaxRate: Number(e.target.value) })} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500" />
@@ -871,6 +982,116 @@ function AddCatalogForm({
       >
         Save item
       </Btn>
+    </div>
+  );
+}
+
+function CatalogCategoryManager({
+  categories,
+  onSyncDefaults,
+  onSave,
+}: {
+  categories: CatalogCategoryView[];
+  onSyncDefaults: () => void;
+  onSave: (category: CatalogCategory) => Promise<void>;
+}) {
+  const [form, setForm] = useState({
+    name: "",
+    icon: "📦",
+    activeStatus: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const existingCodes = categories.map(category => category.code);
+  const previewCode = makeUniqueCatalogCategoryCode(form.name || "category", existingCodes);
+  const nextSortOrder = nextCatalogCategorySortOrder(categories);
+  const canSave = Boolean(form.name.trim()) && Boolean(form.icon.trim());
+
+  const handleCreate = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    try {
+      await onSave({
+        id: previewCode,
+        businessProfileId: "",
+        code: previewCode,
+        name: form.name.trim(),
+        icon: form.icon.trim().slice(0, 4) || "📦",
+        activeStatus: form.activeStatus,
+        sortOrder: nextSortOrder,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      setForm({ name: "", icon: "📦", activeStatus: true });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 p-4 md:p-6">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">Fixed code</p>
+            <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{previewCode}</p>
+          </div>
+          <Btn size="sm" variant="outline" icon="sync" onClick={onSyncDefaults}>
+            Sync defaults
+          </Btn>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[64px_1fr] gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-700">Icon</label>
+          <input
+            value={form.icon}
+            onChange={e => setForm({ ...form, icon: e.target.value.slice(0, 4) })}
+            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-center text-xl outline-none focus:border-ocean-500"
+          />
+        </div>
+        <Field label="Category name *" value={form.name} onChange={name => setForm(current => ({ ...current, name }))} placeholder="e.g. Oversized Cargo" />
+      </div>
+
+      <label className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-xs font-medium text-slate-700">
+        <input type="checkbox" checked={form.activeStatus} onChange={e => setForm({ ...form, activeStatus: e.target.checked })} />
+        Active
+      </label>
+
+      <Btn fullWidth size="lg" icon="check" disabled={!canSave || saving} onClick={() => void handleCreate()}>
+        {saving ? "Saving category" : "Save category"}
+      </Btn>
+
+      <div className="pt-2">
+        <FirestoreListBuilder
+          data={categories}
+          keyExtractor={category => category.code}
+          icon="list"
+          emptyTitle="No categories configured"
+          emptyHint="Create the first category above."
+          renderItem={category => (
+            <Card className="p-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-lg">
+                  {category.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-slate-900">{category.name}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${category.builtIn ? "bg-ocean-100 text-ocean-700" : "bg-emerald-100 text-emerald-700"}`}>
+                      {category.builtIn ? (category.synced ? "SYNCED" : "DEFAULT") : "CUSTOM"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 font-mono text-xs text-slate-500">{category.code}</p>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${category.activeStatus ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                  {category.activeStatus ? "Active" : "Inactive"}
+                </span>
+              </div>
+            </Card>
+          )}
+        />
+      </div>
     </div>
   );
 }

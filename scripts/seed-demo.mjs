@@ -131,6 +131,15 @@ async function seed() {
     { id: "pl_walk_in", code: "walk_in", name: "Walk-In", description: "One-off counter customers without credit terms.", adjustmentType: "percentage", adjustmentValue: 0, activeStatus: true, sortOrder: 40, createdAt: today, updatedAt: today },
   ]);
 
+  const catalogCategories = withTenant([
+    { id: "general_cargo", code: "general_cargo", name: "General cargo", icon: "📦", activeStatus: true, sortOrder: 10, createdAt: today, updatedAt: today },
+    { id: "perishable", code: "perishable", name: "Perishable", icon: "🥬", activeStatus: true, sortOrder: 20, createdAt: today, updatedAt: today },
+    { id: "construction", code: "construction", name: "Construction", icon: "🧱", activeStatus: true, sortOrder: 30, createdAt: today, updatedAt: today },
+    { id: "fuel", code: "fuel", name: "Fuel", icon: "⛽", activeStatus: true, sortOrder: 40, createdAt: today, updatedAt: today },
+    { id: "vehicle", code: "vehicle", name: "Vehicle", icon: "🛵", activeStatus: true, sortOrder: 50, createdAt: today, updatedAt: today },
+    { id: "other", code: "other", name: "Other", icon: "📦", activeStatus: true, sortOrder: 60, createdAt: today, updatedAt: today },
+  ]);
+
   const catalogItems = withTenant([
     { id: "i_001", itemName: "Rice Sack (50kg)", itemCode: "RIC-50", category: "perishable", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🌾", createdAt: today },
     { id: "i_002", itemName: "Cement Bag (50kg)", itemCode: "CEM-50", category: "construction", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🧱", createdAt: today },
@@ -213,6 +222,7 @@ async function seed() {
   await writeMany("destinations", destinations);
   await writeMany("customers", customers);
   await writeMany("price_levels", priceLevels);
+  await writeMany("catalog_categories", catalogCategories);
   await writeMany("catalog_items", catalogItems);
   await writeMany("item_price_rates", itemPriceRates);
   await writeMany("trips", trips);
@@ -235,6 +245,7 @@ async function seed() {
       users: users.length,
       destinations: destinations.length,
       customers: customers.length,
+      catalogCategories: catalogCategories.length,
       catalogItems: catalogItems.length,
       trips: trips.length,
       bills: bills.length,

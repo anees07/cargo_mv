@@ -1,4 +1,4 @@
-import type { CatalogItem } from "../types";
+import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS } from "../data/catalogCategories";
 
 export const DEFAULT_CATALOG_ICON = "📦";
 
@@ -19,24 +19,20 @@ const iconRules: { keywords: string[]; icon: string }[] = [
   { keywords: ["carton", "box", "case", "cargo"], icon: DEFAULT_CATALOG_ICON },
 ];
 
-const categoryIcons: Record<CatalogItem["category"], string> = {
-  general_cargo: DEFAULT_CATALOG_ICON,
-  perishable: "🥬",
-  construction: "🧱",
-  fuel: "⛽",
-  vehicle: "🛵",
-  other: DEFAULT_CATALOG_ICON,
-};
+const categoryIcons: Record<string, string> = Object.fromEntries(
+  DEFAULT_CATALOG_CATEGORY_DEFINITIONS.map(category => [category.code, category.icon])
+);
 
 export function catalogIconForItem(
   itemName: string,
-  category: CatalogItem["category"] = "general_cargo",
+  category: string = "general_cargo",
+  categoryIcon?: string,
 ) {
   const normalized = itemName.toLowerCase();
   const match = iconRules.find(rule => rule.keywords.some(keyword => normalized.includes(keyword)));
-  return match?.icon || categoryIcons[category] || DEFAULT_CATALOG_ICON;
+  return match?.icon || categoryIcon || categoryIcons[category] || DEFAULT_CATALOG_ICON;
 }
 
-export function isCatalogAutoIcon(icon: string) {
-  return !icon || iconRules.some(rule => rule.icon === icon) || Object.values(categoryIcons).includes(icon);
+export function isCatalogAutoIcon(icon: string, categoryIconsOverride: string[] = []) {
+  return !icon || iconRules.some(rule => rule.icon === icon) || Object.values(categoryIcons).includes(icon) || categoryIconsOverride.includes(icon);
 }

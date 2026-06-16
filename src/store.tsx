@@ -13,9 +13,10 @@ import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
 import { isBillEditableBeforeFinalize, validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
 import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, buildCustomerPriceLevel, toFirestoreCustomerPriceLevel } from "./data/customerPriceLevels";
+import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, buildCatalogCategory, makeUniqueCatalogCategoryCode, toFirestoreCatalogCategory } from "./data/catalogCategories";
 import { AppContext, type AppContextValue } from "./appContext";
 import type {
-  BusinessProfile, User, Destination, Customer, CatalogItem, ItemPriceRate, CustomerPriceLevel,
+  BusinessProfile, User, Destination, Customer, CatalogItem, CatalogCategory, ItemPriceRate, CustomerPriceLevel,
   Trip, Bill, Payment, TaxSetting, NumberingSequence, AuditLog,
   OperationItem, Operation, AppNotification, OperationType, WalkInDetails
 } from "./types";
@@ -50,6 +51,7 @@ export interface AppState {
   users: User[];
   destinations: Destination[];
   customers: Customer[];
+  catalogCategories: CatalogCategory[];
   catalogItems: CatalogItem[];
   itemPriceRates: ItemPriceRate[];
   priceLevels: CustomerPriceLevel[];
@@ -113,6 +115,8 @@ export interface AppActions {
   createTrip: (originDestinationId: string, returnDestinationId: string, plannedArrivalAt: string, notes: string) => Promise<Trip | null>;
   addDestination: (islandName: string, atoll: string, code: string) => Destination;
   addCustomer: (customer: Omit<Customer, "id" | "businessProfileId" | "outstandingBalance" | "activeStatus" | "createdAt">) => Customer;
+  syncCatalogCategories: () => Promise<void>;
+  saveCatalogCategory: (category: CatalogCategory) => Promise<void>;
   addCatalogItem: (item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number) => CatalogItem;
   syncCustomerPriceLevels: () => Promise<void>;
   saveCustomerPriceLevel: (priceLevel: CustomerPriceLevel) => Promise<void>;
@@ -176,6 +180,7 @@ const initialState: AppState = {
   users: [],
   destinations: [],
   customers: [],
+  catalogCategories: [],
   catalogItems: [],
   itemPriceRates: [],
   priceLevels: [],
@@ -226,6 +231,7 @@ const tenantCollections = {
   users: "business_users",
   destinations: "destinations",
   customers: "customers",
+  catalogCategories: "catalog_categories",
   catalogItems: "catalog_items",
   itemPriceRates: "item_price_rates",
   priceLevels: "price_levels",
@@ -402,6 +408,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     users,
     destinations,
     customers,
+    catalogCategories,
     catalogItems,
     itemPriceRates,
     priceLevels,
@@ -417,6 +424,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     loadTenantCollection<Record<string, unknown>>(tenantCollections.users, businessProfileId),
     loadTenantCollection<Destination>(tenantCollections.destinations, businessProfileId),
     loadTenantCollection<Customer>(tenantCollections.customers, businessProfileId),
+    loadTenantCollection<CatalogCategory>(tenantCollections.catalogCategories, businessProfileId),
     loadTenantCollection<CatalogItem>(tenantCollections.catalogItems, businessProfileId),
     loadTenantCollection<ItemPriceRate>(tenantCollections.itemPriceRates, businessProfileId),
     loadTenantCollection<CustomerPriceLevel>(tenantCollections.priceLevels, businessProfileId),
@@ -447,6 +455,7 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     users: users.map(businessUserFromDoc),
     destinations: destinations.sort((a, b) => a.sortOrder - b.sortOrder),
     customers,
+    catalogCategories: catalogCategories.sort((a, b) => a.sortOrder - b.sortOrder),
     catalogItems,
     itemPriceRates,
     priceLevels: priceLevels.sort((a, b) => a.sortOrder - b.sortOrder),
@@ -526,6 +535,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.customers), snapshot => {
       markRemoteUpdate();
       setState(s => ({ ...s, customers: snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as Customer) }));
+    }));
+
+    unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.catalogCategories), snapshot => {
+      const catalogCategories = snapshot.docs
+        .map(document => ({ id: document.id, ...document.data() }) as CatalogCategory)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      markRemoteUpdate();
+      setState(s => ({ ...s, catalogCategories }));
     }));
 
     unsubscribers.push(onSnapshot(tenantCollection(tenantCollections.catalogItems), snapshot => {
@@ -729,6 +746,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       { numberType: "customer", prefix: "CUS", currentSequence: 0, formatTemplate: "CUS-{000000}", padding: 6, lastGenerated: "" },
     ];
     const numberingSequences: NumberingSequence[] = numberingSeeds.map(sequence => ({ ...sequence, id: sequence.numberType, businessProfileId }));
+    const catalogCategories = DEFAULT_CATALOG_CATEGORY_DEFINITIONS.map(category =>
+      buildCatalogCategory(businessProfileId, category.code, {}, createdAt)
+    );
     const customerPriceLevels = CUSTOMER_PRICE_LEVEL_DEFINITIONS.map(level =>
       buildCustomerPriceLevel(businessProfileId, level.code, {}, createdAt)
     );
@@ -736,6 +756,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await Promise.all([
       setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.users, owner.uid), ownerUser),
       setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.taxSettings, taxSetting.id), taxSetting),
+      ...catalogCategories.map(category => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.catalogCategories, category.id), category)),
       ...customerPriceLevels.map(level => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.priceLevels, level.id), level)),
       ...numberingSequences.map(sequence => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.numbering, sequence.id), sequence)),
     ]);
@@ -746,6 +767,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currentUser,
       businessProfile,
       users: [currentUser],
+      catalogCategories,
       taxSettings: [taxSetting],
       numbering: numberingSequences,
       priceLevels: customerPriceLevels,
@@ -1306,6 +1328,81 @@ export function AppProvider({ children }: { children: ReactNode }) {
     persistTenantDoc(tenantCollections.customers, newCustomer.id, newCustomer as unknown as Record<string, unknown>);
     return newCustomer;
   }, [state.businessProfile]);
+
+  const syncCatalogCategories = useCallback(async () => {
+    const current = stateRef.current;
+    if (!current.businessProfile.id) return;
+    const now = new Date().toISOString();
+    const existingByCode = new Map(current.catalogCategories.map(category => [category.code, category]));
+    const nextCategories = DEFAULT_CATALOG_CATEGORY_DEFINITIONS.map(definition => {
+      const existing = existingByCode.get(definition.code);
+      return buildCatalogCategory(current.businessProfile.id, definition.code, existing || {}, now);
+    });
+
+    await Promise.all(nextCategories.map(category =>
+      persistTenantDocAsync(tenantCollections.catalogCategories, category.id, toFirestoreCatalogCategory(category) as unknown as Record<string, unknown>)
+    ));
+
+    setState(s => ({
+      ...s,
+      catalogCategories: nextCategories.sort((a, b) => a.sortOrder - b.sortOrder),
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+        actorUserId: s.currentUser.id,
+        action: "catalog_category.sync",
+        entityType: "catalog_category",
+        entityId: "catalog_categories",
+        summary: "Synced catalog category master records",
+      }),
+      toasts: appendToast(s.toasts, { id: id("t"), title: "Catalog categories synced", variant: "success" as const }),
+    }));
+  }, []);
+
+  const saveCatalogCategory = useCallback(async (category: CatalogCategory) => {
+    const current = stateRef.current;
+    if (!current.businessProfile.id) return;
+    const now = new Date().toISOString();
+    const trimmedName = category.name.trim();
+    if (!trimmedName) {
+      throw new Error("Category name is required.");
+    }
+    const existing = current.catalogCategories.find(item => item.id === category.id || item.code === category.code);
+    const code = existing?.code || makeUniqueCatalogCategoryCode(
+      trimmedName,
+      current.catalogCategories.map(item => item.code)
+    );
+    const savedCategory: CatalogCategory = {
+      id: code,
+      businessProfileId: current.businessProfile.id,
+      code,
+      name: trimmedName,
+      icon: category.icon.trim() || "📦",
+      activeStatus: category.activeStatus,
+      sortOrder: existing?.sortOrder ?? category.sortOrder ?? current.catalogCategories.length + 1,
+      createdAt: existing?.createdAt || category.createdAt || now,
+      updatedAt: now,
+    };
+    await persistTenantDocAsync(
+      tenantCollections.catalogCategories,
+      savedCategory.id,
+      toFirestoreCatalogCategory(savedCategory) as unknown as Record<string, unknown>
+    );
+
+    setState(s => ({
+      ...s,
+      catalogCategories: [
+        ...s.catalogCategories.filter(item => item.code !== savedCategory.code),
+        savedCategory,
+      ].sort((a, b) => a.sortOrder - b.sortOrder),
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+        actorUserId: s.currentUser.id,
+        action: "catalog_category.update",
+        entityType: "catalog_category",
+        entityId: savedCategory.id,
+        summary: `Updated catalog category ${savedCategory.name}`,
+      }),
+      toasts: appendToast(s.toasts, { id: id("t"), title: "Category saved", variant: "success" as const }),
+    }));
+  }, []);
 
   const addCatalogItem = useCallback((item: Omit<CatalogItem, "id" | "businessProfileId" | "activeStatus" | "createdAt">, standardPrice: number): CatalogItem => {
     const newItem: CatalogItem = {
@@ -2024,7 +2121,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addOperationItem, removeOperationItem,
     finalizeBill, postPayment, updateDraftBill, createTrip,
     createBillFromOperation,
-    addDestination, addCustomer, addCatalogItem, syncCustomerPriceLevels, saveCustomerPriceLevel,
+    addDestination, addCustomer, syncCatalogCategories, saveCatalogCategory, addCatalogItem, syncCustomerPriceLevels, saveCustomerPriceLevel,
     toast, dismissToast, markNotificationRead,
     generateNextNumber, toggleOnline,
     updateBusinessProfile, inviteUser, updateTripStatus, alterBillAfterTripEnd,
