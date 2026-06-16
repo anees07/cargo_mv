@@ -246,24 +246,24 @@ test("legacy unfinalized bills remain editable before finalize", () => {
   assert.equal(isBillEditableBeforeFinalize(legacyBill), true);
 });
 
-test("bill generation is blocked when a finalized bill already exists for the operation", () => {
+test("bill generation remains available when a finalized bill already exists for the same customer and destination", () => {
   const loadingOperation = operation({ items: [item({})] });
   assert.equal(
     isOperationBillable(loadingOperation, [trip], [bill({
       billType: billTypeForOperationType(loadingOperation.operationType),
       billStatus: "finalized",
     })]),
-    false
+    true
   );
 });
 
-test("finalized bill matching destination and customer blocks updates even when bill type differs", () => {
+test("finalized bill matching destination and customer does not block a new bill", () => {
   const loadingOperation = operation({ items: [item({})] });
   const finalizedCreditBill = bill({ billType: "credit", billStatus: "finalized" });
 
   assert.equal(hasActiveBillForOperation(loadingOperation, [finalizedCreditBill]), true);
-  assert.equal(hasLockedBillForOperation(loadingOperation, [finalizedCreditBill]), true);
-  assert.equal(isOperationBillable(loadingOperation, [trip], [finalizedCreditBill]), false);
+  assert.equal(hasLockedBillForOperation(loadingOperation, [finalizedCreditBill]), false);
+  assert.equal(isOperationBillable(loadingOperation, [trip], [finalizedCreditBill]), true);
 });
 
 test("cancelled bills do not block rebilling the same operation", () => {

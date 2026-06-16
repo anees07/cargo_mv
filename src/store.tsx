@@ -1723,13 +1723,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const businessProfileId = current.businessProfile.id;
     let existingBill = current.bills.find(b =>
       billMatchesOperationIdentity(b, op, current.customers) &&
-      b.billStatus !== "cancelled"
+      isBillEditableBeforeFinalize(b)
     );
     if (!existingBill && businessProfileId) {
       const remoteBills = await loadTenantCollection<Bill>(tenantCollections.bills, businessProfileId);
       existingBill = remoteBills.find(bill =>
         billMatchesOperationIdentity(bill, op, current.customers) &&
-        bill.billStatus !== "cancelled"
+        isBillEditableBeforeFinalize(bill)
       );
     }
     if (existingBill) {

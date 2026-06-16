@@ -167,11 +167,8 @@ export function isBillEditableBeforeFinalize(bill: Bill): boolean {
     bill.paymentStatus !== "paid";
 }
 
-export function hasLockedBillForOperation(operation: Operation, bills: Bill[]): boolean {
-  return bills.some(bill =>
-    sameBillSelection(bill, operation.tripId, operation.destinationId, operation.customerId) &&
-    !isBillEditableBeforeFinalize(bill)
-  );
+export function hasLockedBillForOperation(_operation: Operation, _bills: Bill[]): boolean {
+  return false;
 }
 
 export function isOperationBillable(operation: Operation, trips: Trip[], bills: Bill[]): boolean {
