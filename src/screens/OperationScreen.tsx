@@ -6,6 +6,7 @@ import { hasPermission } from "../utils/permissions";
 import { buildOffloadAvailability, hasLockedBillForOperation, type OffloadAvailability } from "../utils/operationFlow";
 import { calculatePriceFromStandard } from "../data/customerPriceLevels";
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel } from "../data/catalogCategories";
+import { isSystemOtherItem } from "../data/systemCatalogItems";
 import {
   cleanWalkInDetails,
   customerMatchesDestination,
@@ -106,7 +107,7 @@ export function OperationScreen() {
     setShowOpTypePicker(false);
   };
 
-  const handleAddItem = (item: CatalogItem, qty: number, price: number) => {
+  const handleAddItem = (item: CatalogItem, qty: number, price: number, lineDescription?: string) => {
     if (!activeTrip || !selectedDestId || !selectedCustomerId) return;
     if (!isWalkInDetailsComplete(customer, selectedWalkInDetails)) {
       toast({ title: "Walk-in details required", body: "Add name and phone number before adding cargo.", variant: "warning" });
@@ -125,6 +126,7 @@ export function OperationScreen() {
       quantity: qty,
       unitPriceTaxInclusive: price,
       taxRate,
+      lineDescription: lineDescription?.trim() || undefined,
       originalPrice: getItemPrice(item, customer),
       overridePrice: price !== getItemPrice(item, customer) ? price : undefined,
       overrideReason: price !== getItemPrice(item, customer) ? "Manual override" : undefined,
@@ -289,6 +291,9 @@ export function OperationScreen() {
                             {it.quantity} {it.unitType} × {MVR(it.unitPriceTaxInclusive)}
                             {isOverridden && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">OVERRIDE</span>}
                           </p>
+                          {it.lineDescription && (
+                            <p className="mt-1 text-xs text-slate-600">{it.lineDescription}</p>
+                          )}
                           {isOverridden && (
                             <p className="mt-1 text-xs text-amber-700">Original: {MVR(it.originalPrice!)} • {it.overrideReason}</p>
                           )}
@@ -517,13 +522,14 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
   getPrice: (item: CatalogItem, cust?: Customer) => number;
   operationType: "loading" | "offloading" | "cargo_handling";
   availability: Record<string, OffloadAvailability>;
-  onPick: (item: CatalogItem, qty: number, price: number) => void;
+  onPick: (item: CatalogItem, qty: number, price: number, lineDescription?: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("all");
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [qty, setQty] = useState(1);
   const [price, setPrice] = useState(0);
+  const [lineDescription, setLineDescription] = useState("");
 
   const filtered = items.filter(i =>
     (category === "all" || i.category === category) &&
@@ -558,11 +564,18 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
 
   if (selected) {
     const defaultPrice = getPrice(selected, customer);
+    const isOther = isSystemOtherItem(selected);
     const maxQty = operationType === "offloading" ? availability[selected.id]?.remaining || 0 : undefined;
     const safeQty = maxQty ? Math.min(qty, maxQty) : qty;
+    const effectivePrice = price || (isOther ? 0 : defaultPrice);
+    const canAddSelected = operationType === "offloading"
+      ? Boolean(maxQty)
+      : isOther
+        ? lineDescription.trim().length > 0 && safeQty > 0 && effectivePrice > 0
+        : effectivePrice > 0;
     return (
       <div className="p-4">
-        <button onClick={() => { setSelected(null); setPrice(0); }} className="mb-3 flex items-center gap-1 text-xs text-ocean-700 font-semibold">
+        <button onClick={() => { setSelected(null); setPrice(0); setLineDescription(""); }} className="mb-3 flex items-center gap-1 text-xs text-ocean-700 font-semibold">
           <Icon name="back" className="h-3 w-3" /> Back to items
         </button>
         <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -570,12 +583,26 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
           <div>
             <p className="font-semibold text-slate-900">{selected.itemName}</p>
             <p className="text-xs text-slate-500">{selected.itemCode} • {selected.unitType}</p>
-            <p className="mt-1 text-xs font-semibold text-ocean-700">Default: {MVR(defaultPrice)} / {selected.unitType}</p>
+            <p className="mt-1 text-xs font-semibold text-ocean-700">
+              {isOther ? "Enter custom description, quantity, and price for this bill line" : `Default: ${MVR(defaultPrice)} / ${selected.unitType}`}
+            </p>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+        {isOther && operationType !== "offloading" && (
+          <div className="mt-4">
+            <label className="mb-1 block text-xs font-semibold text-slate-700">Description *</label>
+            <textarea
+              value={lineDescription}
+              onChange={e => setLineDescription(e.target.value)}
+              rows={3}
+              placeholder="Describe the cargo or service for this bill line"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-ocean-500"
+            />
+          </div>
+        )}
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">Quantity ({selected.unitType})</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-700">Quantity ({selected.unitType}){isOther ? " *" : ""}</label>
             <input
               type="number"
               min={1}
@@ -593,26 +620,26 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
             )}
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">Unit price (tax-incl)</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-700">{isOther ? "Price tax-incl (MVR) *" : "Unit price (tax-incl)"}</label>
             <input
               type="number"
               min={0}
               step={0.5}
-              value={price || defaultPrice}
+              value={isOther ? (price || "") : (price || defaultPrice)}
               onFocus={e => e.currentTarget.select()}
               onChange={e => setPrice(Number(e.target.value))}
               className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
             />
-            {price !== defaultPrice && price > 0 && (
+            {!isOther && price !== defaultPrice && price > 0 && (
               <p className="mt-1 text-xs text-amber-700">⚠ Price override (audit will be logged)</p>
             )}
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-sm">
-          <div className="flex justify-between"><span className="text-slate-600">Line total (tax-incl)</span><span className="font-semibold text-ocean-700">{MVR(safeQty * (price || defaultPrice))}</span></div>
-          <div className="mt-1 flex justify-between text-xs text-slate-500"><span>GST extracted</span><span>{MVR((safeQty * (price || defaultPrice)) - (safeQty * (price || defaultPrice)) / 1.08)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-600">Line total (tax-incl)</span><span className="font-semibold text-ocean-700">{MVR(safeQty * effectivePrice)}</span></div>
+          <div className="mt-1 flex justify-between text-xs text-slate-500"><span>GST extracted</span><span>{MVR((safeQty * effectivePrice) - (safeQty * effectivePrice) / 1.08)}</span></div>
         </div>
-        <Btn fullWidth size="lg" className="mt-4" icon="plus" disabled={operationType === "offloading" && !maxQty} onClick={() => onPick(selected, safeQty, price || defaultPrice)}>
+        <Btn fullWidth size="lg" className="mt-4" icon="plus" disabled={!canAddSelected} onClick={() => onPick(selected, safeQty, effectivePrice, isOther ? lineDescription : undefined)}>
           {operationType === "offloading" ? "Confirm offload" : "Add to operation"}
         </Btn>
       </div>
@@ -663,10 +690,11 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
         {filtered.map(item => {
           const p = getPrice(item, customer);
           const remaining = availability[item.id]?.remaining;
+          const isOther = isSystemOtherItem(item);
           return (
             <button
               key={item.id}
-              onClick={() => { setSelected(item); setPrice(p); }}
+              onClick={() => { setSelected(item); setPrice(isOther ? 0 : p); setLineDescription(""); }}
               className="flex w-full items-center gap-3 rounded-lg p-2.5 hover:bg-slate-50"
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-xl">{item.icon}</div>
@@ -675,9 +703,9 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
                 <p className="text-xs text-slate-500">{item.itemCode} • {item.unitType}</p>
               </div>
               <div className="text-right">
-                <p className="text-sm font-semibold text-ocean-700">{MVR(p)}</p>
+                <p className="text-sm font-semibold text-ocean-700">{isOther ? "Variable" : MVR(p)}</p>
                 <p className="text-xs text-slate-500">
-                  {operationType === "offloading" && remaining !== undefined ? `${remaining} left` : customer?.defaultPriceLevelId || "standard"}
+                  {isOther ? "per entry" : operationType === "offloading" && remaining !== undefined ? `${remaining} left` : customer?.defaultPriceLevelId || "standard"}
                 </p>
               </div>
             </button>

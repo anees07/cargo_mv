@@ -117,6 +117,7 @@ export interface CatalogItem {
   taxInclusive: boolean;
   activeStatus: boolean;
   icon: string;
+  systemItemType?: "other";
   createdAt?: ISODate;
 }
 
@@ -127,6 +128,8 @@ export interface ItemPriceRate {
   priceLevel: PriceLevel;
   destinationId?: ID;
   priceTaxInclusive: number;
+  createdAt?: ISODate;
+  updatedAt?: ISODate;
 }
 
 export type TripStatus =
@@ -176,6 +179,7 @@ export interface OperationItem {
   taxRate: number;
   taxAmount: number;
   lineTotalTaxInclusive: number;
+  lineDescription?: string;
   originalPrice?: number;
   overridePrice?: number;
   overrideReason?: string;

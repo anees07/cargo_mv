@@ -14,6 +14,7 @@ import { isBillEditableBeforeFinalize, validatePaymentRequest } from "./utils/op
 import { isUnfinishedTrip } from "./utils/trips";
 import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, buildCustomerPriceLevel, toFirestoreCustomerPriceLevel } from "./data/customerPriceLevels";
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, buildCatalogCategory, makeUniqueCatalogCategoryCode, toFirestoreCatalogCategory } from "./data/catalogCategories";
+import { SYSTEM_OTHER_ITEM_ID, buildSystemOtherCatalogItem, buildSystemOtherStandardRate } from "./data/systemCatalogItems";
 import { AppContext, type AppContextValue } from "./appContext";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, CatalogCategory, ItemPriceRate, CustomerPriceLevel,
@@ -260,6 +261,30 @@ const persistTenantDoc = (collectionName: string, docId: string, data: Record<st
   });
 };
 
+async function ensureSystemOtherCatalogItem(
+  businessProfileId: string,
+  catalogItems: CatalogItem[],
+  itemPriceRates: ItemPriceRate[],
+) {
+  const timestamp = new Date().toISOString();
+  const systemItem = buildSystemOtherCatalogItem(businessProfileId, timestamp);
+  const systemRate = buildSystemOtherStandardRate(businessProfileId, timestamp);
+  const hasSystemItem = catalogItems.some(item => item.id === SYSTEM_OTHER_ITEM_ID || item.itemCode === systemItem.itemCode);
+  const hasSystemRate = itemPriceRates.some(rate => rate.itemId === SYSTEM_OTHER_ITEM_ID && rate.priceLevel === "standard" && !rate.destinationId);
+  const writes: Array<Promise<void>> = [];
+
+  if (!hasSystemItem) {
+    writes.push(persistTenantDocAsync(tenantCollections.catalogItems, systemItem.id, systemItem as unknown as Record<string, unknown>));
+    catalogItems.push(systemItem);
+  }
+  if (!hasSystemRate) {
+    writes.push(persistTenantDocAsync(tenantCollections.itemPriceRates, systemRate.id, systemRate as unknown as Record<string, unknown>));
+    itemPriceRates.push(systemRate);
+  }
+
+  await Promise.all(writes);
+}
+
 const persistTenantDocAsync = async (collectionName: string, docId: string, data: Record<string, unknown>) => {
   try {
     const db = getFirebaseFirestore();
@@ -437,6 +462,8 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     loadTenantCollection<AuditLog>(tenantCollections.auditLogs, businessProfileId),
     loadTenantCollection<AppNotification & { businessProfileId?: string }>(tenantCollections.notifications, businessProfileId),
   ]);
+
+  await ensureSystemOtherCatalogItem(businessProfileId, catalogItems, itemPriceRates);
 
   const currentUser = businessUserFromDoc({
     uid: firebaseUser.uid,
@@ -752,11 +779,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const customerPriceLevels = CUSTOMER_PRICE_LEVEL_DEFINITIONS.map(level =>
       buildCustomerPriceLevel(businessProfileId, level.code, {}, createdAt)
     );
+    const systemOtherItem = buildSystemOtherCatalogItem(businessProfileId, createdAt);
+    const systemOtherRate = buildSystemOtherStandardRate(businessProfileId, createdAt);
     await setDoc(doc(db, "business_users", owner.uid), ownerUser);
     await Promise.all([
       setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.users, owner.uid), ownerUser),
       setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.taxSettings, taxSetting.id), taxSetting),
       ...catalogCategories.map(category => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.catalogCategories, category.id), category)),
+      setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.catalogItems, systemOtherItem.id), systemOtherItem),
+      setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.itemPriceRates, systemOtherRate.id), systemOtherRate),
       ...customerPriceLevels.map(level => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.priceLevels, level.id), level)),
       ...numberingSequences.map(sequence => setDoc(doc(db, "business_profiles", businessProfileId, tenantCollections.numbering, sequence.id), sequence)),
     ]);
@@ -768,6 +799,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       businessProfile,
       users: [currentUser],
       catalogCategories,
+      catalogItems: [systemOtherItem],
+      itemPriceRates: [systemOtherRate],
       taxSettings: [taxSetting],
       numbering: numberingSequences,
       priceLevels: customerPriceLevels,

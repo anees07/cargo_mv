@@ -129,7 +129,7 @@ service cloud.firestore {
         && hasOnlyAllowedFields([
           'id', 'businessProfileId', 'itemName', 'itemCode', 'category',
           'unitType', 'defaultTaxRate', 'taxInclusive', 'activeStatus',
-          'icon', 'createdAt', 'updatedAt'
+          'icon', 'systemItemType', 'createdAt', 'updatedAt'
         ])
         && validBusinessProfileId(data)
         && validString(data.itemName, 1, 120)
@@ -141,7 +141,8 @@ service cloud.firestore {
         && data.defaultTaxRate <= 100
         && data.taxInclusive is bool
         && data.activeStatus is bool
-        && validString(data.icon, 1, 8);
+        && validString(data.icon, 1, 8)
+        && (!('systemItemType' in data) || data.systemItemType == 'other');
     }
 
     function validCatalogCategory(data) {

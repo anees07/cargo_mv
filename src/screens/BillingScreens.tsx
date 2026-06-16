@@ -339,7 +339,10 @@ export function InvoicePreviewScreen() {
               <tbody>
                 {billItems.length > 0 ? billItems.map(item => (
                   <tr key={item.id} className="border-b border-slate-200">
-                    <td className="px-2 py-1.5">{item.itemNameSnapshot}</td>
+                    <td className="px-2 py-1.5">
+                      <div>{item.itemNameSnapshot}</div>
+                      {item.lineDescription && <div className="mt-0.5 text-[11px] text-slate-500">{item.lineDescription}</div>}
+                    </td>
                     <td className="px-2 py-1.5 text-center font-mono">{item.quantity} {item.unitType}</td>
                     <td className="px-2 py-1.5 text-right font-mono">{item.unitPriceTaxInclusive.toFixed(2)}</td>
                     <td className="px-2 py-1.5 text-right font-mono">{item.taxAmount.toFixed(2)}</td>
@@ -486,6 +489,7 @@ function EditDraftBillForm({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">#{index + 1} {item.itemNameSnapshot}</p>
+                {item.lineDescription && <p className="mt-0.5 text-xs text-slate-500">{item.lineDescription}</p>}
                 <p className="text-xs text-slate-500">{item.unitType} • GST {item.taxRate}%</p>
               </div>
               <button onClick={() => removeLine(item.id)} className="text-rose-600 hover:text-rose-700" title="Remove line">

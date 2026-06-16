@@ -141,6 +141,7 @@ async function seed() {
   ]);
 
   const catalogItems = withTenant([
+    { id: "system_other", itemName: "Others", itemCode: "OTHERS", category: "other", unitType: "piece", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "📦", systemItemType: "other", createdAt: today },
     { id: "i_001", itemName: "Rice Sack (50kg)", itemCode: "RIC-50", category: "perishable", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🌾", createdAt: today },
     { id: "i_002", itemName: "Cement Bag (50kg)", itemCode: "CEM-50", category: "construction", unitType: "sack", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🧱", createdAt: today },
     { id: "i_003", itemName: "Gas Cylinder (12kg)", itemCode: "GAS-12", category: "general_cargo", unitType: "piece", defaultTaxRate: 8, taxInclusive: true, activeStatus: true, icon: "🔥", createdAt: today },
@@ -148,6 +149,7 @@ async function seed() {
   ]);
 
   const itemPriceRates = withTenant([
+    { id: "price_system_other_standard", itemId: "system_other", priceLevel: "standard", priceTaxInclusive: 0, createdAt: today, updatedAt: today },
     { id: "p_001", itemId: "i_001", priceLevel: "business", priceTaxInclusive: 128 },
     { id: "p_002", itemId: "i_002", priceLevel: "government", priceTaxInclusive: 140 },
     { id: "p_003", itemId: "i_003", priceLevel: "standard", priceTaxInclusive: 195 },

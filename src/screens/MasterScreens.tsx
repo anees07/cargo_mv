@@ -7,6 +7,7 @@ import { buildCustomerOutstandingMap, getTotalOutstanding } from "../utils/billi
 import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
 import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, describePriceLevelAdjustment } from "../data/customerPriceLevels";
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel, makeUniqueCatalogCategoryCode } from "../data/catalogCategories";
+import { isSystemOtherItem } from "../data/systemCatalogItems";
 import type { CatalogCategory, CatalogItem, Customer, CustomerPriceLevel, CustomerPriceLevelCode, PriceLevelAdjustmentType } from "../types";
 
 // ============================================================================
@@ -681,20 +682,26 @@ export function CatalogScreen() {
             const rateCount = itemPriceRates.filter(rate => rate.itemId === item.id).length;
             const minPrice = Math.min(...itemPriceRates.filter(rate => rate.itemId === item.id).map(rate => rate.priceTaxInclusive), 99999);
             const categoryLabel = mergedCategories.find(cat => cat.code === item.category)?.name || catalogCategoryLabel(item.category);
+            const isSystemItem = isSystemOtherItem(item);
             return (
-              <Card className="p-3.5" onClick={() => setEditingItemId(item.id)}>
+              <Card className="p-3.5" onClick={() => !isSystemItem && setEditingItemId(item.id)}>
                 <div className="flex items-center gap-3">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-2xl">
                     {item.icon}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-900">{item.itemName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-900">{item.itemName}</p>
+                      {isSystemItem && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">SYSTEM</span>}
+                    </div>
                     <p className="text-xs font-mono text-slate-500">{item.itemCode} • {item.unitType}</p>
-                    <p className="mt-1 text-xs text-slate-400">{categoryLabel} • {rateCount} price level{rateCount !== 1 ? "s" : ""}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {isSystemItem ? "Description and price entered per bill line" : `${categoryLabel} • ${rateCount} price level${rateCount !== 1 ? "s" : ""}`}
+                    </p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="text-sm font-bold text-ocean-700">from {MVR(minPrice === 99999 ? 0 : minPrice)}</p>
-                    <p className="text-xs text-slate-400">tax-incl</p>
+                    <p className="text-sm font-bold text-ocean-700">{isSystemItem ? "Variable" : `from ${MVR(minPrice === 99999 ? 0 : minPrice)}`}</p>
+                    <p className="text-xs text-slate-400">{isSystemItem ? "per entry" : "tax-incl"}</p>
                   </div>
                 </div>
               </Card>
