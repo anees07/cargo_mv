@@ -7,6 +7,6 @@ test("offloading tab does not render the live operation item cart", () => {
 
   assert.match(
     operationScreen,
-    /opType !== "offloading" && currentOp && currentOp\.items\.length > 0/
+    /opType !== "offloading" && currentItems\.length > 0/
   );
 });
