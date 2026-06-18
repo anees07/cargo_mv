@@ -6,11 +6,9 @@ import { hasPermission } from "../utils/permissions";
 import { filterBillsForSearch } from "../utils/billSearch";
 import { filterBillsForListCategory, groupBillsByDestinationForList, groupBillsForList, type BillListGroupId } from "../utils/billListGroups";
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
-import { buildBillShareText, buildInvoicePrintText, isNativeSilentPrintAvailable, parsePrinterAddress, printDocument, shareDocument, silentPrintDocument } from "../utils/documentActions";
+import { printA4Document, shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "../types";
-
-const networkPrinterStorageKey = "cargo.networkPrinterAddress";
 
 // ============================================================================
 // Billing — list, filter, generate, finalize
@@ -343,13 +341,33 @@ export function InvoicePreviewScreen() {
   const billToName = walkInDisplayName(customer, bill.walkInDetails);
   const billToPhone = walkInPhone(customer, bill.walkInDetails);
   const billToDescription = isWalkInCustomer(customer) ? bill.walkInDetails?.description : undefined;
-  const invoicePrintText = buildInvoicePrintText({
+  const invoiceDocument: A4DocumentPayload = {
+    title: "TAX INVOICE",
+    documentNumber: bill.billNumber,
     businessName: businessProfile.businessName,
-    billNumber: bill.billNumber,
+    businessDetails: [
+      businessProfile.vesselName,
+      businessProfile.address,
+      `GST: ${businessProfile.gstNumber}`,
+      `Reg: ${businessProfile.vesselRegistrationNumber}`,
+      `${businessProfile.email} • ${businessProfile.phone}`,
+    ],
     customerName: billToName,
-    destinationName: destination?.islandName,
-    tripNumber: trip?.tripNumber,
-    createdAt: formatDate(bill.createdAt),
+    customerDetails: [
+      !isWalkInCustomer(customer) ? customer?.legalName : undefined,
+      billToPhone ? `Phone: ${billToPhone}` : undefined,
+      billToDescription ? `Description: ${billToDescription}` : undefined,
+      customer?.gstNumber ? `GST: ${customer.gstNumber}` : undefined,
+    ].filter((line): line is string => Boolean(line)),
+    destinationDetails: [
+      destination?.islandName,
+      destination?.atoll ? `${destination.atoll} Atoll` : undefined,
+      destination?.destinationCode,
+    ].filter((line): line is string => Boolean(line)),
+    meta: [
+      { label: "Date", value: formatDate(bill.createdAt) },
+      { label: "Trip", value: trip?.tripNumber },
+    ],
     items: billItems.map(item => ({
       name: item.itemNameSnapshot,
       description: item.lineDescription,
@@ -359,55 +377,31 @@ export function InvoicePreviewScreen() {
       taxAmount: item.taxAmount,
       total: item.lineTotalTaxInclusive,
     })),
-    subtotal,
-    taxTotal: bill.taxTotal,
-    grandTotal: bill.grandTotal,
-    paidAmount: bill.paidAmount,
-    balanceDue: bill.grandTotal - bill.paidAmount,
-    footer: `${businessProfile.businessName} • ${businessProfile.phone}`,
-  });
-  const billShareText = buildBillShareText({
-    billNumber: bill.billNumber,
-    customerName: billToName,
-    destinationName: destination?.islandName,
-    tripNumber: trip?.tripNumber,
-    totalAmount: bill.grandTotal,
-    balanceDue: bill.grandTotal - bill.paidAmount,
-  });
-  const handlePrint = async () => {
-    if (isNativeSilentPrintAvailable()) {
-      const savedAddress = window.localStorage.getItem(networkPrinterStorageKey) || "";
-      const printerAddress = parsePrinterAddress(savedAddress) || parsePrinterAddress(window.prompt("Enter Wi-Fi printer IP address (example: 192.168.1.50 or 192.168.1.50:9100)", savedAddress) || "");
-
-      if (printerAddress) {
-        window.localStorage.setItem(networkPrinterStorageKey, `${printerAddress.host}:${printerAddress.port}`);
-        try {
-          await silentPrintDocument({
-            host: printerAddress.host,
-            port: printerAddress.port,
-            text: invoicePrintText,
-          });
-          toast({ title: "Sent to printer", body: `${printerAddress.host}:${printerAddress.port}`, variant: "success" });
-          return;
-        } catch {
-          window.localStorage.removeItem(networkPrinterStorageKey);
-          toast({ title: "Network printer failed", body: "Check the printer IP and Wi-Fi. Opening normal print dialog.", variant: "error" });
-        }
-      }
-    }
-
-    if (!printDocument()) {
+    totals: [
+      { label: "Subtotal (excl. tax)", value: MVR(subtotal) },
+      { label: `GST ${taxRate}% (inclusive)`, value: MVR(bill.taxTotal) },
+      { label: "Grand Total", value: MVR(bill.grandTotal), strong: true },
+      { label: "Paid", value: MVR(bill.paidAmount) },
+      ...(bill.grandTotal - bill.paidAmount > 0 ? [{ label: "Balance due", value: MVR(bill.grandTotal - bill.paidAmount), strong: true }] : []),
+    ],
+    footer: [
+      "All prices are tax-inclusive. GST 8% included as per Maldives Tax Act.",
+      "Thank you for your business. Payment is due within 30 days. Late payments attract 2% monthly interest.",
+      `${businessProfile.businessName} • ${businessProfile.email} • ${businessProfile.phone}`,
+    ],
+  };
+  const handlePrint = () => {
+    if (!printA4Document(invoiceDocument)) {
       toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
     }
   };
   const handleShare = async () => {
     try {
-      const result = await shareDocument({
-        title: `${bill.billNumber} - ${billToName}`,
-        text: billShareText,
-      });
+      const result = await shareA4PdfDocument(invoiceDocument);
       if (result === "clipboard") {
         toast({ title: "Copied for sharing", body: "Paste into WhatsApp, Viber, or any other app.", variant: "success" });
+      } else if (result === "download") {
+        toast({ title: "PDF downloaded", body: "Share the downloaded A4 PDF from this device.", variant: "success" });
       } else if (result === "unsupported") {
         toast({ title: "Share unavailable", body: "This device does not support sharing or clipboard copy.", variant: "error" });
       }

@@ -1,8 +1,9 @@
 import { useApp } from "../useApp";
 import { Btn, Card, Section, TopBar } from "../components/ui";
-import { MVR, formatDateTime } from "../utils/format";
-import { buildDocumentShareText, printDocument, shareDocument } from "../utils/documentActions";
-import { walkInDisplayName } from "../utils/walkInDetails";
+import { MVR, formatDate, formatDateTime } from "../utils/format";
+import { printA4Document, shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
+import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
+import type { Bill } from "../types";
 
 export function SyncConflictsScreen() {
   const { back, operations, trips } = useApp();
@@ -84,7 +85,66 @@ export function SyncConflictsScreen() {
 }
 
 export function PdfDocumentsScreen() {
-  const { back, bills, customers, toast } = useApp();
+  const { back, bills, customers, destinations, trips, businessProfile, toast } = useApp();
+  const buildBillA4Document = (bill: Bill): A4DocumentPayload => {
+    const customer = customers.find(item => item.id === bill.customerId);
+    const destination = destinations.find(item => item.id === bill.destinationId);
+    const trip = trips.find(item => item.id === bill.tripId);
+    const customerName = walkInDisplayName(customer, bill.walkInDetails);
+    const customerPhone = walkInPhone(customer, bill.walkInDetails);
+    const subtotal = Number((bill.subtotalTaxInclusive - bill.taxTotal).toFixed(2));
+    const balanceDue = Number((bill.grandTotal - bill.paidAmount).toFixed(2));
+
+    return {
+      title: bill.billType === "credit" ? "INVOICE" : "TAX INVOICE",
+      documentNumber: bill.billNumber.replace("BILL", bill.billType === "credit" ? "INV" : "BILL"),
+      businessName: businessProfile.businessName,
+      businessDetails: [
+        businessProfile.vesselName,
+        businessProfile.address,
+        `GST: ${businessProfile.gstNumber}`,
+        `Reg: ${businessProfile.vesselRegistrationNumber}`,
+        `${businessProfile.email} • ${businessProfile.phone}`,
+      ],
+      customerName,
+      customerDetails: [
+        !isWalkInCustomer(customer) ? customer?.legalName : undefined,
+        customerPhone ? `Phone: ${customerPhone}` : undefined,
+        bill.walkInDetails?.description ? `Description: ${bill.walkInDetails.description}` : undefined,
+        customer?.gstNumber ? `GST: ${customer.gstNumber}` : undefined,
+      ].filter((line): line is string => Boolean(line)),
+      destinationDetails: [
+        destination?.islandName,
+        destination?.atoll ? `${destination.atoll} Atoll` : undefined,
+        destination?.destinationCode,
+      ].filter((line): line is string => Boolean(line)),
+      meta: [
+        { label: "Date", value: formatDate(bill.createdAt) },
+        { label: "Trip", value: trip?.tripNumber },
+        { label: "Status", value: bill.finalizedAt ? "Saved" : "Draft" },
+      ],
+      items: (bill.items || []).map(item => ({
+        name: item.itemNameSnapshot,
+        description: item.lineDescription,
+        quantity: item.quantity,
+        unitType: item.unitType,
+        unitPrice: item.unitPriceTaxInclusive,
+        taxAmount: item.taxAmount,
+        total: item.lineTotalTaxInclusive,
+      })),
+      totals: [
+        { label: "Subtotal (excl. tax)", value: MVR(subtotal) },
+        { label: `GST ${businessProfile.defaultTaxRate}% (inclusive)`, value: MVR(bill.taxTotal) },
+        { label: "Grand Total", value: MVR(bill.grandTotal), strong: true },
+        { label: "Paid", value: MVR(bill.paidAmount) },
+        ...(balanceDue > 0 ? [{ label: "Balance due", value: MVR(balanceDue), strong: true }] : []),
+      ],
+      footer: [
+        "All prices are tax-inclusive. GST 8% included as per Maldives Tax Act.",
+        `${businessProfile.businessName} • ${businessProfile.email} • ${businessProfile.phone}`,
+      ],
+    };
+  };
   const docs = bills.map((bill, index) => ({
     id: `pdf_${bill.id}`,
     number: bill.billNumber.replace("BILL", bill.billType === "credit" ? "INV" : "BILL"),
@@ -93,25 +153,47 @@ export function PdfDocumentsScreen() {
     version: index % 2 === 0 ? 2 : 1,
     stored: Boolean(bill.finalizedAt),
     date: bill.finalizedAt || bill.createdAt,
+    bill,
   }));
   const handlePrint = () => {
-    if (!printDocument()) {
+    const printDocument = docs.length === 1
+      ? buildBillA4Document(docs[0].bill)
+      : {
+          title: "PDF DOCUMENTS",
+          documentNumber: "DOCUMENT-LIST",
+          businessName: businessProfile.businessName,
+          businessDetails: [
+            businessProfile.vesselName,
+            businessProfile.address,
+            `${businessProfile.email} • ${businessProfile.phone}`,
+          ],
+          customerName: "All documents",
+          customerDetails: [`${docs.length} documents listed`],
+          destinationDetails: ["All destinations"],
+          meta: [{ label: "Printed", value: formatDateTime(new Date().toISOString()) }],
+          items: docs.map(doc => ({
+            name: doc.number,
+            description: `${doc.customer} • ${doc.stored ? "Saved" : "Draft"} • ${formatDateTime(doc.date)}`,
+            quantity: 1,
+            unitType: "doc",
+            unitPrice: doc.amount,
+            taxAmount: 0,
+            total: doc.amount,
+          })),
+          totals: [{ label: "Total listed", value: MVR(docs.reduce((sum, doc) => sum + doc.amount, 0)), strong: true }],
+          footer: [`${businessProfile.businessName} • ${businessProfile.email} • ${businessProfile.phone}`],
+        } satisfies A4DocumentPayload;
+    if (!printA4Document(printDocument)) {
       toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
     }
   };
   const handleShare = async (doc: typeof docs[number]) => {
     try {
-      const result = await shareDocument({
-        title: doc.number,
-        text: buildDocumentShareText({
-          documentNumber: doc.number,
-          customerName: doc.customer,
-          amount: doc.amount,
-          status: doc.stored ? "Saved" : "Draft",
-        }),
-      });
+      const result = await shareA4PdfDocument(buildBillA4Document(doc.bill));
       if (result === "clipboard") {
         toast({ title: "Copied for sharing", body: "Paste into WhatsApp, Viber, or any other app.", variant: "success" });
+      } else if (result === "download") {
+        toast({ title: "PDF downloaded", body: "Share the downloaded A4 PDF from this device.", variant: "success" });
       } else if (result === "unsupported") {
         toast({ title: "Share unavailable", body: "This device does not support sharing or clipboard copy.", variant: "error" });
       }
