@@ -3,6 +3,7 @@ import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, Section, TopBar } from "../components/ui";
 import { MVR, relativeTime } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { walkInDisplayName } from "../utils/walkInDetails";
 import type { Bill, Customer, PaymentMethod } from "../types";
 
 // ============================================================================
@@ -69,6 +70,7 @@ export function PaymentsScreen() {
               {filtered.map(p => {
                 const bill = bills.find(b => b.id === p.billId);
                 const c = customers.find(c => c.id === bill?.customerId);
+                const customerName = walkInDisplayName(c, bill?.walkInDetails);
                 const methodLabel: Record<string, string> = {
                   cash: "💵 Cash", bank_transfer: "🏦 Bank", cheque: "📝 Cheque", mobile_wallet: "📱 Wallet", other: "Other",
                 };
@@ -80,7 +82,8 @@ export function PaymentsScreen() {
                           <p className="text-sm font-semibold text-slate-900">{p.paymentNumber}</p>
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{methodLabel[p.method]}</span>
                         </div>
-                        <p className="mt-0.5 text-xs text-slate-500">{c?.displayName} • {bill?.billNumber}</p>
+                        <p className="mt-0.5 text-xs font-semibold text-slate-700">{customerName}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{bill?.billNumber}</p>
                         {p.reference && <p className="text-xs text-slate-400 font-mono">Ref: {p.reference}</p>}
                       </div>
                       <div className="text-right">

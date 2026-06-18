@@ -158,6 +158,15 @@ export function OperationScreen() {
     setShowOpTypePicker(false);
   };
 
+  const resetSelectedWalkInDetails = () => {
+    if (!selectedDestId || !selectedCustomerIsWalkIn) return;
+    setWalkInByDestination(current => {
+      const next = { ...current };
+      delete next[selectedDestId];
+      return next;
+    });
+  };
+
   const saveOffloadTally = (entries: Array<{ item: CatalogItem; quantity: number; availability: OffloadAvailability }>) => {
     if (!activeTrip || !selectedDestId || !selectedCustomerId || entries.length === 0) return;
     addOperationItems(entries.map(entry => ({
@@ -240,7 +249,7 @@ export function OperationScreen() {
 
       <div className="flex-1 overflow-y-auto p-4 pb-32 md:p-6 md:pb-32 lg:p-8 lg:pb-32 no-scrollbar">
         {/* Active trip banner */}
-        <Card className="mb-3 border-l-4 border-l-emerald-500 p-3">
+        <Card className="mb-3 p-3">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -460,7 +469,10 @@ export function OperationScreen() {
                     billCreated = true;
                   }
                 }
-                if (billCreated) resetOperationForm();
+                if (billCreated) {
+                  resetSelectedWalkInDetails();
+                  resetOperationForm();
+                }
               }}
             >
               {currentOpHasLockedBill ? "Bill already exists" : "Generate bill"}
