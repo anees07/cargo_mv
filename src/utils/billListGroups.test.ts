@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { filterBillsForListCategory, groupBillsForList } from "./billListGroups.js";
-import type { Bill } from "../types.js";
+import { filterBillsForListCategory, groupBillsByDestinationForList, groupBillsForList } from "./billListGroups.js";
+import type { Bill, Destination } from "../types.js";
 
 const bill = (overrides: Partial<Bill>): Bill => ({
   id: "bill_1",
@@ -21,6 +21,17 @@ const bill = (overrides: Partial<Bill>): Bill => ({
   createdBy: "user_1",
   createdAt: "2026-06-18T08:00:00.000Z",
   itemCount: 1,
+  ...overrides,
+});
+
+const destination = (overrides: Partial<Destination>): Destination => ({
+  id: "dest_1",
+  businessProfileId: "bp_1",
+  islandName: "Male'",
+  atoll: "Kaafu Atoll",
+  destinationCode: "MLE",
+  activeStatus: true,
+  sortOrder: 10,
   ...overrides,
 });
 
@@ -60,4 +71,25 @@ test("bill list category filter returns only one selected category", () => {
   assert.deepEqual(filterBillsForListCategory(bills, "unpaid").map(item => item.id), ["unpaid"]);
   assert.deepEqual(filterBillsForListCategory(bills, "partial").map(item => item.id), ["partial"]);
   assert.deepEqual(filterBillsForListCategory(bills, "paid").map(item => item.id), ["paid"]);
+});
+
+test("bill list destination groups keep selected category bills separated by destination", () => {
+  const groups = groupBillsByDestinationForList([
+    bill({ id: "male_1", destinationId: "male" }),
+    bill({ id: "addu_1", destinationId: "addu" }),
+    bill({ id: "male_2", destinationId: "male" }),
+  ], [
+    destination({ id: "male", islandName: "Male'", atoll: "Kaafu Atoll", destinationCode: "MLE" }),
+    destination({ id: "addu", islandName: "Addu City", atoll: "Addu Atoll", destinationCode: "ADD" }),
+  ]);
+
+  assert.deepEqual(groups.map(group => ({
+    id: group.id,
+    title: group.title,
+    description: group.description,
+    bills: group.bills.map(item => item.id),
+  })), [
+    { id: "male", title: "Male'", description: "Kaafu Atoll • MLE", bills: ["male_1", "male_2"] },
+    { id: "addu", title: "Addu City", description: "Addu Atoll • ADD", bills: ["addu_1"] },
+  ]);
 });

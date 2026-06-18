@@ -1,9 +1,16 @@
-import type { Bill } from "../types.js";
+import type { Bill, Destination } from "../types.js";
 
 export type BillListGroupId = "current" | "unpaid" | "partial" | "paid";
 
 export interface BillListGroup {
   id: BillListGroupId;
+  title: string;
+  description: string;
+  bills: Bill[];
+}
+
+export interface BillDestinationGroup {
+  id: string;
   title: string;
   description: string;
   bills: Bill[];
@@ -50,4 +57,30 @@ export function groupBillsForList(bills: Bill[]): BillListGroup[] {
 export function filterBillsForListCategory(bills: Bill[], category: BillListGroupId): Bill[] {
   const matches = groupMatchers.get(category);
   return matches ? bills.filter(matches) : bills;
+}
+
+export function groupBillsByDestinationForList(bills: Bill[], destinations: Destination[]): BillDestinationGroup[] {
+  const destinationsById = new Map(destinations.map(destination => [destination.id, destination]));
+  const groups = new Map<string, BillDestinationGroup>();
+
+  for (const bill of bills) {
+    const destination = destinationsById.get(bill.destinationId);
+    const groupId = destination?.id || bill.destinationId || "unknown_destination";
+    const existing = groups.get(groupId);
+    if (existing) {
+      existing.bills.push(bill);
+      continue;
+    }
+
+    groups.set(groupId, {
+      id: groupId,
+      title: destination?.islandName || "Unknown destination",
+      description: destination
+        ? [destination.atoll, destination.destinationCode].filter(Boolean).join(" • ")
+        : "Destination not found",
+      bills: [bill],
+    });
+  }
+
+  return Array.from(groups.values());
 }

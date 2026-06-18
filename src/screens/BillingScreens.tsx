@@ -4,7 +4,7 @@ import { Btn, Card, Icon, Modal, StatusBadge, TopBar } from "../components/ui";
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { filterBillsForSearch } from "../utils/billSearch";
-import { filterBillsForListCategory, groupBillsForList, type BillListGroupId } from "../utils/billListGroups";
+import { filterBillsForListCategory, groupBillsByDestinationForList, groupBillsForList, type BillListGroupId } from "../utils/billListGroups";
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
 import { buildBillShareText, buildInvoicePrintText, isNativeSilentPrintAvailable, parsePrinterAddress, printDocument, shareDocument, silentPrintDocument } from "../utils/documentActions";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
@@ -22,6 +22,7 @@ export function BillingScreen() {
   const [showGenerate, setShowGenerate] = useState(false);
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [cancellingBillId, setCancellingBillId] = useState<string | null>(null);
+  const [expandedDestinationGroups, setExpandedDestinationGroups] = useState<string[]>([]);
   const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
   const editingBill = activeBills.find(bill => bill.id === editingBillId);
   const cancellingBill = activeBills.find(bill => bill.id === cancellingBillId);
@@ -31,7 +32,16 @@ export function BillingScreen() {
   const filtered = isSearching
     ? filterBillsForSearch(activeBills, customers, search)
     : filterBillsForListCategory(activeBills, filter);
-  const billGroups = groupBillsForList(filtered);
+  const billGroups = isSearching
+    ? groupBillsForList(filtered).flatMap(categoryGroup =>
+        groupBillsByDestinationForList(categoryGroup.bills, destinations).map(destinationGroup => ({
+          id: `${categoryGroup.id}:${destinationGroup.id}`,
+          title: `${categoryGroup.title} • ${destinationGroup.title}`,
+          description: destinationGroup.description,
+          bills: destinationGroup.bills,
+        }))
+      )
+    : groupBillsByDestinationForList(filtered, destinations);
 
   const totals = {
     count: filtered.length,
@@ -45,6 +55,14 @@ export function BillingScreen() {
     { id: "partial", label: "Partial" },
     { id: "paid", label: "Paid" },
   ];
+
+  const toggleDestinationGroup = (groupId: string) => {
+    setExpandedDestinationGroups(current =>
+      current.includes(groupId)
+        ? current.filter(id => id !== groupId)
+        : [...current, groupId]
+    );
+  };
 
   const renderBillCard = (b: Bill) => {
     const c = customers.find(c => c.id === b.customerId);
@@ -178,23 +196,40 @@ export function BillingScreen() {
           {billGroups.map(group => {
             const groupTotal = group.bills.reduce((sum, bill) => sum + bill.grandTotal, 0);
             const groupOutstanding = group.bills.reduce((sum, bill) => sum + (bill.grandTotal - bill.paidAmount), 0);
+            const isExpanded = expandedDestinationGroups.includes(group.id);
             return (
               <section key={group.id} className="space-y-2">
-                <div className="flex items-end justify-between gap-3 px-1">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{group.title}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{group.description}</p>
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
+                  onClick={() => toggleDestinationGroup(group.id)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-left shadow-sm transition hover:border-ocean-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean-500 focus-visible:ring-offset-2"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-50 text-ocean-700">
+                        <Icon name="island" className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Destination</p>
+                        <p className="truncate text-base font-bold text-slate-950">{group.title}</p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">{group.description}</p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-semibold text-slate-700">{group.bills.length} bills</p>
+                      <p className={`text-sm font-bold ${groupOutstanding > 0 ? "text-rose-600" : "text-ocean-700"}`}>
+                        {groupOutstanding > 0 ? `${MVR(groupOutstanding)} due` : MVR(groupTotal)}
+                      </p>
+                      <Icon name={isExpanded ? "chevron_down" : "chevron_right"} className="ml-auto mt-1 h-4 w-4 text-slate-400" />
+                    </div>
                   </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-xs font-semibold text-slate-900">{group.bills.length} bills</p>
-                    <p className="text-xs text-slate-500">
-                      {group.id === "paid" ? MVR(groupTotal) : `${MVR(groupOutstanding)} due`}
-                    </p>
+                </button>
+                {isExpanded && (
+                  <div className="space-y-2">
+                    {group.bills.map(renderBillCard)}
                   </div>
-                </div>
-                <div className="space-y-2">
-                  {group.bills.map(renderBillCard)}
-                </div>
+                )}
               </section>
             );
           })}
