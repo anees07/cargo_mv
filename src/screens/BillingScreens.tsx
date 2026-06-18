@@ -6,8 +6,11 @@ import { hasPermission } from "../utils/permissions";
 import { filterBillsForSearch } from "../utils/billSearch";
 import { filterBillsForListCategory, groupBillsForList, type BillListGroupId } from "../utils/billListGroups";
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
+import { buildBillShareText, buildInvoicePrintText, isNativeSilentPrintAvailable, parsePrinterAddress, printDocument, shareDocument, silentPrintDocument } from "../utils/documentActions";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "../types";
+
+const networkPrinterStorageKey = "cargo.networkPrinterAddress";
 
 // ============================================================================
 // Billing — list, filter, generate, finalize
@@ -288,7 +291,7 @@ function GenerateBillForm({
 // Invoice Preview — A4 PDF rendering
 // ============================================================================
 export function InvoicePreviewScreen() {
-  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd, updateDraftBill, cancelBill } = useApp();
+  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd, updateDraftBill, cancelBill, toast } = useApp();
   const bill = bills.find(b => b.id === selectedBillId) || bills[0];
   const [showPay, setShowPay] = useState(false);
   const [showAlter, setShowAlter] = useState(false);
@@ -305,6 +308,79 @@ export function InvoicePreviewScreen() {
   const billToName = walkInDisplayName(customer, bill.walkInDetails);
   const billToPhone = walkInPhone(customer, bill.walkInDetails);
   const billToDescription = isWalkInCustomer(customer) ? bill.walkInDetails?.description : undefined;
+  const invoicePrintText = buildInvoicePrintText({
+    businessName: businessProfile.businessName,
+    billNumber: bill.billNumber,
+    customerName: billToName,
+    destinationName: destination?.islandName,
+    tripNumber: trip?.tripNumber,
+    createdAt: formatDate(bill.createdAt),
+    items: billItems.map(item => ({
+      name: item.itemNameSnapshot,
+      description: item.lineDescription,
+      quantity: item.quantity,
+      unitType: item.unitType,
+      unitPrice: item.unitPriceTaxInclusive,
+      taxAmount: item.taxAmount,
+      total: item.lineTotalTaxInclusive,
+    })),
+    subtotal,
+    taxTotal: bill.taxTotal,
+    grandTotal: bill.grandTotal,
+    paidAmount: bill.paidAmount,
+    balanceDue: bill.grandTotal - bill.paidAmount,
+    footer: `${businessProfile.businessName} • ${businessProfile.phone}`,
+  });
+  const billShareText = buildBillShareText({
+    billNumber: bill.billNumber,
+    customerName: billToName,
+    destinationName: destination?.islandName,
+    tripNumber: trip?.tripNumber,
+    totalAmount: bill.grandTotal,
+    balanceDue: bill.grandTotal - bill.paidAmount,
+  });
+  const handlePrint = async () => {
+    if (isNativeSilentPrintAvailable()) {
+      const savedAddress = window.localStorage.getItem(networkPrinterStorageKey) || "";
+      const printerAddress = parsePrinterAddress(savedAddress) || parsePrinterAddress(window.prompt("Enter Wi-Fi printer IP address (example: 192.168.1.50 or 192.168.1.50:9100)", savedAddress) || "");
+
+      if (printerAddress) {
+        window.localStorage.setItem(networkPrinterStorageKey, `${printerAddress.host}:${printerAddress.port}`);
+        try {
+          await silentPrintDocument({
+            host: printerAddress.host,
+            port: printerAddress.port,
+            text: invoicePrintText,
+          });
+          toast({ title: "Sent to printer", body: `${printerAddress.host}:${printerAddress.port}`, variant: "success" });
+          return;
+        } catch {
+          window.localStorage.removeItem(networkPrinterStorageKey);
+          toast({ title: "Network printer failed", body: "Check the printer IP and Wi-Fi. Opening normal print dialog.", variant: "error" });
+        }
+      }
+    }
+
+    if (!printDocument()) {
+      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
+    }
+  };
+  const handleShare = async () => {
+    try {
+      const result = await shareDocument({
+        title: `${bill.billNumber} - ${billToName}`,
+        text: billShareText,
+      });
+      if (result === "clipboard") {
+        toast({ title: "Copied for sharing", body: "Paste into WhatsApp, Viber, or any other app.", variant: "success" });
+      } else if (result === "unsupported") {
+        toast({ title: "Share unavailable", body: "This device does not support sharing or clipboard copy.", variant: "error" });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast({ title: "Share failed", body: "Try again from this device.", variant: "error" });
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-slate-200">
@@ -314,8 +390,8 @@ export function InvoicePreviewScreen() {
         onBack={() => navigate("billing")}
         trailing={
           <div className="flex items-center gap-1">
-            <button className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100" title="Print"><Icon name="printer" className="h-4 w-4" /></button>
-            <button className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100" title="Share"><Icon name="share" className="h-4 w-4" /></button>
+            <button onClick={handlePrint} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100" title="Print"><Icon name="printer" className="h-4 w-4" /></button>
+            <button onClick={handleShare} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100" title="Share"><Icon name="share" className="h-4 w-4" /></button>
           </div>
         }
       />

@@ -278,11 +278,11 @@ export function Toast({ toasts, onDismiss }: { toasts: { id: string; title: stri
 }
 
 // ============================================================================
-// FirestoreListBuilder Pattern Implementation
+// DataListBuilder Pattern Implementation
 // Standardized list rendering layout for CRUD screens, providing uniform 
 // empty states and consistent list mappings.
 // ============================================================================
-export function FirestoreListBuilder<T>({
+export function DataListBuilder<T>({
   data,
   keyExtractor,
   renderItem,

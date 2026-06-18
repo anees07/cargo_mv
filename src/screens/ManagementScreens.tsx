@@ -6,6 +6,7 @@ import { MVR, MVRShort, formatDate, roleColor, roleLabel } from "../utils/format
 import { buildQuarterTaxBillRows, quarterPeriod, recentQuarterOptions } from "../utils/taxReport";
 import { APP_RELEASE_DETAIL } from "../appVersion";
 import { buildCustomerOutstandingMap, getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
+import { unreadNotificationCountForUser } from "../utils/notifications";
 
 // ============================================================================
 // Reports
@@ -485,7 +486,7 @@ export function SettingsScreen() {
                 <Icon name={isOnline ? "wifi" : "wifi_off"} className={`h-5 w-5 ${isOnline ? "text-emerald-600" : "text-rose-500"}`} />
                 <div className="text-left">
                   <p className="text-sm font-medium text-slate-900">Realtime sync</p>
-                  <p className="text-xs text-slate-500">{isOnline ? "Connected to Firebase" : "Disconnected - tap to reconnect"}</p>
+                  <p className="text-xs text-slate-500">{isOnline ? "Live sync active" : "Disconnected - tap to reconnect"}</p>
                 </div>
               </div>
               <span className={`text-xs font-semibold ${isOnline ? "text-emerald-600" : "text-rose-600"}`}>{isOnline ? "ONLINE" : "OFFLINE"}</span>
@@ -1048,7 +1049,7 @@ export function AuditLogsScreen() {
 // ============================================================================
 export function ProfileScreen() {
   const { currentUser, businessProfile, navigate, signOut, toast, isOnline, toggleOnline, notifications, users: allUsers } = useApp();
-  const unreadNotifs = notifications.filter(n => !n.read).length;
+  const unreadNotifs = unreadNotificationCountForUser(notifications, currentUser.id);
 
   const menuSections: { title: string; items: { icon: string; label: string; screen: string; badge?: number; badgeColor?: string; desc?: string }[] }[] = [
     {
@@ -1163,7 +1164,7 @@ export function ProfileScreen() {
             <Icon name={isOnline ? "wifi" : "wifi_off"} className={`h-5 w-5 ${isOnline ? "text-emerald-600" : "text-rose-500"}`} />
             <div className="flex-1 text-left">
               <p className="text-sm font-medium text-slate-900">{isOnline ? "Connected" : "Offline mode"}</p>
-              <p className="text-xs text-slate-500">{isOnline ? "Firebase realtime active" : "Tap to reconnect"}</p>
+              <p className="text-xs text-slate-500">{isOnline ? "Live sync active" : "Tap to reconnect"}</p>
             </div>
             <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"}`} />
           </button>

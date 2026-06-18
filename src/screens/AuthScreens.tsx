@@ -16,7 +16,7 @@ export function SplashScreen() {
       <p className="mt-2 text-sm text-ocean-100">Maldives Cargo Logistics</p>
       <div className="absolute bottom-12 flex items-center gap-2 text-xs text-ocean-200">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        <span>Connected to Firebase • {APP_RELEASE_DETAIL}</span>
+        <span>Connected • {APP_RELEASE_DETAIL}</span>
       </div>
     </div>
   );
@@ -136,7 +136,7 @@ export function LoginScreen() {
         </div>
 
         <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
-          <p className="text-xs font-semibold text-ocean-900">Demo Firebase account</p>
+          <p className="text-xs font-semibold text-ocean-900">Demo account</p>
           <p className="mt-1 text-xs text-slate-600">The prefilled owner account loads live cargo data.</p>
           <p className="mt-2 text-xs font-medium text-ocean-800">{APP_RELEASE_DETAIL}</p>
         </Card>

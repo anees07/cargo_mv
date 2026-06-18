@@ -1,5 +1,5 @@
 // ============================================================================
-// Core Domain Types — stored in Firebase Auth and Cloud Firestore
+// Core Domain Types — stored by the configured app data service
 // ============================================================================
 
 export type ID = string;

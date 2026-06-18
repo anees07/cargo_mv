@@ -1,6 +1,8 @@
 import { useApp } from "../useApp";
 import { Btn, Card, Section, TopBar } from "../components/ui";
 import { MVR, formatDateTime } from "../utils/format";
+import { buildDocumentShareText, printDocument, shareDocument } from "../utils/documentActions";
+import { walkInDisplayName } from "../utils/walkInDetails";
 
 export function SyncConflictsScreen() {
   const { back, operations, trips } = useApp();
@@ -82,20 +84,46 @@ export function SyncConflictsScreen() {
 }
 
 export function PdfDocumentsScreen() {
-  const { back, bills, customers } = useApp();
+  const { back, bills, customers, toast } = useApp();
   const docs = bills.map((bill, index) => ({
     id: `pdf_${bill.id}`,
     number: bill.billNumber.replace("BILL", bill.billType === "credit" ? "INV" : "BILL"),
-    customer: customers.find(c => c.id === bill.customerId)?.displayName || "Unknown",
+    customer: walkInDisplayName(customers.find(c => c.id === bill.customerId), bill.walkInDetails),
     amount: bill.grandTotal,
     version: index % 2 === 0 ? 2 : 1,
     stored: Boolean(bill.finalizedAt),
     date: bill.finalizedAt || bill.createdAt,
   }));
+  const handlePrint = () => {
+    if (!printDocument()) {
+      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
+    }
+  };
+  const handleShare = async (doc: typeof docs[number]) => {
+    try {
+      const result = await shareDocument({
+        title: doc.number,
+        text: buildDocumentShareText({
+          documentNumber: doc.number,
+          customerName: doc.customer,
+          amount: doc.amount,
+          status: doc.stored ? "Saved" : "Draft",
+        }),
+      });
+      if (result === "clipboard") {
+        toast({ title: "Copied for sharing", body: "Paste into WhatsApp, Viber, or any other app.", variant: "success" });
+      } else if (result === "unsupported") {
+        toast({ title: "Share unavailable", body: "This device does not support sharing or clipboard copy.", variant: "error" });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast({ title: "Share failed", body: "Try again from this device.", variant: "error" });
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
-      <TopBar title="PDF documents" subtitle="Invoices, bills, receipts" onBack={back} trailing={<Btn size="sm" icon="printer" variant="outline">Print</Btn>} />
+      <TopBar title="PDF documents" subtitle="Invoices, bills, receipts" onBack={back} trailing={<Btn size="sm" icon="printer" variant="outline" onClick={handlePrint}>Print</Btn>} />
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 lg:pb-24 no-scrollbar">
         <div className="space-y-2">
@@ -115,7 +143,7 @@ export function PdfDocumentsScreen() {
               </div>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
                 <Btn size="sm" variant="outline" icon="eye">Preview</Btn>
-                <Btn size="sm" icon="share">Share</Btn>
+                <Btn size="sm" icon="share" onClick={() => handleShare(doc)}>Share</Btn>
               </div>
             </Card>
           ))}

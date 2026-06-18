@@ -15,9 +15,9 @@ window.addEventListener("resize", syncAppHeight);
 
 if (isFirebaseConfigured) {
   getFirebaseFirestore();
-  console.info(`Firebase Firestore configured for project ${getFirebaseProjectId()}`);
+  console.info(`Data service configured for project ${getFirebaseProjectId()}`);
 } else {
-  console.warn("Firebase Firestore is not configured. Add VITE_FIREBASE_* values to .env.local.");
+  console.warn("Data service is not configured. Add the required environment values to .env.local.");
 }
 
 createRoot(document.getElementById("root")!).render(

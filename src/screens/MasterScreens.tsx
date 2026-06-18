@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useApp } from "../useApp";
-import { Btn, Card, Icon, Modal, TopBar, FirestoreListBuilder } from "../components/ui";
+import { Btn, Card, Icon, Modal, TopBar, DataListBuilder } from "../components/ui";
 import { MVR, MVRShort } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { buildCustomerOutstandingMap, getTotalOutstanding } from "../utils/billingSummary";
@@ -41,7 +41,7 @@ export function DestinationsScreen() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
-        <FirestoreListBuilder
+        <DataListBuilder
           data={filtered}
           keyExtractor={(d) => d.id}
           icon="island"
@@ -155,7 +155,7 @@ export function CustomersScreen() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
-        <FirestoreListBuilder
+        <DataListBuilder
           data={filtered}
           keyExtractor={(c) => c.id}
           icon="users"
@@ -353,7 +353,7 @@ export function PriceLevelsScreen() {
       .catch(error => {
         toast({
           title: "Price levels not synced",
-          body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+          body: error instanceof Error ? error.message : "Check your access and try again.",
           variant: "error",
         });
       })
@@ -364,7 +364,7 @@ export function PriceLevelsScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar
         title="Price Levels"
-        subtitle={`${syncedCount} of ${CUSTOMER_PRICE_LEVEL_DEFINITIONS.length} backend records synced`}
+        subtitle={`${syncedCount} of ${CUSTOMER_PRICE_LEVEL_DEFINITIONS.length} price levels saved`}
         onBack={back}
         trailing={canManage && (
           <Btn size="sm" icon="sync" loading={syncing} disabled={syncing} onClick={handleSync}>
@@ -376,17 +376,17 @@ export function PriceLevelsScreen() {
       <div className="border-b border-slate-200 bg-white p-4">
         <p className="text-sm font-semibold text-slate-900">Customer price level master</p>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          These four fixed records are stored in Firestore and used as the customer-category price level list.
+          These four fixed records are used as the customer-category price level list.
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
-        <FirestoreListBuilder
+        <DataListBuilder
           data={levels}
           keyExtractor={(level) => level.code}
           icon="chart"
           emptyTitle="No price levels configured"
-          emptyHint="Sync the fixed customer price level records to Firestore."
+          emptyHint="Save the fixed customer price level records."
           renderItem={(level) => (
             <Card className="p-3.5">
               <div className="flex items-start gap-3">
@@ -420,7 +420,7 @@ export function PriceLevelsScreen() {
                       void saveCustomerPriceLevel(level as CustomerPriceLevel).catch(error => {
                         toast({
                           title: "Price level not saved",
-                          body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+                          body: error instanceof Error ? error.message : "Check your access and try again.",
                           variant: "error",
                         });
                       });
@@ -446,7 +446,7 @@ export function PriceLevelsScreen() {
               } catch {
                 toast({
                   title: "Price level not saved",
-                  body: "Check Firestore permissions and try again.",
+                  body: "Check your access and try again.",
                   variant: "error",
                 });
                 throw new Error("Price level save failed");
@@ -672,7 +672,7 @@ export function CatalogScreen() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
-        <FirestoreListBuilder
+        <DataListBuilder
           data={filtered}
           keyExtractor={(item) => item.id}
           icon="list"
@@ -752,7 +752,7 @@ export function CatalogScreen() {
             } catch (error) {
               toast({
                 title: "Categories not synced",
-                body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+                body: error instanceof Error ? error.message : "Check your access and try again.",
                 variant: "error",
               });
             }
@@ -764,7 +764,7 @@ export function CatalogScreen() {
             } catch (error) {
               toast({
                 title: "Category not saved",
-                body: error instanceof Error ? error.message : "Check Firestore permissions and try again.",
+                body: error instanceof Error ? error.message : "Check your access and try again.",
                 variant: "error",
               });
               throw error;
@@ -1070,7 +1070,7 @@ function CatalogCategoryManager({
       </Btn>
 
       <div className="pt-2">
-        <FirestoreListBuilder
+        <DataListBuilder
           data={categories}
           keyExtractor={category => category.code}
           icon="list"

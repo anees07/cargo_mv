@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { useApp } from "../useApp";
 import { Icon, TopBar } from "../components/ui";
 import { relativeTime } from "../utils/format";
+import { isNotificationUnreadForUser, unreadNotificationCountForUser } from "../utils/notifications";
 
 // ============================================================================
 // Notification screen — can be used both as a routed screen or overlay
@@ -8,8 +10,12 @@ import { relativeTime } from "../utils/format";
 export function NotificationPanel({ onClose }: { onClose?: () => void }) {
   const { notifications, markNotificationRead, back, currentUser } = useApp();
   const isUnread = (notification: typeof notifications[number]) =>
-    !notification.read && !(notification.readBy || []).includes(currentUser.id);
-  const unread = notifications.filter(isUnread).length;
+    isNotificationUnreadForUser(notification, currentUser.id);
+  const unread = unreadNotificationCountForUser(notifications, currentUser.id);
+
+  useEffect(() => {
+    notifications.filter(isUnread).forEach(notification => markNotificationRead(notification.id));
+  }, [notifications, currentUser.id, markNotificationRead]);
 
   const handleBack = () => {
     if (onClose) {

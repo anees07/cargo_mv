@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useApp } from "../useApp";
-import { Btn, Card, Icon, Modal, Section, Stat, StatusBadge, TopBar, FirestoreListBuilder } from "../components/ui";
+import { Btn, Card, Icon, Modal, Section, Stat, StatusBadge, TopBar, DataListBuilder } from "../components/ui";
 import type { Trip, TripStatus } from "../types";
 import { MVR, MVRShort, formatDate, formatDateTime, formatTime, relativeTime, statusLabel } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { isUnfinishedTrip } from "../utils/trips";
 import { describeCompleteTripRoute } from "../utils/tripRoute";
 import { getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
+import { unreadNotificationCountForUser } from "../utils/notifications";
 
 // ============================================================================
 // Dashboard
@@ -20,7 +21,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
   const outstandingCustomers = getOutstandingCustomerCount(bills);
   const todayRevenue = bills.filter(b => b.paymentStatus === "paid").reduce((s, b) => s + b.paidAmount, 0);
   const onlineCount = users.filter(u => u.online).length;
-  const unreadNotifs = notifications.filter(n => !n.read).length;
+  const unreadNotifs = unreadNotificationCountForUser(notifications, currentUser.id);
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -231,7 +232,7 @@ export function TripsScreen() {
           </Card>
         </div>
 
-        <FirestoreListBuilder
+        <DataListBuilder
           data={trips}
           keyExtractor={(trip) => trip.id}
           icon="ship"
