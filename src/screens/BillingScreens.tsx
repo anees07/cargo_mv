@@ -3,16 +3,19 @@ import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, StatusBadge, TopBar } from "../components/ui";
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
+import { filterBillsForSearch } from "../utils/billSearch";
+import { filterBillsForListCategory, groupBillsForList, type BillListGroupId } from "../utils/billListGroups";
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
-import type { BillType, Operation, OperationItem, PaymentMethod } from "../types";
+import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "../types";
 
 // ============================================================================
 // Billing — list, filter, generate, finalize
 // ============================================================================
 export function BillingScreen() {
   const { bills, customers, destinations, trips, operations, navigate, selectBill, createBillFromOperation, updateDraftBill, cancelBill, finalizeBill, back, currentUser } = useApp();
-  const [filter, setFilter] = useState<"all" | "unpaid" | "partial" | "paid" | "credit">("all");
+  const [filter, setFilter] = useState<BillListGroupId>("current");
+  const [search, setSearch] = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [cancellingBillId, setCancellingBillId] = useState<string | null>(null);
@@ -21,20 +24,90 @@ export function BillingScreen() {
   const cancellingBill = activeBills.find(bill => bill.id === cancellingBillId);
   const billableOperations = operations.filter(operation => isOperationBillable(operation, trips, bills));
 
-  const filtered = activeBills.filter(b => {
-    if (filter === "all") return true;
-    if (filter === "unpaid") return b.paymentStatus === "unpaid";
-    if (filter === "partial") return b.paymentStatus === "partial";
-    if (filter === "paid") return b.paymentStatus === "paid";
-    if (filter === "credit") return b.billType === "credit";
-    return true;
-  });
+  const isSearching = Boolean(search.trim());
+  const filtered = isSearching
+    ? filterBillsForSearch(activeBills, customers, search)
+    : filterBillsForListCategory(activeBills, filter);
+  const billGroups = groupBillsForList(filtered);
 
   const totals = {
     count: filtered.length,
     total: filtered.reduce((s, b) => s + b.grandTotal, 0),
     paid: filtered.reduce((s, b) => s + b.paidAmount, 0),
     outstanding: filtered.reduce((s, b) => s + (b.grandTotal - b.paidAmount), 0),
+  };
+  const billingTabs: Array<{ id: BillListGroupId; label: string }> = [
+    { id: "current", label: "Current" },
+    { id: "unpaid", label: "Unpaid" },
+    { id: "partial", label: "Partial" },
+    { id: "paid", label: "Paid" },
+  ];
+
+  const renderBillCard = (b: Bill) => {
+    const c = customers.find(c => c.id === b.customerId);
+    const customerName = walkInDisplayName(c, b.walkInDetails);
+    const d = destinations.find(d => d.id === b.destinationId);
+    const t = trips.find(t => t.id === b.tripId);
+    const due = b.grandTotal - b.paidAmount;
+    return (
+      <Card key={b.id} className="p-3.5" onClick={() => { selectBill(b.id); navigate("invoice_preview"); }}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="truncate text-sm font-semibold text-slate-900">{customerName}</p>
+              <StatusBadge status={b.billStatus === "draft" ? "draft" : b.paymentStatus} />
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">{b.billNumber} • {b.itemCount} items</p>
+            <p className="mt-1 text-xs text-slate-600 flex items-center gap-2">
+              <span className="flex items-center gap-0.5"><Icon name="island" className="h-3 w-3" /> {d?.islandName}</span>
+              <span className="text-slate-300">•</span>
+              <span className="font-mono text-xs">{t?.tripNumber}</span>
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-sm font-bold text-slate-900">{MVR(b.grandTotal)}</p>
+            {due > 0 && <p className="text-xs font-semibold text-rose-600">Due {MVR(due)}</p>}
+            <p className="text-xs text-slate-400 mt-0.5">{formatDate(b.createdAt)}</p>
+          </div>
+        </div>
+        {b.billStatus === "draft" && (
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+            <Btn
+              size="sm"
+              variant="outline"
+              icon="edit"
+              onClick={event => {
+                event.stopPropagation();
+                setEditingBillId(b.id);
+              }}
+            >
+              Edit
+            </Btn>
+            <Btn
+              size="sm"
+              variant="danger"
+              icon="x"
+              onClick={event => {
+                event.stopPropagation();
+                setCancellingBillId(b.id);
+              }}
+            >
+              Cancel
+            </Btn>
+            <Btn
+              size="sm"
+              icon="check"
+              onClick={event => {
+                event.stopPropagation();
+                finalizeBill(b.id);
+              }}
+            >
+              Finalize
+            </Btn>
+          </div>
+        )}
+      </Card>
+    );
   };
 
   return (
@@ -52,21 +125,26 @@ export function BillingScreen() {
 
       <div className="border-b border-slate-200 bg-white">
         <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-4 py-2">
-          {[
-            { id: "all", label: "All" },
-            { id: "unpaid", label: "Unpaid" },
-            { id: "partial", label: "Partial" },
-            { id: "paid", label: "Paid" },
-            { id: "credit", label: "Credit" },
-          ].map(f => (
+          {billingTabs.map(f => (
             <button
               key={f.id}
-              onClick={() => setFilter(f.id as any)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${filter === f.id ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"}`}
+              onClick={() => setFilter(f.id)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${!isSearching && filter === f.id ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"}`}
             >
               {f.label}
             </button>
           ))}
+        </div>
+        <div className="border-t border-slate-100 px-4 py-3">
+          <div className="relative">
+            <Icon name="search" className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
+            <input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder="Search bill, customer name or phone..."
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
+            />
+          </div>
         </div>
       </div>
 
@@ -88,74 +166,33 @@ export function BillingScreen() {
           </div>
         </Card>
 
-        <div className="space-y-2">
+        <div className="space-y-5">
           {filtered.length === 0 && (
-            <Card className="p-8 text-center text-sm text-slate-500">No bills match this filter.</Card>
+            <Card className="p-8 text-center text-sm text-slate-500">
+              {isSearching ? "No bills match this search." : "No bills in this category."}
+            </Card>
           )}
-          {filtered.map(b => {
-            const c = customers.find(c => c.id === b.customerId);
-            const customerName = walkInDisplayName(c, b.walkInDetails);
-            const d = destinations.find(d => d.id === b.destinationId);
-            const t = trips.find(t => t.id === b.tripId);
-            const due = b.grandTotal - b.paidAmount;
+          {billGroups.map(group => {
+            const groupTotal = group.bills.reduce((sum, bill) => sum + bill.grandTotal, 0);
+            const groupOutstanding = group.bills.reduce((sum, bill) => sum + (bill.grandTotal - bill.paidAmount), 0);
             return (
-              <Card key={b.id} className="p-3.5" onClick={() => { selectBill(b.id); navigate("invoice_preview"); }}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-900">{customerName}</p>
-                      <StatusBadge status={b.billStatus === "draft" ? "draft" : b.paymentStatus} />
-                    </div>
-                    <p className="mt-0.5 text-xs text-slate-500">{b.billNumber} • {b.itemCount} items</p>
-                    <p className="mt-1 text-xs text-slate-600 flex items-center gap-2">
-                      <span className="flex items-center gap-0.5"><Icon name="island" className="h-3 w-3" /> {d?.islandName}</span>
-                      <span className="text-slate-300">•</span>
-                      <span className="font-mono text-xs">{t?.tripNumber}</span>
+              <section key={group.id} className="space-y-2">
+                <div className="flex items-end justify-between gap-3 px-1">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{group.title}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{group.description}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs font-semibold text-slate-900">{group.bills.length} bills</p>
+                    <p className="text-xs text-slate-500">
+                      {group.id === "paid" ? MVR(groupTotal) : `${MVR(groupOutstanding)} due`}
                     </p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-slate-900">{MVR(b.grandTotal)}</p>
-                    {due > 0 && <p className="text-xs font-semibold text-rose-600">Due {MVR(due)}</p>}
-                    <p className="text-xs text-slate-400 mt-0.5">{formatDate(b.createdAt)}</p>
-                  </div>
                 </div>
-                {b.billStatus === "draft" && (
-                  <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-                    <Btn
-                      size="sm"
-                      variant="outline"
-                      icon="edit"
-                      onClick={event => {
-                        event.stopPropagation();
-                        setEditingBillId(b.id);
-                      }}
-                    >
-                      Edit
-                    </Btn>
-                    <Btn
-                      size="sm"
-                      variant="danger"
-                      icon="x"
-                      onClick={event => {
-                        event.stopPropagation();
-                        setCancellingBillId(b.id);
-                      }}
-                    >
-                      Cancel
-                    </Btn>
-                    <Btn
-                      size="sm"
-                      icon="check"
-                      onClick={event => {
-                        event.stopPropagation();
-                        finalizeBill(b.id);
-                      }}
-                    >
-                      Finalize
-                    </Btn>
-                  </div>
-                )}
-              </Card>
+                <div className="space-y-2">
+                  {group.bills.map(renderBillCard)}
+                </div>
+              </section>
             );
           })}
         </div>

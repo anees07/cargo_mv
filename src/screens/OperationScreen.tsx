@@ -1,16 +1,22 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, Section, StatusBadge, TopBar } from "../components/ui";
 import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
-import { buildOffloadAvailability, hasLockedBillForOperation, type OffloadAvailability } from "../utils/operationFlow";
+import {
+  buildOffloadAvailability,
+  hasLockedBillForOperation,
+  operationIdsForActiveCart,
+  operationIdsForTripCarts,
+  type OffloadAvailability,
+} from "../utils/operationFlow";
 import { calculatePriceFromStandard } from "../data/customerPriceLevels";
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel } from "../data/catalogCategories";
 import { isSystemOtherItem } from "../data/systemCatalogItems";
+import { filterCustomersForPicker } from "../utils/customerSearch";
 import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
 import {
   cleanWalkInDetails,
-  customerMatchesDestination,
   emptyWalkInDetails,
   isWalkInCustomer,
   isWalkInDetailsComplete,
@@ -25,7 +31,7 @@ export function OperationScreen() {
     trips, activeTripId, customers, destinations, catalogItems, catalogCategories, itemPriceRates,
     priceLevels,
     businessProfile, addOperationItem, addOperationItems, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
-    createBillFromOperation, currentUser, addCatalogItem,
+    createBillFromOperation, currentUser, addCatalogItem, clearOperationCart,
   } = useApp();
   const activeTrip = trips.find(t => t.id === activeTripId);
 
@@ -37,7 +43,9 @@ export function OperationScreen() {
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showAddDest, setShowAddDest] = useState(false);
   const [showOpTypePicker, setShowOpTypePicker] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [walkInByDestination, setWalkInByDestination] = useState<Record<string, WalkInDetails>>({});
+  const entryCartClearedForTripRef = useRef<string | null>(null);
 
   const dest = destinations.find(d => d.id === selectedDestId);
   const customer = customers.find(c => c.id === selectedCustomerId);
@@ -65,6 +73,10 @@ export function OperationScreen() {
     [currentOperations]
   );
   const currentOpHasLockedBill = currentOperations.some(operation => hasLockedBillForOperation(operation, bills));
+  const entryCartIds = useMemo(
+    () => operationIdsForTripCarts(operations, activeTripId),
+    [operations, activeTripId]
+  );
   const offloadAvailability = useMemo(
     () => buildOffloadAvailability(operations, activeTripId, selectedDestId, selectedCustomerId, bills),
     [operations, activeTripId, selectedDestId, selectedCustomerId, bills]
@@ -79,12 +91,22 @@ export function OperationScreen() {
     [catalogItems, offloadAvailability]
   );
   const filteredCustomers = useMemo(
-    () => customers.filter(c => customerMatchesDestination(c, selectedDestId)),
-    [customers, selectedDestId]
+    () => filterCustomersForPicker(customers, selectedDestId, customerSearch),
+    [customers, selectedDestId, customerSearch]
   );
   const canAddItem = Boolean(selectedCustomerId && selectedDestId) &&
     isWalkInDetailsComplete(customer, selectedWalkInDetails) &&
     (opType !== "offloading" || offloadRows.length > 0);
+
+  useEffect(() => {
+    if (!activeTripId || entryCartClearedForTripRef.current === activeTripId) return;
+    entryCartClearedForTripRef.current = activeTripId;
+    if (entryCartIds.length > 0) {
+      clearOperationCart(entryCartIds);
+      setSelectedDestId(null);
+      setSelectedCustomerId(null);
+    }
+  }, [activeTripId, clearOperationCart, entryCartIds]);
 
   const getItemPrice = (item: CatalogItem, cust?: Customer) => {
     if (opType === "offloading") {
@@ -100,6 +122,17 @@ export function OperationScreen() {
   const handleSelectDest = (id: string) => {
     setSelectedDestId(id);
     setSelectedCustomerId(null);
+    setCustomerSearch("");
+  };
+
+  const handleSelectCustomer = (customerId: string) => {
+    const staleCartIds = operationIdsForActiveCart(operations, activeTripId, opType, selectedDestId, customerId);
+    if (staleCartIds.length > 0) {
+      clearOperationCart(staleCartIds);
+    }
+    setSelectedCustomerId(customerId);
+    setCustomerSearch("");
+    setShowCustomerPicker(false);
   };
 
   const updateWalkInDetail = (field: keyof WalkInDetails, value: string) => {
@@ -117,6 +150,7 @@ export function OperationScreen() {
   const resetOperationForm = () => {
     setSelectedDestId(null);
     setSelectedCustomerId(null);
+    setCustomerSearch("");
     setShowCustomerPicker(false);
     setShowItemPicker(false);
     setShowAddCustomer(false);
@@ -464,13 +498,25 @@ export function OperationScreen() {
 
       <Modal open={showCustomerPicker} onClose={() => setShowCustomerPicker(false)} title="Choose customer">
         <div className="p-2">
+          <div className="relative p-2">
+            <Icon name="search" className="absolute left-5 top-5 h-5 w-5 text-slate-400" />
+            <input
+              autoFocus
+              value={customerSearch}
+              onChange={event => setCustomerSearch(event.target.value)}
+              placeholder="Search customer name or phone..."
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
+            />
+          </div>
           {filteredCustomers.length === 0 && (
-            <p className="p-6 text-center text-sm text-slate-500">No customers for this destination.</p>
+            <p className="p-6 text-center text-sm text-slate-500">
+              {customerSearch.trim() ? "No customers match this search." : "No customers for this destination."}
+            </p>
           )}
           {filteredCustomers.map(c => (
             <button
               key={c.id}
-              onClick={() => { setSelectedCustomerId(c.id); setShowCustomerPicker(false); }}
+              onClick={() => handleSelectCustomer(c.id)}
               className="flex w-full items-center justify-between rounded-lg p-3 hover:bg-slate-50"
             >
               <div className="flex items-center gap-3">

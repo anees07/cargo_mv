@@ -10,7 +10,7 @@ import {
 } from "./lib/firebase";
 import { MVR } from "./utils/format";
 import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
-import { isBillEditableBeforeFinalize, validatePaymentRequest } from "./utils/operationFlow";
+import { isBillEditableBeforeFinalize, operationIdsForTripCarts, validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
 import { buildDestinationWalkInCustomer, ensureDestinationWalkInCustomers } from "./utils/walkInDetails";
 import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, buildCustomerPriceLevel, toFirestoreCustomerPriceLevel } from "./data/customerPriceLevels";
@@ -112,6 +112,7 @@ export interface AppActions {
   addOperationItem: (item: AddOperationItemInput) => void;
   addOperationItems: (items: AddOperationItemInput[]) => void;
   removeOperationItem: (itemId: string) => void;
+  clearOperationCart: (operationIds: string[]) => void;
   finalizeBill: (billId: string) => void;
   postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => Promise<boolean>;
   updateDraftBill: (billId: string, items: OperationItem[], reason: string) => void;
@@ -931,7 +932,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState(s => ({ ...s, isAuthed: false, screen: "welcome", screenStack: [], pendingOwnerRegistration: null }));
   }, []);
 
+  const clearOperationCart = useCallback((operationIds: string[]) => {
+    const uniqueIds = [...new Set(operationIds)].filter(Boolean);
+    if (uniqueIds.length === 0) return;
+    const current = stateRef.current;
+    const operationsToDelete = current.operations.filter(operation => uniqueIds.includes(operation.id));
+    if (operationsToDelete.length === 0) return;
+
+    setState(s => ({
+      ...s,
+      operations: s.operations.filter(operation => !uniqueIds.includes(operation.id)),
+    }));
+
+    const db = getFirebaseFirestore();
+    operationsToDelete.forEach(operation => {
+      void deleteDoc(doc(db, "business_profiles", operation.businessProfileId, tenantCollections.operations, operation.id)).catch(error => {
+        setState(s => ({
+          ...s,
+          toasts: [...s.toasts, {
+            id: id("t"),
+            title: "Cart not cleared",
+            body: error instanceof Error ? error.message : "Try again.",
+            variant: "error" as const,
+          }],
+        }));
+      });
+    });
+  }, []);
+
   const navigate = useCallback((screen: Screen) => {
+    const current = stateRef.current;
+    if (current.screen === "operation" && screen !== "operation") {
+      clearOperationCart(operationIdsForTripCarts(current.operations, current.activeTripId));
+    }
     setState(s => ({
       ...s,
       screen,
@@ -939,9 +972,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // feeling stuck when a tab/drawer item is tapped repeatedly.
       screenStack: screen === s.screen ? s.screenStack : [...s.screenStack, s.screen].slice(-8),
     }));
-  }, []);
+  }, [clearOperationCart]);
 
   const back = useCallback(() => {
+    const current = stateRef.current;
+    const currentStack = [...current.screenStack];
+    let nextScreen = currentStack.pop();
+    while (nextScreen && nextScreen === current.screen) {
+      nextScreen = currentStack.pop();
+    }
+    if (current.screen === "operation" && (nextScreen || "dashboard") !== "operation") {
+      clearOperationCart(operationIdsForTripCarts(current.operations, current.activeTripId));
+    }
     setState(s => {
       const stack = [...s.screenStack];
       let prev = stack.pop();
@@ -950,7 +992,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return { ...s, screen: prev || "dashboard", screenStack: stack };
     });
-  }, []);
+  }, [clearOperationCart]);
 
   const selectTrip = useCallback((tripId: string) => {
     setState(s => ({ ...s, selectedTripId: tripId }));
@@ -2303,7 +2345,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ...state,
     signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
-    addOperationItem, addOperationItems, removeOperationItem,
+    addOperationItem, addOperationItems, removeOperationItem, clearOperationCart,
     finalizeBill, postPayment, updateDraftBill, createTrip,
     createBillFromOperation,
     addDestination, addCustomer, syncCatalogCategories, saveCatalogCategory, addCatalogItem, syncCustomerPriceLevels, saveCustomerPriceLevel,

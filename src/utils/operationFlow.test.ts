@@ -8,6 +8,8 @@ import {
   hasLockedBillForOperation,
   isBillEditableBeforeFinalize,
   isOperationBillable,
+  operationIdsForActiveCart,
+  operationIdsForTripCarts,
   validatePaymentRequest,
 } from "./operationFlow.js";
 import { SYSTEM_OTHER_ITEM_ID } from "../data/systemCatalogItems.js";
@@ -84,23 +86,32 @@ const trip: Trip = {
   createdAt: "2026-06-15T08:00:00.000Z",
 };
 
-test("offload availability is scoped to selected destination and customer", () => {
-  const availability = buildOffloadAvailability([
-    operation({ items: [item({ itemId: "rice", quantity: 10, destinationId: "dest_1", customerId: "customer_1" })] }),
-    operation({ id: "other_dest", destinationId: "dest_2", items: [item({ itemId: "rice", quantity: 8, destinationId: "dest_2", customerId: "customer_1" })] }),
-    operation({ id: "other_customer", customerId: "customer_2", items: [item({ itemId: "rice", quantity: 7, customerId: "customer_2" })] }),
-  ], "trip_1", "dest_1", "customer_1");
+test("offload availability is scoped to billed cargo for selected destination and customer", () => {
+  const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
+    bill({ items: [item({ itemId: "rice", quantity: 10, destinationId: "dest_1", customerId: "customer_1" })] }),
+    bill({ id: "other_dest", destinationId: "dest_2", items: [item({ itemId: "rice", quantity: 8, destinationId: "dest_2", customerId: "customer_1" })] }),
+    bill({ id: "other_customer", customerId: "customer_2", items: [item({ itemId: "rice", quantity: 7, customerId: "customer_2" })] }),
+  ]);
 
   assert.equal(availability.rice.remaining, 10);
 });
 
 test("offload availability subtracts quantities already offloaded for the same customer and destination", () => {
   const availability = buildOffloadAvailability([
-    operation({ items: [item({ itemId: "rice", quantity: 10 })] }),
     operation({ id: "op_offloading", operationType: "offloading", items: [item({ itemId: "rice", quantity: 4 })] }),
-  ], "trip_1", "dest_1", "customer_1");
+  ], "trip_1", "dest_1", "customer_1", [
+    bill({ items: [item({ itemId: "rice", quantity: 10 })] }),
+  ]);
 
   assert.equal(availability.rice.remaining, 6);
+});
+
+test("offload availability ignores loading operations until a loading bill is generated", () => {
+  const availability = buildOffloadAvailability([
+    operation({ items: [item({ itemId: "rice", quantity: 10 })] }),
+  ], "trip_1", "dest_1", "customer_1");
+
+  assert.deepEqual(availability, {});
 });
 
 test("offload availability includes loading bill items after the loading operation is billed", () => {
@@ -137,6 +148,21 @@ test("offload availability subtracts bill offloaded items without adding them to
 test("system others entries remain isolated by source operation line", () => {
   const availability = buildOffloadAvailability([
     operation({
+      id: "op_offloading",
+      operationType: "offloading",
+      items: [
+        item({
+          id: "other_offloaded_1",
+          itemId: SYSTEM_OTHER_ITEM_ID,
+          sourceOperationItemId: "other_loaded_1",
+          itemNameSnapshot: "Others",
+          lineDescription: "Blue box",
+          quantity: 1,
+        }),
+      ],
+    }),
+  ], "trip_1", "dest_1", "customer_1", [
+    bill({
       items: [
         item({
           id: "other_loaded_1",
@@ -156,21 +182,7 @@ test("system others entries remain isolated by source operation line", () => {
         }),
       ],
     }),
-    operation({
-      id: "op_offloading",
-      operationType: "offloading",
-      items: [
-        item({
-          id: "other_offloaded_1",
-          itemId: SYSTEM_OTHER_ITEM_ID,
-          sourceOperationItemId: "other_loaded_1",
-          itemNameSnapshot: "Others",
-          lineDescription: "Blue box",
-          quantity: 1,
-        }),
-      ],
-    }),
-  ], "trip_1", "dest_1", "customer_1");
+  ]);
 
   assert.equal(availability.other_loaded_1?.remaining, 1);
   assert.equal(availability.other_loaded_1?.source.lineDescription, "Blue box");
@@ -179,8 +191,8 @@ test("system others entries remain isolated by source operation line", () => {
 });
 
 test("offload availability uses only the newest loaded manifest for the selected customer and destination", () => {
-  const availability = buildOffloadAvailability([
-    operation({
+  const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
+    bill({
       id: "older_loading",
       createdAt: "2026-06-15T08:00:00.000Z",
       items: [
@@ -193,7 +205,7 @@ test("offload availability uses only the newest loaded manifest for the selected
         }),
       ],
     }),
-    operation({
+    bill({
       id: "latest_loading",
       createdAt: "2026-06-16T08:00:00.000Z",
       items: [
@@ -207,12 +219,34 @@ test("offload availability uses only the newest loaded manifest for the selected
         }),
       ],
     }),
-  ], "trip_1", "dest_1", "customer_1");
+  ]);
 
   assert.deepEqual(Object.keys(availability), ["general_carton", "latest_other_1"]);
   assert.equal(availability.general_carton?.remaining, 1);
   assert.equal(availability.latest_other_1?.source.lineDescription, "1 noodle case huskuri foshi");
   assert.equal(availability.old_other_1, undefined);
+});
+
+test("active operation cart cleanup targets only the selected screen cart", () => {
+  const ids = operationIdsForActiveCart([
+    operation({ id: "selected_cart", operationType: "loading", tripId: "trip_1", destinationId: "dest_1", customerId: "customer_1", items: [item({})] }),
+    operation({ id: "other_type", operationType: "offloading", tripId: "trip_1", destinationId: "dest_1", customerId: "customer_1", items: [item({})] }),
+    operation({ id: "other_customer", operationType: "loading", tripId: "trip_1", destinationId: "dest_1", customerId: "customer_2", items: [item({ customerId: "customer_2" })] }),
+    operation({ id: "empty_cart", operationType: "loading", tripId: "trip_1", destinationId: "dest_1", customerId: "customer_1", items: [] }),
+  ], "trip_1", "loading", "dest_1", "customer_1");
+
+  assert.deepEqual(ids, ["selected_cart"]);
+});
+
+test("trip operation cart cleanup targets all unfinished carts for the active trip", () => {
+  const ids = operationIdsForTripCarts([
+    operation({ id: "loading_cart", operationType: "loading", tripId: "trip_1", destinationId: "dest_1", customerId: "customer_1", items: [item({})] }),
+    operation({ id: "offload_cart", operationType: "offloading", tripId: "trip_1", destinationId: "dest_1", customerId: "customer_1", items: [item({})] }),
+    operation({ id: "other_trip", operationType: "loading", tripId: "trip_2", destinationId: "dest_1", customerId: "customer_1", items: [item({ tripId: "trip_2" })] }),
+    operation({ id: "empty_cart", operationType: "loading", tripId: "trip_1", destinationId: "dest_1", customerId: "customer_1", items: [] }),
+  ], "trip_1");
+
+  assert.deepEqual(ids, ["loading_cart", "offload_cart"]);
 });
 
 test("bill generation remains available when a draft bill can be updated before finalize", () => {

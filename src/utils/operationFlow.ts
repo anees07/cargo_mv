@@ -41,6 +41,32 @@ export function billTypeForOperationType(operationType: OperationType): Bill["bi
   return operationType === "offloading" ? "offloading_bill" : "loading_bill";
 }
 
+export function operationIdsForActiveCart(
+  operations: Operation[],
+  tripId: string | null | undefined,
+  operationType: OperationType,
+  destinationId: string | null | undefined,
+  customerId: string | null | undefined,
+): string[] {
+  if (!tripId || !destinationId || !customerId) return [];
+  return operations
+    .filter(operation =>
+      operation.tripId === tripId &&
+      operation.operationType === operationType &&
+      operation.destinationId === destinationId &&
+      operation.customerId === customerId &&
+      operation.items.length > 0
+    )
+    .map(operation => operation.id);
+}
+
+export function operationIdsForTripCarts(operations: Operation[], tripId: string | null | undefined): string[] {
+  if (!tripId) return [];
+  return operations
+    .filter(operation => operation.tripId === tripId && operation.items.length > 0)
+    .map(operation => operation.id);
+}
+
 function offloadAvailabilityKey(item: Pick<OperationItem, "id" | "itemId" | "sourceOperationItemId">): string {
   return item.itemId === SYSTEM_OTHER_ITEM_ID
     ? item.sourceOperationItemId || item.id
@@ -100,11 +126,6 @@ export function buildOffloadAvailability(
 
   for (const operation of operations) {
     if (!sameSelection(operation, tripId, destinationId, customerId)) continue;
-
-    if (operation.operationType === "loading") {
-      loadedSources.push({ createdAt: operation.createdAt, items: operation.items });
-      continue;
-    }
 
     if (operation.operationType === "offloading") {
       offloadedSources.push({ createdAt: operation.createdAt, items: operation.items });
