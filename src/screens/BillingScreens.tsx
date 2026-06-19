@@ -399,11 +399,9 @@ export function InvoicePreviewScreen() {
     try {
       const result = await shareA4PdfDocument(invoiceDocument);
       if (result === "clipboard") {
-        toast({ title: "Copied for sharing", body: "Paste into WhatsApp, Viber, or any other app.", variant: "success" });
-      } else if (result === "download") {
-        toast({ title: "PDF downloaded", body: "Share the downloaded A4 PDF from this device.", variant: "success" });
+        toast({ title: "PDF sharing unavailable", body: "A text copy was copied because this device cannot share PDF files.", variant: "warning" });
       } else if (result === "unsupported") {
-        toast({ title: "Share unavailable", body: "This device does not support sharing or clipboard copy.", variant: "error" });
+        toast({ title: "Share unavailable", body: "This device cannot share PDF files. Use Print on web, or update the mobile app.", variant: "error" });
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;

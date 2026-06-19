@@ -1,4 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Directory, Filesystem } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import { jsPDF } from "jspdf";
 import { MVR } from "./format";
 
@@ -20,9 +22,10 @@ type ShareNavigator = {
 
 type ShareEnvironment = {
   navigator?: ShareNavigator;
-  document?: Document;
-  URL?: Pick<typeof URL, "createObjectURL" | "revokeObjectURL">;
   FileCtor?: typeof File;
+  capacitor?: Pick<typeof Capacitor, "isNativePlatform" | "isPluginAvailable">;
+  filesystem?: Pick<typeof Filesystem, "writeFile">;
+  nativeShare?: NativeSharePlugin;
 };
 
 type PrintableWindow = {
@@ -44,6 +47,17 @@ type FileSharePayload = {
   title: string;
   text?: string;
   files: File[];
+};
+
+type NativeSharePayload = {
+  title: string;
+  text: string;
+  url: string;
+  dialogTitle: string;
+};
+
+type NativeSharePlugin = {
+  share: (payload: NativeSharePayload) => Promise<unknown>;
 };
 
 export type NativePrintPayload = {
@@ -102,6 +116,22 @@ function compact(values: Array<string | undefined | null>) {
   return values.map(value => value?.trim()).filter((value): value is string => Boolean(value));
 }
 
+function sanitizedPdfFileName(documentNumber: string) {
+  return `${documentNumber.replace(/[^A-Za-z0-9_-]/g, "-")}.pdf`;
+}
+
+async function blobToBase64(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return typeof btoa === "function"
+    ? btoa(binary)
+    : Buffer.from(bytes).toString("base64");
+}
+
 export function buildA4DocumentText(document: A4DocumentPayload) {
   return [
     document.businessName,
@@ -136,10 +166,15 @@ export function buildA4DocumentHtml(document: A4DocumentPayload) {
   <meta charset="utf-8" />
   <title>${escapeHtml(document.documentNumber)}</title>
   <style>
-    @page { size: A4; margin: 12mm; }
+    @page {
+      size: A4;
+      margin: 12mm;
+      @bottom-right { content: "Page " counter(page) " of " counter(pages); color: #64748b; font-size: 8pt; }
+    }
     * { box-sizing: border-box; }
     body { margin: 0; background: #fff; color: #0f172a; font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; }
-    .page { width: 186mm; min-height: 273mm; margin: 0 auto; }
+    .page { display: flex; flex-direction: column; width: 186mm; min-height: 273mm; margin: 0 auto; }
+    .content { flex: 1 0 auto; }
     .top { display: flex; justify-content: space-between; gap: 14mm; border-bottom: 1.5pt solid #0f172a; padding-bottom: 6mm; }
     .business h1 { margin: 0 0 2mm; font-size: 17pt; line-height: 1.1; }
     .muted { color: #64748b; }
@@ -150,7 +185,9 @@ export function buildA4DocumentHtml(document: A4DocumentPayload) {
     .label { margin: 0 0 2mm; color: #64748b; font-size: 8pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .name { margin: 0 0 1.5mm; font-size: 12pt; font-weight: 700; }
     .details p { margin: 1mm 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 7mm; table-layout: fixed; }
+    table { width: 100%; border-collapse: collapse; margin-top: 7mm; table-layout: fixed; break-inside: auto; page-break-inside: auto; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
     th, td { border-bottom: 1px solid #cbd5e1; padding: 2.5mm 2mm; vertical-align: top; }
     th { background: #f1f5f9; color: #334155; font-size: 8.5pt; text-align: left; }
     .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -160,66 +197,76 @@ export function buildA4DocumentHtml(document: A4DocumentPayload) {
     .totals-inner { width: 72mm; }
     .total-row { display: flex; justify-content: space-between; gap: 4mm; padding: 1.4mm 0; }
     .total-row.strong { margin-top: 1.5mm; border-top: 1.5pt solid #0f172a; font-size: 12pt; font-weight: 700; }
-    .footer { margin-top: 12mm; border-top: 1px dashed #cbd5e1; padding-top: 4mm; text-align: center; color: #64748b; font-size: 9pt; }
+    .footer { margin-top: auto; border-top: 1px dashed #cbd5e1; padding-top: 4mm; text-align: center; color: #64748b; font-size: 9pt; }
     .footer p { margin: 1.2mm 0; }
+    .page-number { display: none; }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .page { width: auto; min-height: auto; }
+      .page { width: auto; min-height: 273mm; }
+      .content { flex: 1 0 auto; }
+    }
+    @media screen {
+      body { background: #e2e8f0; padding: 12mm 0; }
+      .page { min-height: 273mm; background: #fff; box-shadow: 0 12px 40px rgba(15, 23, 42, .18); padding: 0; }
+      .page-number { display: block; margin-top: 4mm; text-align: right; color: #64748b; font-size: 8pt; }
     }
   </style>
 </head>
 <body>
   <main class="page">
-    <section class="top">
-      <div class="business">
-        <h1>${escapeHtml(document.businessName)}</h1>
-        ${businessDetails.map(line => `<p class="muted">${escapeHtml(line)}</p>`).join("")}
-      </div>
-      <div class="doc-title">
-        <h2>${escapeHtml(document.title)}</h2>
-        <p><strong>${escapeHtml(document.documentNumber)}</strong></p>
-        ${document.meta.map(item => item.value ? `<p class="muted">${escapeHtml(item.label)}: ${escapeHtml(item.value)}</p>` : "").join("")}
-      </div>
-    </section>
-    <section class="info">
-      <div class="details">
-        <p class="label">Customer</p>
-        <p class="name">${escapeHtml(document.customerName)}</p>
-        ${customerDetails.map(line => `<p class="muted">${escapeHtml(line)}</p>`).join("")}
-      </div>
-      <div class="details" style="text-align:right">
-        <p class="label">Destination</p>
-        ${destinationDetails.map((line, index) => index === 0 ? `<p class="name">${escapeHtml(line)}</p>` : `<p class="muted">${escapeHtml(line)}</p>`).join("")}
-      </div>
-    </section>
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 38%">Item</th>
-          <th class="center" style="width: 16%">Qty</th>
-          <th class="num" style="width: 16%">Unit</th>
-          <th class="num" style="width: 14%">Tax</th>
-          <th class="num" style="width: 16%">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${document.items.length > 0 ? document.items.map(item => `
+    <div class="content">
+      <section class="top">
+        <div class="business">
+          <h1>${escapeHtml(document.businessName)}</h1>
+          ${businessDetails.map(line => `<p class="muted">${escapeHtml(line)}</p>`).join("")}
+        </div>
+        <div class="doc-title">
+          <h2>${escapeHtml(document.title)}</h2>
+          <p><strong>${escapeHtml(document.documentNumber)}</strong></p>
+          ${document.meta.map(item => item.value ? `<p class="muted">${escapeHtml(item.label)}: ${escapeHtml(item.value)}</p>` : "").join("")}
+        </div>
+      </section>
+      <section class="info">
+        <div class="details">
+          <p class="label">Customer</p>
+          <p class="name">${escapeHtml(document.customerName)}</p>
+          ${customerDetails.map(line => `<p class="muted">${escapeHtml(line)}</p>`).join("")}
+        </div>
+        <div class="details" style="text-align:right">
+          <p class="label">Destination</p>
+          ${destinationDetails.map((line, index) => index === 0 ? `<p class="name">${escapeHtml(line)}</p>` : `<p class="muted">${escapeHtml(line)}</p>`).join("")}
+        </div>
+      </section>
+      <table>
+        <thead>
           <tr>
-            <td>${escapeHtml(item.name)}${item.description ? `<div class="item-desc">${escapeHtml(item.description)}</div>` : ""}</td>
-            <td class="center">${escapeHtml(String(item.quantity))} ${escapeHtml(item.unitType)}</td>
-            <td class="num">${escapeHtml(MVR(item.unitPrice))}</td>
-            <td class="num">${escapeHtml(MVR(item.taxAmount))}</td>
-            <td class="num">${escapeHtml(MVR(item.total))}</td>
+            <th style="width: 38%">Item</th>
+            <th class="center" style="width: 16%">Qty</th>
+            <th class="num" style="width: 16%">Unit</th>
+            <th class="num" style="width: 14%">Tax</th>
+            <th class="num" style="width: 16%">Total</th>
           </tr>
-        `).join("") : `<tr><td colspan="5" class="center muted">No line items saved.</td></tr>`}
-      </tbody>
-    </table>
-    <section class="totals">
-      <div class="totals-inner">
-        ${document.totals.map(item => `<div class="total-row ${item.strong ? "strong" : ""}"><span>${escapeHtml(item.label)}</span><span>${escapeHtml(item.value)}</span></div>`).join("")}
-      </div>
-    </section>
+        </thead>
+        <tbody>
+          ${document.items.length > 0 ? document.items.map(item => `
+            <tr>
+              <td>${escapeHtml(item.name)}${item.description ? `<div class="item-desc">${escapeHtml(item.description)}</div>` : ""}</td>
+              <td class="center">${escapeHtml(String(item.quantity))} ${escapeHtml(item.unitType)}</td>
+              <td class="num">${escapeHtml(MVR(item.unitPrice))}</td>
+              <td class="num">${escapeHtml(MVR(item.taxAmount))}</td>
+              <td class="num">${escapeHtml(MVR(item.total))}</td>
+            </tr>
+          `).join("") : `<tr><td colspan="5" class="center muted">No line items saved.</td></tr>`}
+        </tbody>
+      </table>
+      <section class="totals">
+        <div class="totals-inner">
+          ${document.totals.map(item => `<div class="total-row ${item.strong ? "strong" : ""}"><span>${escapeHtml(item.label)}</span><span>${escapeHtml(item.value)}</span></div>`).join("")}
+        </div>
+      </section>
+    </div>
     ${footer.length > 0 ? `<section class="footer">${footer.map(line => `<p>${escapeHtml(line)}</p>`).join("")}</section>` : ""}
+    <div class="page-number">Page 1</div>
   </main>
 </body>
 </html>`;
@@ -378,8 +425,11 @@ export function printDocument(printWindow: PrintableWindow | undefined = typeof 
   return true;
 }
 
-function addPdfText(pdf: jsPDF, text: string, x: number, y: number, maxWidth: number, lineHeight = 5) {
-  const lines = pdf.splitTextToSize(text, maxWidth) as string[];
+function splitPdfText(pdf: jsPDF, text: string, maxWidth: number) {
+  return pdf.splitTextToSize(text, maxWidth) as string[];
+}
+
+function addPdfLines(pdf: jsPDF, lines: string[], x: number, y: number, lineHeight = 5) {
   for (const line of lines) {
     pdf.text(line, x, y);
     y += lineHeight;
@@ -387,13 +437,29 @@ function addPdfText(pdf: jsPDF, text: string, x: number, y: number, maxWidth: nu
   return y;
 }
 
-export function buildA4PdfBlob(document: A4DocumentPayload) {
+function addPdfText(pdf: jsPDF, text: string, x: number, y: number, maxWidth: number, lineHeight = 5) {
+  return addPdfLines(pdf, splitPdfText(pdf, text, maxWidth), x, y, lineHeight);
+}
+
+function addPdfPageNumbers(pdf: jsPDF, pageWidth: number, pageHeight: number, margin: number) {
+  const pageCount = pdf.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page += 1) {
+    pdf.setPage(page);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(`Page ${page} of ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: "right" });
+  }
+  pdf.setTextColor(15, 23, 42);
+}
+
+export function buildA4PdfDocument(document: A4DocumentPayload) {
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const margin = 12;
   const pageWidth = 210;
   const pageHeight = 297;
   const contentWidth = pageWidth - margin * 2;
-  const bottomLimit = pageHeight - margin;
+  const bottomLimit = pageHeight - margin - 9;
   let y = margin;
 
   const addPageIfNeeded = (needed: number) => {
@@ -480,13 +546,16 @@ export function buildA4PdfBlob(document: A4DocumentPayload) {
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   for (const item of document.items) {
-    addPageIfNeeded(16);
+    const nameLines = splitPdfText(pdf, item.name, 70);
+    const descriptionLines = item.description ? splitPdfText(pdf, item.description, 70) : [];
+    const rowHeight = Math.max(8, nameLines.length * 4.5 + descriptionLines.length * 4) + 5;
+    addPageIfNeeded(rowHeight);
     if (y === margin) drawTableHeader();
     const startY = y;
-    y = addPdfText(pdf, item.name, col.item, y, 70, 4.5);
-    if (item.description) {
+    y = addPdfLines(pdf, nameLines, col.item, y, 4.5);
+    if (descriptionLines.length > 0) {
       pdf.setTextColor(100, 116, 139);
-      y = addPdfText(pdf, item.description, col.item, y, 70, 4);
+      y = addPdfLines(pdf, descriptionLines, col.item, y, 4);
       pdf.setTextColor(15, 23, 42);
     }
     const rowBottom = Math.max(y, startY + 8);
@@ -504,9 +573,15 @@ export function buildA4PdfBlob(document: A4DocumentPayload) {
     y += 8;
   }
 
-  addPageIfNeeded(35);
+  const footer = compact(document.footer || []);
+  const footerLineCount = footer.reduce((sum, line) => sum + splitPdfText(pdf, line, contentWidth).length, 0);
+  const totalsHeight = document.totals.reduce((sum, total) => sum + (total.strong ? 8 : 5), 0) + 8;
+  const footerHeight = footer.length > 0 ? 12 + footerLineCount * 4 : 0;
+  const closingBlockHeight = totalsHeight + footerHeight;
+
+  addPageIfNeeded(closingBlockHeight);
   const totalX = pageWidth - margin - 72;
-  y += 3;
+  y = Math.max(y + 3, bottomLimit - closingBlockHeight);
   pdf.setFontSize(9);
   for (const total of document.totals) {
     if (total.strong) {
@@ -524,9 +599,7 @@ export function buildA4PdfBlob(document: A4DocumentPayload) {
     y += total.strong ? 6 : 5;
   }
 
-  const footer = compact(document.footer || []);
   if (footer.length > 0) {
-    addPageIfNeeded(22);
     y += 5;
     pdf.setDrawColor(203, 213, 225);
     pdf.line(margin, y, pageWidth - margin, y);
@@ -540,6 +613,12 @@ export function buildA4PdfBlob(document: A4DocumentPayload) {
     pdf.setTextColor(15, 23, 42);
   }
 
+  addPdfPageNumbers(pdf, pageWidth, pageHeight, margin);
+  return pdf;
+}
+
+export function buildA4PdfBlob(document: A4DocumentPayload) {
+  const pdf = buildA4PdfDocument(document);
   return pdf.output("blob");
 }
 
@@ -555,34 +634,44 @@ export function printA4Document(document: A4DocumentPayload, printWindow: Printa
   return true;
 }
 
-export async function shareA4PdfDocument(document: A4DocumentPayload, env: ShareEnvironment = {}): Promise<ShareResult | "download"> {
+export async function shareA4PdfDocument(document: A4DocumentPayload, env: ShareEnvironment = {}): Promise<ShareResult> {
   const shareNavigator = env.navigator || (typeof navigator !== "undefined" ? navigator : undefined);
-  const activeDocument = env.document || (typeof window !== "undefined" ? window.document : undefined);
-  const urlApi = env.URL || (typeof URL !== "undefined" ? URL : undefined);
   const FileConstructor = env.FileCtor || (typeof File !== "undefined" ? File : undefined);
+  const capacitorRuntime = env.capacitor || Capacitor;
+  const filesystem = env.filesystem || Filesystem;
+  const nativeShare = env.nativeShare || Share;
   const pdfBlob = buildA4PdfBlob(document);
-  const fileName = `${document.documentNumber.replace(/[^A-Za-z0-9_-]/g, "-")}.pdf`;
+  const fileName = sanitizedPdfFileName(document.documentNumber);
+  const shareText = `${document.title} ${document.documentNumber}`;
+
+  if (
+    capacitorRuntime.isNativePlatform() &&
+    capacitorRuntime.isPluginAvailable("Filesystem") &&
+    capacitorRuntime.isPluginAvailable("Share")
+  ) {
+    const path = `shared-pdfs/${fileName}`;
+    const written = await filesystem.writeFile({
+      path,
+      data: await blobToBase64(pdfBlob),
+      directory: Directory.Cache,
+      recursive: true,
+    });
+    await nativeShare.share({
+      title: document.documentNumber,
+      text: shareText,
+      url: written.uri,
+      dialogTitle: `Share ${document.documentNumber}`,
+    } satisfies NativeSharePayload);
+    return "native";
+  }
 
   if (FileConstructor && shareNavigator?.share) {
     const file = new FileConstructor([pdfBlob], fileName, { type: "application/pdf" });
-    const payload = { title: document.documentNumber, text: `${document.title} ${document.documentNumber}`, files: [file] };
+    const payload = { title: document.documentNumber, text: shareText, files: [file] };
     if (!shareNavigator.canShare || shareNavigator.canShare(payload)) {
       await shareNavigator.share(payload);
       return "native";
     }
-  }
-
-  if (activeDocument && urlApi?.createObjectURL) {
-    const url = urlApi.createObjectURL(pdfBlob);
-    const link = activeDocument.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.rel = "noopener";
-    activeDocument.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => urlApi.revokeObjectURL(url), 1000);
-    return "download";
   }
 
   if (shareNavigator?.clipboard?.writeText) {

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildBillShareText,
   buildA4DocumentHtml,
+  buildA4PdfDocument,
   buildA4PdfBlob,
   buildInvoicePrintText,
   buildDocumentShareText,
@@ -140,7 +141,10 @@ test("A4 document html declares A4 print page and invoice table", () => {
     totals: [{ label: "Grand Total", value: "MVR 286.72", strong: true }],
   });
 
-  assert.match(html, /@page \{ size: A4; margin: 12mm; \}/);
+  assert.match(html, /size: A4;/);
+  assert.match(html, /margin: 12mm;/);
+  assert.match(html, /counter\(page\) " of " counter\(pages\)/);
+  assert.match(html, /thead \{ display: table-header-group; \}/);
   assert.match(html, /TAX INVOICE/);
   assert.match(html, /Rice Sack \(50kg\)/);
   assert.match(html, /Grand Total/);
@@ -160,6 +164,33 @@ test("A4 PDF builder returns an application pdf blob", () => {
 
   assert.equal(blob.type, "application/pdf");
   assert.ok(blob.size > 0);
+});
+
+test("A4 PDF builder paginates long bills and numbers pages", () => {
+  const pdf = buildA4PdfDocument({
+    title: "TAX INVOICE",
+    documentNumber: "BILL-MLE-000033",
+    businessName: "AtollCargo",
+    businessDetails: ["GST: 123"],
+    customerName: "STO Maldives",
+    meta: [],
+    items: Array.from({ length: 70 }, (_, index) => ({
+      name: `Cargo item ${index + 1}`,
+      description: "Mixed cargo line for multi-page A4 test",
+      quantity: 1,
+      unitType: "piece",
+      unitPrice: 10,
+      taxAmount: 0.74,
+      total: 10,
+    })),
+    totals: [{ label: "Grand Total", value: "MVR 700.00", strong: true }],
+    footer: ["Footer belongs at the last page bottom."],
+  });
+
+  assert.ok(pdf.getNumberOfPages() > 1);
+  const output = pdf.output();
+  assert.match(output, /Page 1 of/);
+  assert.match(output, /Footer belongs at the last page bottom/);
 });
 
 test("A4 print writes printable html before opening print dialog", async () => {
@@ -221,6 +252,67 @@ test("A4 PDF share uses native file sharing when available", async () => {
 
   assert.equal(result, "native");
   assert.equal(shared.length, 1);
+});
+
+test("A4 PDF share uses Capacitor native file URI sharing on mobile", async () => {
+  const shared: unknown[] = [];
+  const writes: unknown[] = [];
+  const result = await shareA4PdfDocument({
+    title: "TAX INVOICE",
+    documentNumber: "BILL-MLE-000033",
+    businessName: "AtollCargo",
+    businessDetails: [],
+    customerName: "STO Maldives",
+    meta: [],
+    items: [],
+    totals: [],
+  }, {
+    capacitor: {
+      isNativePlatform: () => true,
+      isPluginAvailable: plugin => plugin === "Filesystem" || plugin === "Share",
+    },
+    filesystem: {
+      writeFile: async payload => {
+        writes.push(payload);
+        return { uri: "file:///cache/shared-pdfs/BILL-MLE-000033.pdf" };
+      },
+    },
+    nativeShare: {
+      share: async payload => { shared.push(payload); },
+    },
+  });
+
+  assert.equal(result, "native");
+  assert.equal(writes.length, 1);
+  assert.deepEqual(shared, [{
+    title: "BILL-MLE-000033",
+    text: "TAX INVOICE BILL-MLE-000033",
+    url: "file:///cache/shared-pdfs/BILL-MLE-000033.pdf",
+    dialogTitle: "Share BILL-MLE-000033",
+  }]);
+});
+
+test("A4 PDF share does not download when file sharing is unavailable", async () => {
+  let copied = "";
+  const result = await shareA4PdfDocument({
+    title: "TAX INVOICE",
+    documentNumber: "BILL-MLE-000033",
+    businessName: "AtollCargo",
+    businessDetails: [],
+    customerName: "STO Maldives",
+    meta: [],
+    items: [],
+    totals: [],
+  }, {
+    navigator: {
+      canShare: () => false,
+      share: async () => { throw new Error("should not share unsupported file"); },
+      clipboard: { writeText: async value => { copied = value; } },
+    },
+  });
+
+  assert.equal(result, "clipboard");
+  assert.match(copied, /BILL-MLE-000033/);
 });
 
 test("printer address parser accepts host with optional port", () => {
