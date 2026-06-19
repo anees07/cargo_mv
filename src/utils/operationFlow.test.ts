@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildOffloadAvailability,
+  buildOffloadCustomerManifests,
   billTypeForOperationType,
   hasActiveBillForOperation,
   hasLockedBillForOperation,
@@ -225,6 +226,53 @@ test("offload availability uses only the newest loaded manifest for the selected
   assert.equal(availability.general_carton?.remaining, 1);
   assert.equal(availability.latest_other_1?.source.lineDescription, "1 noodle case huskuri foshi");
   assert.equal(availability.old_other_1, undefined);
+});
+
+test("offload customer manifests list loaded customers for the selected destination", () => {
+  const manifests = buildOffloadCustomerManifests([], [
+    bill({
+      id: "customer_1_bill",
+      customerId: "customer_1",
+      destinationId: "dest_1",
+      items: [item({ itemId: "rice", quantity: 10, customerId: "customer_1" })],
+    }),
+    bill({
+      id: "customer_2_bill",
+      customerId: "customer_2",
+      destinationId: "dest_1",
+      items: [item({ itemId: "flour", quantity: 4, customerId: "customer_2" })],
+    }),
+    bill({
+      id: "other_destination_bill",
+      customerId: "customer_3",
+      destinationId: "dest_2",
+      items: [item({ itemId: "rice", quantity: 99, destinationId: "dest_2", customerId: "customer_3" })],
+    }),
+  ], "trip_1", "dest_1");
+
+  assert.deepEqual(manifests.map(manifest => manifest.customerId), ["customer_1", "customer_2"]);
+  assert.equal(manifests[0].loadedQuantity, 10);
+  assert.equal(manifests[0].remainingQuantity, 10);
+  assert.equal(manifests[0].billIds[0], "customer_1_bill");
+});
+
+test("offload customer manifests keep fully offloaded loaded customers visible", () => {
+  const manifests = buildOffloadCustomerManifests([
+    operation({
+      id: "op_offloading",
+      operationType: "offloading",
+      items: [item({ itemId: "rice", quantity: 10 })],
+    }),
+  ], [
+    bill({ id: "loading_bill", items: [item({ itemId: "rice", quantity: 10 })] }),
+  ], "trip_1", "dest_1");
+
+  assert.equal(manifests.length, 1);
+  assert.equal(manifests[0].customerId, "customer_1");
+  assert.equal(manifests[0].loadedQuantity, 10);
+  assert.equal(manifests[0].offloadedQuantity, 10);
+  assert.equal(manifests[0].remainingQuantity, 0);
+  assert.deepEqual(manifests[0].availability, {});
 });
 
 test("active operation cart cleanup targets only the selected screen cart", () => {

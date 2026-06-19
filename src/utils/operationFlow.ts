@@ -9,6 +9,18 @@ export interface OffloadAvailability {
   source: OperationItem;
 }
 
+export interface OffloadCustomerManifest {
+  customerId: string;
+  billIds: string[];
+  latestLoadedAt: string;
+  itemCount: number;
+  loadedQuantity: number;
+  offloadedQuantity: number;
+  remainingQuantity: number;
+  availability: Record<string, OffloadAvailability>;
+  walkInDetails?: Bill["walkInDetails"];
+}
+
 export interface PaymentValidationOk {
   ok: true;
   outstanding: number;
@@ -169,6 +181,52 @@ export function buildOffloadAvailability(
     }
     return acc;
   }, {});
+}
+
+export function buildOffloadCustomerManifests(
+  operations: Operation[],
+  bills: Bill[],
+  tripId: string | null | undefined,
+  destinationId: string | null | undefined,
+): OffloadCustomerManifest[] {
+  if (!tripId || !destinationId) return [];
+
+  const loadingBills = bills
+    .filter(bill =>
+      bill.tripId === tripId &&
+      bill.destinationId === destinationId &&
+      bill.billType === "loading_bill" &&
+      bill.billStatus !== "cancelled" &&
+      (bill.items?.length || 0) > 0
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const customerIds = Array.from(new Set(loadingBills.map(bill => bill.customerId)));
+
+  return customerIds
+    .map(customerId => {
+      const customerBills = loadingBills.filter(bill => bill.customerId === customerId);
+      const latestBill = customerBills[0];
+      const loadedQuantity = Number((latestBill.items || []).reduce((sum, item) => sum + item.quantity, 0).toFixed(2));
+      const availability = buildOffloadAvailability(operations, tripId, destinationId, customerId, bills);
+      const remainingQuantity = Number(Object.values(availability).reduce((sum, item) => sum + item.remaining, 0).toFixed(2));
+
+      return {
+        customerId,
+        billIds: customerBills.map(bill => bill.id),
+        latestLoadedAt: latestBill.createdAt,
+        itemCount: latestBill.items?.length || 0,
+        loadedQuantity,
+        offloadedQuantity: Number(Math.max(loadedQuantity - remainingQuantity, 0).toFixed(2)),
+        remainingQuantity,
+        availability,
+        walkInDetails: latestBill.walkInDetails,
+      };
+    })
+    .sort((a, b) =>
+      b.remainingQuantity - a.remainingQuantity ||
+      b.latestLoadedAt.localeCompare(a.latestLoadedAt)
+    );
 }
 
 export function hasActiveBillForOperation(operation: Operation, bills: Bill[]): boolean {

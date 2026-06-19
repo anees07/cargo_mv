@@ -5,10 +5,12 @@ import { MVR } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import {
   buildOffloadAvailability,
+  buildOffloadCustomerManifests,
   hasLockedBillForOperation,
   operationIdsForActiveCart,
   operationIdsForTripCarts,
   type OffloadAvailability,
+  type OffloadCustomerManifest,
 } from "../utils/operationFlow";
 import { calculatePriceFromStandard } from "../data/customerPriceLevels";
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel } from "../data/catalogCategories";
@@ -20,6 +22,8 @@ import {
   emptyWalkInDetails,
   isWalkInCustomer,
   isWalkInDetailsComplete,
+  walkInDisplayName,
+  walkInPhone,
 } from "../utils/walkInDetails";
 import type { CatalogItem, Customer, WalkInDetails } from "../types";
 
@@ -45,6 +49,7 @@ export function OperationScreen() {
   const [showOpTypePicker, setShowOpTypePicker] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [walkInByDestination, setWalkInByDestination] = useState<Record<string, WalkInDetails>>({});
+  const [expandedOffloadCustomers, setExpandedOffloadCustomers] = useState<Record<string, boolean>>({});
   const entryCartClearedForTripRef = useRef<string | null>(null);
 
   const dest = destinations.find(d => d.id === selectedDestId);
@@ -90,6 +95,45 @@ export function OperationScreen() {
       .filter((row): row is { item: CatalogItem; availability: OffloadAvailability } => Boolean(row.item)),
     [catalogItems, offloadAvailability]
   );
+  const offloadCustomerManifests = useMemo(
+    () => buildOffloadCustomerManifests(operations, bills, activeTripId, selectedDestId),
+    [operations, bills, activeTripId, selectedDestId]
+  );
+  const offloadCustomerGroups = useMemo(
+    () => offloadCustomerManifests.map(manifest => {
+      const manifestCustomer = customers.find(item => item.id === manifest.customerId);
+      const rows = Object.values(manifest.availability)
+        .map(availability => ({
+          item: catalogItems.find(item => item.id === availability.source.itemId),
+          availability,
+        }))
+        .filter((row): row is { item: CatalogItem; availability: OffloadAvailability } => Boolean(row.item));
+
+      return {
+        ...manifest,
+        customer: manifestCustomer,
+        customerName: walkInDisplayName(manifestCustomer, manifest.walkInDetails),
+        customerPhone: walkInPhone(manifestCustomer, manifest.walkInDetails),
+        rows,
+      };
+    }),
+    [catalogItems, customers, offloadCustomerManifests]
+  );
+  const offloadGroupSignature = offloadCustomerGroups.map(group => group.customerId).join("|");
+  const offloadDestinationTotalTaxInclusive = useMemo(
+    () => Number(operations
+      .filter(operation =>
+        operation.tripId === activeTripId &&
+        operation.operationType === "offloading" &&
+        operation.destinationId === selectedDestId
+      )
+      .reduce((sum, operation) => sum + operation.totalTaxInclusive, 0)
+      .toFixed(2)),
+    [operations, activeTripId, selectedDestId]
+  );
+  const displayedOperationTotal = opType === "offloading"
+    ? offloadDestinationTotalTaxInclusive
+    : currentTotalTaxInclusive;
   const filteredCustomers = useMemo(
     () => filterCustomersForPicker(customers, selectedDestId, customerSearch),
     [customers, selectedDestId, customerSearch]
@@ -107,6 +151,19 @@ export function OperationScreen() {
       setSelectedCustomerId(null);
     }
   }, [activeTripId, clearOperationCart, entryCartIds]);
+
+  useEffect(() => {
+    if (opType !== "offloading") return;
+    setExpandedOffloadCustomers(current => {
+      const visibleCustomerIds = new Set(offloadCustomerGroups.map(group => group.customerId));
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([customerId]) => visibleCustomerIds.has(customerId))
+      );
+      if (Object.values(next).some(Boolean)) return next;
+      const firstOpen = offloadCustomerGroups.find(group => group.remainingQuantity > 0) || offloadCustomerGroups[0];
+      return firstOpen ? { ...next, [firstOpen.customerId]: true } : next;
+    });
+  }, [opType, selectedDestId, offloadGroupSignature, offloadCustomerGroups]);
 
   const getItemPrice = (item: CatalogItem, cust?: Customer) => {
     if (opType === "offloading") {
@@ -167,14 +224,25 @@ export function OperationScreen() {
     });
   };
 
-  const saveOffloadTally = (entries: Array<{ item: CatalogItem; quantity: number; availability: OffloadAvailability }>) => {
-    if (!activeTrip || !selectedDestId || !selectedCustomerId || entries.length === 0) return;
+  const saveOffloadTally = (
+    customerId: string,
+    entries: Array<{ item: CatalogItem; quantity: number; availability: OffloadAvailability }>,
+    walkInDetails?: WalkInDetails,
+  ) => {
+    if (!activeTrip || !selectedDestId || entries.length === 0) return;
+    const offloadCustomer = customers.find(item => item.id === customerId);
+    const existingOperation = operations.find(operation =>
+      operation.tripId === activeTrip.id &&
+      operation.operationType === "offloading" &&
+      operation.destinationId === selectedDestId &&
+      operation.customerId === customerId
+    );
     addOperationItems(entries.map(entry => ({
         tripId: activeTrip.id,
-        operationId: currentOp?.id || "pending",
+        operationId: existingOperation?.id || "pending",
         operationType: "offloading",
         destinationId: selectedDestId,
-        customerId: selectedCustomerId,
+        customerId,
         itemId: entry.item.id,
         itemNameSnapshot: entry.availability.source.itemNameSnapshot || entry.item.itemName,
         unitType: entry.availability.source.unitType || entry.item.unitType,
@@ -184,7 +252,7 @@ export function OperationScreen() {
         lineDescription: entry.availability.source.lineDescription,
         sourceOperationItemId: entry.availability.source.id,
         originalPrice: entry.availability.source.unitPriceTaxInclusive,
-        walkInDetails: selectedCustomerIsWalkIn ? cleanWalkInDetails(selectedWalkInDetails) : undefined,
+        walkInDetails: isWalkInCustomer(offloadCustomer) && walkInDetails ? cleanWalkInDetails(walkInDetails) : undefined,
       })));
     toast({
       title: "Offload tally saved",
@@ -301,27 +369,29 @@ export function OperationScreen() {
         </Section>
 
         {/* Customer picker */}
-        <Section title="Customer" className="mt-5" action={
-          <button onClick={() => setShowAddCustomer(true)} className="text-xs font-semibold text-ocean-700">+ Add new</button>
-        }>
-          <button
-            onClick={() => setShowCustomerPicker(true)}
-            className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white p-3 text-left hover:bg-slate-50"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                <Icon name="users" className="h-5 w-5" />
+        {opType !== "offloading" && (
+          <Section title="Customer" className="mt-5" action={
+            <button onClick={() => setShowAddCustomer(true)} className="text-xs font-semibold text-ocean-700">+ Add new</button>
+          }>
+            <button
+              onClick={() => setShowCustomerPicker(true)}
+              className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white p-3 text-left hover:bg-slate-50"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                  <Icon name="users" className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{customer?.displayName || "Select customer"}</p>
+                  <p className="text-xs text-slate-500 capitalize">{customer ? `${customer.customerType.replace("_", " ")} • ${customer.defaultPriceLevelId}` : "Choose customer"}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{customer?.displayName || "Select customer"}</p>
-                <p className="text-xs text-slate-500 capitalize">{customer ? `${customer.customerType.replace("_", " ")} • ${customer.defaultPriceLevelId}` : "Choose customer"}</p>
-              </div>
-            </div>
-            <Icon name="chevron_down" className="h-5 w-5 text-slate-400" />
-          </button>
-        </Section>
+              <Icon name="chevron_down" className="h-5 w-5 text-slate-400" />
+            </button>
+          </Section>
+        )}
 
-        {selectedCustomerIsWalkIn && (
+        {opType !== "offloading" && selectedCustomerIsWalkIn && (
           <Section title="Walk-in customer details" className="mt-5">
             <Card className="p-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -414,24 +484,52 @@ export function OperationScreen() {
           </Section>
         )}
 
-        {/* Add item button */}
-        {opType === "offloading" && selectedCustomerId && selectedDestId && offloadRows.length === 0 && (
-          <Card className="mt-5 border-amber-200 bg-amber-50 p-3">
-            <div className="flex gap-2">
-              <Icon name="warning" className="mt-0.5 h-4 w-4 text-amber-700" />
-              <div>
-                <p className="text-sm font-semibold text-amber-900">No cargo available to offload</p>
-                <p className="mt-0.5 text-xs text-amber-800">Select a customer and destination with loaded manifest items, or record loading first.</p>
+        {/* Offloading customer manifests */}
+        {opType === "offloading" && (
+          <Section title="Loaded customers" className="mt-5">
+            {!selectedDestId && (
+              <Card className="border-ocean-200 bg-ocean-50 p-3">
+                <div className="flex gap-2">
+                  <Icon name="island" className="mt-0.5 h-4 w-4 text-ocean-700" />
+                  <div>
+                    <p className="text-sm font-semibold text-ocean-950">Select destination first</p>
+                    <p className="mt-0.5 text-xs text-ocean-900">Loaded customers will appear here from the active trip bills.</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+            {selectedDestId && offloadCustomerGroups.length === 0 && (
+              <Card className="border-amber-200 bg-amber-50 p-3">
+                <div className="flex gap-2">
+                  <Icon name="warning" className="mt-0.5 h-4 w-4 text-amber-700" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900">No loaded customers for this destination</p>
+                    <p className="mt-0.5 text-xs text-amber-800">Generate loading bills for this active trip and destination before offloading.</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+            {selectedDestId && offloadCustomerGroups.length > 0 && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <OffloadMetric label="customers" value={String(offloadCustomerGroups.length)} />
+                  <OffloadMetric label="loaded" value={String(Number(offloadCustomerGroups.reduce((sum, group) => sum + group.loadedQuantity, 0).toFixed(2)))} />
+                  <OffloadMetric label="remaining" value={String(Number(offloadCustomerGroups.reduce((sum, group) => sum + group.remainingQuantity, 0).toFixed(2)))} tone="ocean" />
+                </div>
+                {offloadCustomerGroups.map(group => (
+                  <OffloadCustomerAccordion
+                    key={group.customerId}
+                    group={group}
+                    expanded={Boolean(expandedOffloadCustomers[group.customerId])}
+                    onToggle={() => setExpandedOffloadCustomers(current => ({
+                      ...current,
+                      [group.customerId]: !current[group.customerId],
+                    }))}
+                    onSave={(entries) => saveOffloadTally(group.customerId, entries, group.walkInDetails)}
+                  />
+                ))}
               </div>
-            </div>
-          </Card>
-        )}
-        {opType === "offloading" && selectedCustomerId && selectedDestId && offloadRows.length > 0 && (
-          <Section title="Loaded cargo available to offload" className="mt-5">
-            <OffloadTally
-              rows={offloadRows}
-              onSave={saveOffloadTally}
-            />
+            )}
           </Section>
         )}
         {opType !== "offloading" && (
@@ -454,7 +552,7 @@ export function OperationScreen() {
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-xs uppercase tracking-wider text-slate-500">Operation total</p>
-            <p className="text-lg font-bold text-slate-900">{MVR(currentTotalTaxInclusive)}</p>
+            <p className="text-lg font-bold text-slate-900">{MVR(displayedOperationTotal)}</p>
           </div>
           {opType === "loading" && hasPermission(currentUser.role, "create_bill") && (
             <Btn
@@ -500,11 +598,13 @@ export function OperationScreen() {
               {selectedDestId === d.id && <Icon name="check" className="h-4 w-4 text-emerald-600" />}
             </button>
           ))}
-          <div className="border-t border-slate-200 p-3">
-            <Btn variant="outline" fullWidth icon="plus" onClick={() => { setShowOpTypePicker(false); setShowAddDest(true); }}>
-              Add new destination
-            </Btn>
-          </div>
+          {opType !== "offloading" && (
+            <div className="border-t border-slate-200 p-3">
+              <Btn variant="outline" fullWidth icon="plus" onClick={() => { setShowOpTypePicker(false); setShowAddDest(true); }}>
+                Add new destination
+              </Btn>
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -599,12 +699,102 @@ export function OperationScreen() {
   );
 }
 
+type OffloadCustomerGroup = OffloadCustomerManifest & {
+  customer?: Customer;
+  customerName: string;
+  customerPhone: string;
+  rows: Array<{ item: CatalogItem; availability: OffloadAvailability }>;
+};
+
+function OffloadMetric({ label, value, tone = "slate" }: { label: string; value: string; tone?: "slate" | "ocean" }) {
+  return (
+    <div className={`rounded-xl border px-2.5 py-2 ${tone === "ocean" ? "border-ocean-200 bg-ocean-50" : "border-slate-200 bg-white"}`}>
+      <p className={`text-sm font-bold ${tone === "ocean" ? "text-ocean-900" : "text-slate-900"}`}>{value}</p>
+      <p className="mt-0.5 truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+function OffloadCustomerAccordion({
+  group,
+  expanded,
+  onToggle,
+  onSave,
+}: {
+  group: OffloadCustomerGroup;
+  expanded: boolean;
+  onToggle: () => void;
+  onSave: (entries: Array<{ item: CatalogItem; quantity: number; availability: OffloadAvailability }>) => void;
+}) {
+  const complete = group.remainingQuantity <= 0;
+  const initials = group.customerName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "CU";
+
+  return (
+    <Card className={`overflow-hidden p-0 ${complete ? "border-emerald-200" : "border-slate-200"}`}>
+      <button type="button" onClick={onToggle} className="w-full p-3 text-left active:bg-slate-50">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${complete ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-950">{group.customerName}</p>
+                <p className="mt-0.5 truncate text-xs text-slate-500">
+                  {group.customer?.customerType.replace("_", " ") || "Loaded customer"} • {group.customerPhone}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${complete ? "bg-emerald-100 text-emerald-800" : "bg-ocean-100 text-ocean-800"}`}>
+                  {complete ? "Complete" : `${group.remainingQuantity} left`}
+                </span>
+                <Icon name={expanded ? "chevron_down" : "chevron_right"} className="h-4 w-4 text-slate-400" />
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <OffloadMetric label="loaded" value={String(group.loadedQuantity)} />
+              <OffloadMetric label="offloaded" value={String(group.offloadedQuantity)} />
+              <OffloadMetric label="remaining" value={String(group.remainingQuantity)} tone="ocean" />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {group.itemCount} bill item{group.itemCount !== 1 ? "s" : ""} • {group.billIds.length} loading bill{group.billIds.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+        </div>
+      </button>
+      {expanded && (
+        group.rows.length > 0 ? (
+          <OffloadTally rows={group.rows} onSave={onSave} framed={false} />
+        ) : (
+          <div className="border-t border-slate-200 bg-emerald-50 p-3">
+            <div className="flex gap-2">
+              <Icon name="check_circle" className="mt-0.5 h-4 w-4 text-emerald-700" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-950">All loaded cargo offloaded</p>
+                <p className="mt-0.5 text-xs text-emerald-800">No remaining tally is available for this customer.</p>
+              </div>
+            </div>
+          </div>
+        )
+      )}
+    </Card>
+  );
+}
+
 function OffloadTally({
   rows,
   onSave,
+  framed = true,
 }: {
   rows: Array<{ item: CatalogItem; availability: OffloadAvailability }>;
   onSave: (entries: Array<{ item: CatalogItem; quantity: number; availability: OffloadAvailability }>) => void;
+  framed?: boolean;
 }) {
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const entries = rows
@@ -628,7 +818,7 @@ function OffloadTally({
   };
 
   return (
-    <Card className="overflow-hidden p-0">
+    <div className={framed ? "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" : "overflow-hidden border-t border-slate-200 bg-white"}>
       <div className="divide-y divide-slate-100">
         {rows.map(({ item, availability }) => {
           const value = quantities[availability.key] || "";
@@ -695,7 +885,7 @@ function OffloadTally({
           Save offload tally
         </Btn>
       </div>
-    </Card>
+    </div>
   );
 }
 
