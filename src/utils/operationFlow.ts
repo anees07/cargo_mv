@@ -49,6 +49,12 @@ function sameBillSelection(bill: Bill, tripId: string | null | undefined, destin
     bill.billStatus !== "cancelled";
 }
 
+function isLoadedCargoBill(bill: Bill): boolean {
+  return bill.billType !== "offloading_bill" &&
+    bill.billStatus !== "cancelled" &&
+    (bill.items?.length || 0) > 0;
+}
+
 export function billTypeForOperationType(operationType: OperationType): Bill["billType"] {
   return operationType === "offloading" ? "offloading_bill" : "loading_bill";
 }
@@ -147,7 +153,7 @@ export function buildOffloadAvailability(
   for (const bill of bills) {
     if (!sameBillSelection(bill, tripId, destinationId, customerId)) continue;
     const items = bill.items || [];
-    if (bill.billType === "loading_bill") {
+    if (isLoadedCargoBill(bill)) {
       loadedSources.push({ createdAt: bill.createdAt, items });
     }
     if (bill.offloadedItems?.length) {
@@ -191,21 +197,19 @@ export function buildOffloadCustomerManifests(
 ): OffloadCustomerManifest[] {
   if (!tripId || !destinationId) return [];
 
-  const loadingBills = bills
+  const loadedBills = bills
     .filter(bill =>
       bill.tripId === tripId &&
       bill.destinationId === destinationId &&
-      bill.billType === "loading_bill" &&
-      bill.billStatus !== "cancelled" &&
-      (bill.items?.length || 0) > 0
+      isLoadedCargoBill(bill)
     )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  const customerIds = Array.from(new Set(loadingBills.map(bill => bill.customerId)));
+  const customerIds = Array.from(new Set(loadedBills.map(bill => bill.customerId)));
 
   return customerIds
     .map(customerId => {
-      const customerBills = loadingBills.filter(bill => bill.customerId === customerId);
+      const customerBills = loadedBills.filter(bill => bill.customerId === customerId);
       const latestBill = customerBills[0];
       const loadedQuantity = Number((latestBill.items || []).reduce((sum, item) => sum + item.quantity, 0).toFixed(2));
       const availability = buildOffloadAvailability(operations, tripId, destinationId, customerId, bills);

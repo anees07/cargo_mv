@@ -123,6 +123,22 @@ test("offload availability includes loading bill items after the loading operati
   assert.equal(availability.rice?.remaining, 10);
 });
 
+test("offload availability includes cargo bill types for the active trip", () => {
+  const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
+    bill({ billType: "credit", items: [item({ itemId: "rice", quantity: 10 })] }),
+  ]);
+
+  assert.equal(availability.rice?.remaining, 10);
+});
+
+test("offload availability does not treat offloading bills as loaded cargo", () => {
+  const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
+    bill({ billType: "offloading_bill", items: [item({ itemId: "rice", quantity: 4 })] }),
+  ]);
+
+  assert.deepEqual(availability, {});
+});
+
 test("offload availability subtracts offloading bill items after offloading is billed", () => {
   const availability = buildOffloadAvailability([], "trip_1", "dest_1", "customer_1", [
     bill({ billType: "loading_bill", items: [item({ itemId: "rice", quantity: 10 })] }),
@@ -232,12 +248,14 @@ test("offload customer manifests list loaded customers for the selected destinat
   const manifests = buildOffloadCustomerManifests([], [
     bill({
       id: "customer_1_bill",
+      billType: "credit",
       customerId: "customer_1",
       destinationId: "dest_1",
       items: [item({ itemId: "rice", quantity: 10, customerId: "customer_1" })],
     }),
     bill({
       id: "customer_2_bill",
+      billType: "instant_cash",
       customerId: "customer_2",
       destinationId: "dest_1",
       items: [item({ itemId: "flour", quantity: 4, customerId: "customer_2" })],
