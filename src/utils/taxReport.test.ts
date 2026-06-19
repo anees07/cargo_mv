@@ -127,10 +127,30 @@ test("buildQuarterTaxBillRows includes cancelled bills and sorts by trip name th
       subtotalAmount: row.subtotalAmount,
       taxAmount: row.taxAmount,
       totalAmount: row.totalAmount,
+      taxableSubtotalAmount: row.taxableSubtotalAmount,
+      taxableTaxAmount: row.taxableTaxAmount,
+      taxableTotalAmount: row.taxableTotalAmount,
+      isCancelled: row.isCancelled,
     })),
     [
-      { subtotalAmount: 92.59, taxAmount: 7.41, totalAmount: 100 },
-      { subtotalAmount: 185.19, taxAmount: 14.81, totalAmount: 200 },
+      {
+        subtotalAmount: 92.59,
+        taxAmount: 7.41,
+        totalAmount: 100,
+        taxableSubtotalAmount: 92.59,
+        taxableTaxAmount: 7.41,
+        taxableTotalAmount: 100,
+        isCancelled: false,
+      },
+      {
+        subtotalAmount: 185.19,
+        taxAmount: 14.81,
+        totalAmount: 200,
+        taxableSubtotalAmount: 0,
+        taxableTaxAmount: 0,
+        taxableTotalAmount: 0,
+        isCancelled: true,
+      },
     ],
   );
 });

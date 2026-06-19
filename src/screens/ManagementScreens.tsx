@@ -287,9 +287,10 @@ function GstReportingSuite() {
   const [selectedQuarter, setSelectedQuarter] = useState(quarterOptions[0].id);
   const period = quarterPeriod(selectedQuarter);
   const rows = buildQuarterTaxBillRows(bills, trips, customers, period);
-  const totalSubtotal = rows.reduce((sum, row) => sum + row.subtotalAmount, 0);
-  const totalTax = rows.reduce((sum, row) => sum + row.taxAmount, 0);
-  const totalAmount = rows.reduce((sum, row) => sum + row.totalAmount, 0);
+  const taxableRows = rows.filter(row => !row.isCancelled);
+  const totalSubtotal = rows.reduce((sum, row) => sum + row.taxableSubtotalAmount, 0);
+  const totalTax = rows.reduce((sum, row) => sum + row.taxableTaxAmount, 0);
+  const totalAmount = rows.reduce((sum, row) => sum + row.taxableTotalAmount, 0);
 
   return (
     <div className="space-y-4 print:bg-white">
@@ -327,6 +328,7 @@ function GstReportingSuite() {
           <div>
             <p className="text-xs uppercase tracking-wider text-slate-500">Bills listed</p>
             <p className="mt-1 text-xl font-bold text-slate-950">{rows.length}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{taxableRows.length} taxable</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-wider text-slate-500">Subtotal</p>
@@ -359,16 +361,22 @@ function GstReportingSuite() {
             </thead>
             <tbody>
               {rows.map(row => (
-                <tr key={row.billId} className="border-b border-slate-100 last:border-0">
-                  <td className="px-3 py-2 font-mono text-slate-900">{row.tripNumber}</td>
-                  <td className="px-3 py-2 text-slate-700">{row.tripName}</td>
-                  <td className="px-3 py-2 font-mono font-semibold text-slate-900">{row.billNumber}</td>
-                  <td className="px-3 py-2 text-slate-700">{row.billName}</td>
-                  <td className="px-3 py-2 text-slate-700">{formatDate(row.billDate)}</td>
-                  <td className="px-3 py-2 capitalize text-slate-700">{row.billStatus.replace("_", " ")}</td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-900">{MVR(row.subtotalAmount)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-900">{MVR(row.taxAmount)}</td>
-                  <td className="px-3 py-2 text-right font-mono font-semibold text-slate-900">{MVR(row.totalAmount)}</td>
+                <tr key={row.billId} className={`border-b border-slate-100 last:border-0 ${row.isCancelled ? "bg-rose-50/50 text-slate-400" : ""}`}>
+                  <td className={`px-3 py-2 font-mono ${row.isCancelled ? "text-slate-500" : "text-slate-900"}`}>{row.tripNumber}</td>
+                  <td className={`px-3 py-2 ${row.isCancelled ? "text-slate-500" : "text-slate-700"}`}>{row.tripName}</td>
+                  <td className={`px-3 py-2 font-mono font-semibold ${row.isCancelled ? "text-slate-500" : "text-slate-900"}`}>{row.billNumber}</td>
+                  <td className={`px-3 py-2 ${row.isCancelled ? "text-slate-500" : "text-slate-700"}`}>{row.billName}</td>
+                  <td className={`px-3 py-2 ${row.isCancelled ? "text-slate-500" : "text-slate-700"}`}>{formatDate(row.billDate)}</td>
+                  <td className="px-3 py-2 capitalize">
+                    {row.isCancelled ? (
+                      <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rose-700">Cancelled</span>
+                    ) : (
+                      <span className="text-slate-700">{row.billStatus.replace("_", " ")}</span>
+                    )}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-mono ${row.isCancelled ? "text-slate-400 line-through" : "text-slate-900"}`}>{MVR(row.subtotalAmount)}</td>
+                  <td className={`px-3 py-2 text-right font-mono ${row.isCancelled ? "text-slate-400 line-through" : "text-slate-900"}`}>{MVR(row.taxAmount)}</td>
+                  <td className={`px-3 py-2 text-right font-mono font-semibold ${row.isCancelled ? "text-slate-400 line-through" : "text-slate-900"}`}>{MVR(row.totalAmount)}</td>
                 </tr>
               ))}
               {rows.length === 0 && (

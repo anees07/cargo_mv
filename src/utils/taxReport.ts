@@ -16,6 +16,10 @@ export interface TaxBillRow {
   subtotalAmount: number;
   taxAmount: number;
   totalAmount: number;
+  taxableSubtotalAmount: number;
+  taxableTaxAmount: number;
+  taxableTotalAmount: number;
+  isCancelled: boolean;
   billDate: string;
   tripNumber: string;
   tripName: string;
@@ -68,14 +72,20 @@ export function buildQuarterTaxBillRows(
     .map(bill => {
       const trip = trips.find(item => item.id === bill.tripId);
       const customer = customers.find(item => item.id === bill.customerId);
+      const isCancelled = bill.billStatus === "cancelled";
+      const subtotalAmount = Number((bill.grandTotal - bill.taxTotal).toFixed(2));
       return {
         billId: bill.id,
         billNumber: bill.billNumber,
         billName: customer?.displayName || bill.billType.replace(/_/g, " "),
         billStatus: bill.billStatus,
-        subtotalAmount: Number((bill.grandTotal - bill.taxTotal).toFixed(2)),
+        subtotalAmount,
         taxAmount: bill.taxTotal,
         totalAmount: bill.grandTotal,
+        taxableSubtotalAmount: isCancelled ? 0 : subtotalAmount,
+        taxableTaxAmount: isCancelled ? 0 : bill.taxTotal,
+        taxableTotalAmount: isCancelled ? 0 : bill.grandTotal,
+        isCancelled,
         billDate: bill.createdAt,
         tripNumber: trip?.tripNumber || "No trip",
         tripName: trip?.vesselName || "Unassigned trip",
