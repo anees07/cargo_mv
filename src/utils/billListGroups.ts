@@ -1,6 +1,6 @@
 import type { Bill, Destination } from "../types.js";
 
-export type BillListGroupId = "current" | "unpaid" | "partial" | "paid";
+export type BillListGroupId = "all" | "current" | "unpaid" | "partial" | "paid";
 
 export interface BillListGroup {
   id: BillListGroupId;
@@ -17,6 +17,12 @@ export interface BillDestinationGroup {
 }
 
 const groupDefinitions: Array<Omit<BillListGroup, "bills"> & { matches: (bill: Bill) => boolean }> = [
+  {
+    id: "all",
+    title: "All bills",
+    description: "Every active bill",
+    matches: () => true,
+  },
   {
     id: "current",
     title: "Current bills",

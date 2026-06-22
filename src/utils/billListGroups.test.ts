@@ -35,7 +35,7 @@ const destination = (overrides: Partial<Destination>): Destination => ({
   ...overrides,
 });
 
-test("bill list groups separate current, unpaid, partial, and paid bills", () => {
+test("bill list groups include all bills before status groups", () => {
   const groups = groupBillsForList([
     bill({ id: "paid", billStatus: "paid", paymentStatus: "paid" }),
     bill({ id: "draft", billStatus: "draft", paymentStatus: "unpaid" }),
@@ -44,6 +44,7 @@ test("bill list groups separate current, unpaid, partial, and paid bills", () =>
   ]);
 
   assert.deepEqual(groups.map(group => ({ id: group.id, bills: group.bills.map(item => item.id) })), [
+    { id: "all", bills: ["paid", "draft", "partial", "unpaid"] },
     { id: "current", bills: ["draft"] },
     { id: "unpaid", bills: ["unpaid"] },
     { id: "partial", bills: ["partial"] },
@@ -56,7 +57,7 @@ test("bill list groups hide empty sections", () => {
     bill({ id: "paid", billStatus: "paid", paymentStatus: "paid" }),
   ]);
 
-  assert.deepEqual(groups.map(group => group.id), ["paid"]);
+  assert.deepEqual(groups.map(group => group.id), ["all", "paid"]);
 });
 
 test("bill list category filter returns only one selected category", () => {
@@ -67,6 +68,7 @@ test("bill list category filter returns only one selected category", () => {
     bill({ id: "paid", billStatus: "paid", paymentStatus: "paid" }),
   ];
 
+  assert.deepEqual(filterBillsForListCategory(bills, "all").map(item => item.id), ["draft", "unpaid", "partial", "paid"]);
   assert.deepEqual(filterBillsForListCategory(bills, "current").map(item => item.id), ["draft"]);
   assert.deepEqual(filterBillsForListCategory(bills, "unpaid").map(item => item.id), ["unpaid"]);
   assert.deepEqual(filterBillsForListCategory(bills, "partial").map(item => item.id), ["partial"]);

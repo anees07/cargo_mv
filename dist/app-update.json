@@ -1,10 +1,10 @@
 {
   "latest": {
-    "versionName": "1.0.24",
-    "buildNumber": 25,
-    "releasedAt": "2026-06-19T14:55:42.214Z",
+    "versionName": "1.0.25",
+    "buildNumber": 26,
+    "releasedAt": "2026-06-22T10:04:28.943Z",
     "notes": [
-      "Release 1.0.24 build 25",
+      "Release 1.0.25 build 26",
       "Automatic APK update delivery for installed Android apps"
     ]
   },
@@ -18,7 +18,7 @@
     "android": {
       "enabled": true,
       "requiresNativeUpdate": true,
-      "apkUrl": "https://github.com/anees07/cargo_mv/releases/download/v1.0.24/maldives-cargo-1.0.24-build25.apk"
+      "apkUrl": "https://github.com/anees07/cargo_mv/releases/download/v1.0.25/maldives-cargo-1.0.25-build26.apk"
     }
   }
 }

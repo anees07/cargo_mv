@@ -15,7 +15,7 @@ import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "..
 // ============================================================================
 export function BillingScreen() {
   const { bills, customers, destinations, trips, operations, navigate, selectBill, createBillFromOperation, updateDraftBill, cancelBill, finalizeBill, back, currentUser } = useApp();
-  const [filter, setFilter] = useState<BillListGroupId>("current");
+  const [filter, setFilter] = useState<BillListGroupId>("all");
   const [search, setSearch] = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
@@ -48,6 +48,7 @@ export function BillingScreen() {
     outstanding: filtered.reduce((s, b) => s + (b.grandTotal - b.paidAmount), 0),
   };
   const billingTabs: Array<{ id: BillListGroupId; label: string }> = [
+    { id: "all", label: "All" },
     { id: "current", label: "Current" },
     { id: "unpaid", label: "Unpaid" },
     { id: "partial", label: "Partial" },
