@@ -95,15 +95,16 @@ function ConnectivityBanner() {
 // ============================================================================
 // Master Responsive App Shell
 // ============================================================================
-function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
+function ResponsiveAppShell() {
   const { screen, navigate, businessProfile, currentUser } = useApp();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const routedScreen = <ScreenRouter onMenuOpen={() => setDrawerOpen(true)} />;
 
   // Exclude splash, login, auth screens from having the app shell chrome
   const isAuthScreen = ["splash", "welcome", "login", "register", "business_setup", "select_profile"].includes(screen);
   
   if (isAuthScreen) {
-    return <div className="flex h-[var(--app-height)] w-full items-center justify-center bg-slate-50 safe-area">{children}</div>;
+    return <div className="flex h-[var(--app-height)] w-full items-center justify-center bg-slate-50 safe-area">{routedScreen}</div>;
   }
 
   const navItems = [
@@ -187,7 +188,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
         
       {/* Page Content */}
       <div className="relative flex-1 overflow-hidden safe-x">
-        {children}
+        {routedScreen}
       </div>
 
       {/* Mobile Bottom Tab (Hidden on Desktop) */}
@@ -201,7 +202,7 @@ function ResponsiveAppShell({ children }: { children: React.ReactNode }) {
 // ============================================================================
 // Screen Router
 // ============================================================================
-function ScreenRouter() {
+function ScreenRouter({ onMenuOpen }: { onMenuOpen: () => void }) {
   const { screen, isAuthed, toasts, dismissToast } = useApp();
 
   if (screen === "splash") return <SplashScreen />;
@@ -215,7 +216,7 @@ function ScreenRouter() {
   if (screen === "select_profile") return <SelectProfileScreen />;
 
   const screenMap: Record<string, ReactElement> = {
-    dashboard: <DashboardScreen onMenuOpen={() => {}} />,
+    dashboard: <DashboardScreen onMenuOpen={onMenuOpen} />,
     trips: <TripsScreen />,
     trip_detail: <TripDetailScreen />,
     create_trip: <CreateTripScreen />,
@@ -243,7 +244,7 @@ function ScreenRouter() {
   return (
     <div className="relative h-full w-full min-w-0 bg-slate-50">
       <div className="absolute inset-0 flex flex-col">
-        {screenMap[screen] || <DashboardScreen onMenuOpen={() => {}} />}
+        {screenMap[screen] || <DashboardScreen onMenuOpen={onMenuOpen} />}
       </div>
 
       <Toast toasts={toasts} onDismiss={dismissToast} />
@@ -257,9 +258,7 @@ function ScreenRouter() {
 export default function App() {
   return (
     <AppProvider>
-      <ResponsiveAppShell>
-        <ScreenRouter />
-      </ResponsiveAppShell>
+      <ResponsiveAppShell />
       <AppUpdatePrompt />
     </AppProvider>
   );
