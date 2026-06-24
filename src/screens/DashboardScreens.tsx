@@ -8,6 +8,8 @@ import { isUnfinishedTrip } from "../utils/trips";
 import { describeCompleteTripRoute } from "../utils/tripRoute";
 import { getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
 import { unreadNotificationCountForUser } from "../utils/notifications";
+import { buildTripEndBillSummary, buildTripEndBillSummaryA4Document, type TripEndBillSummary } from "../utils/tripEndReport";
+import { printA4Document, shareA4PdfDocument } from "../utils/documentActions";
 
 // ============================================================================
 // Dashboard
@@ -270,17 +272,46 @@ export function TripsScreen() {
 }
 
 export function TripDetailScreen() {
-  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, customers, bills, operations, currentUser } = useApp();
+  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, customers, bills, operations, currentUser, destinations, businessProfile, toast } = useApp();
   const trip = trips.find(t => t.id === (selectedTripId || activeTripId));
   const [showEditStatus, setShowEditStatus] = useState(false);
   const [showEditSpecs, setShowEditSpecs] = useState(false);
+  const [sharingReport, setSharingReport] = useState(false);
 
   if (!trip) return null;
   const tripOps = operations.filter(o => o.tripId === trip.id);
   const tripBills = bills.filter(b => b.tripId === trip.id);
+  const tripEndSummary = buildTripEndBillSummary(trip, tripBills, destinations);
   const tripRevenue = tripBills.reduce((s, b) => s + b.grandTotal, 0);
   const tripItems = tripOps.reduce((s, o) => s + o.items.length, 0);
   const canOperate = ["open", "loading", "sailing", "offloading"].includes(trip.status);
+  const tripEndReportDocument = () => buildTripEndBillSummaryA4Document({
+    trip,
+    summary: tripEndSummary,
+    businessProfile,
+    customers,
+  });
+  const handlePrintTripEndReport = () => {
+    if (!printA4Document(tripEndReportDocument())) {
+      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
+    }
+  };
+  const handleShareTripEndReport = async () => {
+    try {
+      setSharingReport(true);
+      const result = await shareA4PdfDocument(tripEndReportDocument());
+      if (result === "clipboard") {
+        toast({ title: "PDF sharing unavailable", body: "A text copy was copied because this device cannot share PDF files.", variant: "warning" });
+      } else if (result === "unsupported") {
+        toast({ title: "Share unavailable", body: "This device cannot share PDF files. Use Print on web, or update the mobile app.", variant: "error" });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast({ title: "Share failed", body: "Try again from this device.", variant: "error" });
+    } finally {
+      setSharingReport(false);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -373,6 +404,12 @@ export function TripDetailScreen() {
               <p className="text-xs font-semibold text-amber-900">Trip ended</p>
               <p className="text-xs text-amber-700 mt-0.5">New loading/offloading and bills are blocked. Admin/Owner can still adjust existing bills — every change is audit-logged.</p>
             </Card>
+            <TripEndBillSummaryCard
+              summary={tripEndSummary}
+              onPrint={handlePrintTripEndReport}
+              onShare={handleShareTripEndReport}
+              sharing={sharingReport}
+            />
             <Btn variant="secondary" size="lg" fullWidth icon="save" onClick={() => {
               if (confirm("Close this trip for archive? This action is permanent.")) {
                 closeTrip(trip.id);
@@ -381,6 +418,17 @@ export function TripDetailScreen() {
             }}>
               Close & archive trip
             </Btn>
+          </div>
+        )}
+
+        {trip.status === "closed" && (
+          <div className="mt-4">
+            <TripEndBillSummaryCard
+              summary={tripEndSummary}
+              onPrint={handlePrintTripEndReport}
+              onShare={handleShareTripEndReport}
+              sharing={sharingReport}
+            />
           </div>
         )}
 
@@ -452,6 +500,116 @@ export function TripDetailScreen() {
         />
       </Modal>
     </div>
+  );
+}
+
+function TripEndBillSummaryCard({
+  summary,
+  onPrint,
+  onShare,
+  sharing,
+}: {
+  summary: TripEndBillSummary;
+  onPrint: () => void;
+  onShare: () => void;
+  sharing: boolean;
+}) {
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="border-b border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Trip end accounting report</p>
+            <h3 className="mt-1 text-base font-semibold text-slate-900">Bill summary by destination</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {summary.billCount} active bills grouped across {summary.destinations.length} destinations.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+            <Btn size="sm" variant="outline" icon="printer" onClick={onPrint}>
+              Print
+            </Btn>
+            <Btn size="sm" icon="share" loading={sharing} onClick={onShare}>
+              PDF
+            </Btn>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-xs text-slate-500">Total billed</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{MVR(summary.grandTotal)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-xs text-slate-500">GST</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{MVR(summary.taxTotal)}</p>
+          </div>
+          <div className="rounded-lg bg-emerald-50 p-3">
+            <p className="text-xs text-emerald-700">Paid</p>
+            <p className="mt-1 text-sm font-bold text-emerald-900">{MVR(summary.paidAmount)}</p>
+          </div>
+          <div className="rounded-lg bg-amber-50 p-3">
+            <p className="text-xs text-amber-700">Balance</p>
+            <p className="mt-1 text-sm font-bold text-amber-900">{MVR(summary.balanceDue)}</p>
+          </div>
+        </div>
+      </div>
+
+      {summary.destinations.length === 0 ? (
+        <div className="p-6 text-center text-sm text-slate-500">No active bills are linked to this trip.</div>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {summary.destinations.map(group => (
+            <div key={group.destinationId} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {group.destinationName}
+                    {group.destinationCode ? <span className="ml-1 font-mono text-xs text-slate-500">({group.destinationCode})</span> : null}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {group.billCount} bills • {group.itemCount} line items{group.atoll ? ` • ${group.atoll} Atoll` : ""}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-bold text-slate-900">{MVR(group.grandTotal)}</p>
+                  <p className="text-xs text-slate-500">GST {MVR(group.taxTotal)}</p>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <div className="rounded-lg border border-slate-200 px-2 py-1.5">
+                  <span className="block text-slate-500">Paid</span>
+                  <strong className="text-slate-900">{MVR(group.paidAmount)}</strong>
+                </div>
+                <div className="rounded-lg border border-slate-200 px-2 py-1.5">
+                  <span className="block text-slate-500">Balance</span>
+                  <strong className="text-slate-900">{MVR(group.balanceDue)}</strong>
+                </div>
+                <div className="rounded-lg border border-slate-200 px-2 py-1.5">
+                  <span className="block text-slate-500">Bills</span>
+                  <strong className="text-slate-900">{group.billCount}</strong>
+                </div>
+                <div className="rounded-lg border border-slate-200 px-2 py-1.5">
+                  <span className="block text-slate-500">Items</span>
+                  <strong className="text-slate-900">{group.itemCount}</strong>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {group.bills.slice(0, 5).map(bill => (
+                  <span key={bill.id} className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
+                    {bill.billNumber}
+                  </span>
+                ))}
+                {group.bills.length > 5 && (
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">
+                    +{group.bills.length - 5} more
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
