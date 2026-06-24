@@ -1056,7 +1056,7 @@ export function AuditLogsScreen() {
 // Profile — serves as a "More" hub, also accessible from the drawer
 // ============================================================================
 export function ProfileScreen() {
-  const { currentUser, businessProfile, navigate, signOut, toast, isOnline, toggleOnline, notifications, users: allUsers } = useApp();
+  const { currentUser, businessProfile, navigate, signOut, toast, isOnline, toggleOnline, notifications, users: allUsers, back } = useApp();
   const unreadNotifs = unreadNotificationCountForUser(notifications, currentUser.id);
 
   const menuSections: { title: string; items: { icon: string; label: string; screen: string; badge?: number; badgeColor?: string; desc?: string }[] }[] = [
@@ -1099,7 +1099,7 @@ export function ProfileScreen() {
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
-      <TopBar title="More" />
+      <TopBar title="More" onBack={back} />
 
       <div className="flex-1 overflow-y-auto pb-24 no-scrollbar">
         {/* Profile card */}

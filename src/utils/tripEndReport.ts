@@ -183,3 +183,74 @@ export function buildTripEndBillSummaryA4Document({
     ],
   };
 }
+
+export function buildTripEndDestinationBillSummaryA4Document({
+  trip,
+  destinationSummary,
+  businessProfile,
+  customers,
+}: {
+  trip: Trip;
+  destinationSummary: TripEndDestinationSummary;
+  businessProfile: BusinessProfile;
+  customers: Customer[];
+}): A4DocumentPayload {
+  const customersById = new Map(customers.map(customer => [customer.id, customer]));
+  const reportDate = trip.endedAt || trip.actualArrivalAt || new Date().toISOString();
+  const destinationCode = destinationSummary.destinationCode || destinationSummary.destinationId;
+
+  return {
+    title: "DESTINATION BILL SUMMARY",
+    documentNumber: `${trip.tripNumber}-${destinationCode}-BILL-SUMMARY`,
+    businessName: businessProfile.businessName,
+    businessDetails: [
+      businessProfile.vesselName,
+      businessProfile.address,
+      businessProfile.gstNumber ? `GST: ${businessProfile.gstNumber}` : undefined,
+      businessProfile.vesselRegistrationNumber ? `Reg: ${businessProfile.vesselRegistrationNumber}` : undefined,
+      `${businessProfile.email} • ${businessProfile.phone}`,
+    ].filter((line): line is string => Boolean(line)),
+    customerName: "Accounting summary",
+    customerDetails: [
+      `${destinationSummary.billCount} bills`,
+      `${destinationSummary.itemCount} line items`,
+      `Generated: ${formatDateTime(new Date().toISOString())}`,
+    ],
+    destinationDetails: [
+      destinationSummary.destinationName,
+      destinationSummary.atoll ? `${destinationSummary.atoll} Atoll` : undefined,
+      destinationSummary.destinationCode,
+      `Trip ended: ${formatDate(reportDate)}`,
+    ].filter((line): line is string => Boolean(line)),
+    meta: [
+      { label: "Trip", value: trip.tripNumber },
+      { label: "Status", value: trip.status },
+      { label: "Ended", value: trip.endedAt ? formatDateTime(trip.endedAt) : undefined },
+    ],
+    items: destinationSummary.bills.map(bill => ({
+      name: bill.billNumber,
+      description: [
+        walkInDisplayName(customersById.get(bill.customerId), bill.walkInDetails),
+        bill.billStatus.replace("_", " "),
+        formatDate(bill.createdAt),
+        `Paid ${MVR(bill.paidAmount)}`,
+        `Balance ${MVR(Math.max(0, bill.grandTotal - bill.paidAmount))}`,
+      ].filter(Boolean).join(" • "),
+      quantity: bill.itemCount || bill.items?.length || 0,
+      unitType: "items",
+      unitPrice: bill.itemCount > 0 ? money(bill.grandTotal / bill.itemCount) : bill.grandTotal,
+      taxAmount: bill.taxTotal,
+      total: bill.grandTotal,
+    })),
+    totals: [
+      { label: "Destination total", value: MVR(destinationSummary.grandTotal), strong: true },
+      { label: "GST included", value: MVR(destinationSummary.taxTotal) },
+      { label: "Paid", value: MVR(destinationSummary.paidAmount) },
+      { label: "Balance due", value: MVR(destinationSummary.balanceDue), strong: destinationSummary.balanceDue > 0 },
+    ],
+    footer: [
+      "Destination-level accounting summary. Cancelled bills are excluded.",
+      `${businessProfile.businessName} • ${businessProfile.email} • ${businessProfile.phone}`,
+    ],
+  };
+}

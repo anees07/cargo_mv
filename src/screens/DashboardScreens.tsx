@@ -8,7 +8,7 @@ import { isUnfinishedTrip } from "../utils/trips";
 import { describeCompleteTripRoute } from "../utils/tripRoute";
 import { getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
 import { unreadNotificationCountForUser } from "../utils/notifications";
-import { buildTripEndBillSummary, buildTripEndBillSummaryA4Document, type TripEndBillSummary } from "../utils/tripEndReport";
+import { buildTripEndBillSummary, buildTripEndBillSummaryA4Document, buildTripEndDestinationBillSummaryA4Document, type TripEndBillSummary, type TripEndDestinationSummary } from "../utils/tripEndReport";
 import { printA4Document, shareA4PdfDocument } from "../utils/documentActions";
 
 // ============================================================================
@@ -277,6 +277,7 @@ export function TripDetailScreen() {
   const [showEditStatus, setShowEditStatus] = useState(false);
   const [showEditSpecs, setShowEditSpecs] = useState(false);
   const [sharingReport, setSharingReport] = useState(false);
+  const [sharingDestinationId, setSharingDestinationId] = useState<string | null>(null);
 
   if (!trip) return null;
   const tripOps = operations.filter(o => o.tripId === trip.id);
@@ -310,6 +311,33 @@ export function TripDetailScreen() {
       toast({ title: "Share failed", body: "Try again from this device.", variant: "error" });
     } finally {
       setSharingReport(false);
+    }
+  };
+  const destinationReportDocument = (destinationSummary: TripEndDestinationSummary) => buildTripEndDestinationBillSummaryA4Document({
+    trip,
+    destinationSummary,
+    businessProfile,
+    customers,
+  });
+  const handlePrintDestinationReport = (destinationSummary: TripEndDestinationSummary) => {
+    if (!printA4Document(destinationReportDocument(destinationSummary))) {
+      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
+    }
+  };
+  const handleShareDestinationReport = async (destinationSummary: TripEndDestinationSummary) => {
+    try {
+      setSharingDestinationId(destinationSummary.destinationId);
+      const result = await shareA4PdfDocument(destinationReportDocument(destinationSummary));
+      if (result === "clipboard") {
+        toast({ title: "PDF sharing unavailable", body: "A text copy was copied because this device cannot share PDF files.", variant: "warning" });
+      } else if (result === "unsupported") {
+        toast({ title: "Share unavailable", body: "This device cannot share PDF files. Use Print on web, or update the mobile app.", variant: "error" });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast({ title: "Share failed", body: "Try again from this device.", variant: "error" });
+    } finally {
+      setSharingDestinationId(null);
     }
   };
 
@@ -409,6 +437,9 @@ export function TripDetailScreen() {
               onPrint={handlePrintTripEndReport}
               onShare={handleShareTripEndReport}
               sharing={sharingReport}
+              sharingDestinationId={sharingDestinationId}
+              onPrintDestination={handlePrintDestinationReport}
+              onShareDestination={handleShareDestinationReport}
             />
             <Btn variant="secondary" size="lg" fullWidth icon="save" onClick={() => {
               if (confirm("Close this trip for archive? This action is permanent.")) {
@@ -428,6 +459,9 @@ export function TripDetailScreen() {
               onPrint={handlePrintTripEndReport}
               onShare={handleShareTripEndReport}
               sharing={sharingReport}
+              sharingDestinationId={sharingDestinationId}
+              onPrintDestination={handlePrintDestinationReport}
+              onShareDestination={handleShareDestinationReport}
             />
           </div>
         )}
@@ -508,11 +542,17 @@ function TripEndBillSummaryCard({
   onPrint,
   onShare,
   sharing,
+  sharingDestinationId,
+  onPrintDestination,
+  onShareDestination,
 }: {
   summary: TripEndBillSummary;
   onPrint: () => void;
   onShare: () => void;
   sharing: boolean;
+  sharingDestinationId: string | null;
+  onPrintDestination: (destinationSummary: TripEndDestinationSummary) => void;
+  onShareDestination: (destinationSummary: TripEndDestinationSummary) => void;
 }) {
   return (
     <Card className="overflow-hidden p-0">
@@ -592,6 +632,19 @@ function TripEndBillSummaryCard({
                   <span className="block text-slate-500">Items</span>
                   <strong className="text-slate-900">{group.itemCount}</strong>
                 </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Btn size="sm" variant="outline" icon="printer" onClick={() => onPrintDestination(group)}>
+                  Print destination
+                </Btn>
+                <Btn
+                  size="sm"
+                  icon="share"
+                  loading={sharingDestinationId === group.destinationId}
+                  onClick={() => onShareDestination(group)}
+                >
+                  PDF destination
+                </Btn>
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {group.bills.slice(0, 5).map(bill => (

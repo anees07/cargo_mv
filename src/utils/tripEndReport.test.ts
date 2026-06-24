@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildTripEndBillSummary, buildTripEndBillSummaryA4Document } from "./tripEndReport.js";
+import {
+  buildTripEndBillSummary,
+  buildTripEndBillSummaryA4Document,
+  buildTripEndDestinationBillSummaryA4Document,
+} from "./tripEndReport.js";
 import type { Bill, BusinessProfile, Customer, Destination, Trip } from "../types.js";
 
 const trip: Trip = {
@@ -129,4 +133,24 @@ test("trip end A4 document contains destination rows and accounting totals", () 
   assert.equal(document.items[0].name, "Hithadhoo (HIT)");
   assert.match(document.items[1].description || "", /Atoll Traders/);
   assert.deepEqual(document.totals.map(total => total.label), ["Total billed", "GST included", "Paid", "Balance due"]);
+});
+
+test("destination bill summary A4 document contains one destination's bills and totals", () => {
+  const summary = buildTripEndBillSummary(trip, [
+    bill({ id: "bill_1", grandTotal: 100, paidAmount: 40 }),
+    bill({ id: "bill_2", billNumber: "BILL-HIT-0002", grandTotal: 50, paidAmount: 50, taxTotal: 3.7, subtotalTaxInclusive: 50, itemCount: 1 }),
+    bill({ id: "bill_3", destinationId: "kulhudhuffushi", billNumber: "BILL-KUL-0001", grandTotal: 200, paidAmount: 0, taxTotal: 14.81, subtotalTaxInclusive: 200, itemCount: 3 }),
+  ], destinations);
+  const document = buildTripEndDestinationBillSummaryA4Document({
+    trip,
+    destinationSummary: summary.destinations[0],
+    businessProfile,
+    customers,
+  });
+
+  assert.equal(document.title, "DESTINATION BILL SUMMARY");
+  assert.equal(document.documentNumber, "TRIP-2026-000001-HIT-BILL-SUMMARY");
+  assert.deepEqual(document.items.map(item => item.name), ["BILL-HIT-0001", "BILL-HIT-0002"]);
+  assert.equal(document.totals[0].value, "MVR 150.00");
+  assert.deepEqual(document.destinationDetails?.slice(0, 3), ["Hithadhoo", "Seenu Atoll", "HIT"]);
 });

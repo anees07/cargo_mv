@@ -182,11 +182,11 @@ export function LoginScreen() {
 // Multi-Profile Interceptor
 // ============================================================================
 export function SelectProfileScreen() {
-  const { selectBusinessProfile, toast } = useApp();
+  const { selectBusinessProfile, toast, navigate } = useApp();
   
   return (
     <div className="flex h-full flex-col bg-slate-50">
-      <TopBar title="Select Account" />
+      <TopBar title="Select Account" onBack={() => navigate("welcome")} />
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="text-center pb-2 pt-6">
           <h2 className="text-xl font-bold text-slate-900">Welcome back, Ibrahim</h2>

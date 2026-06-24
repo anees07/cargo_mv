@@ -292,10 +292,13 @@ export function OperationScreen() {
 
   if (!activeTrip) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-        <Icon name="ship" className="h-12 w-12 text-slate-300" />
-        <p className="mt-3 text-sm font-medium text-slate-700">No active trip</p>
-        <p className="mt-1 text-xs text-slate-500">Open a trip before recording operations.</p>
+      <div className="flex h-full flex-col bg-slate-50">
+        <TopBar title="Operation" subtitle="No active trip" onBack={back} />
+        <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+          <Icon name="ship" className="h-12 w-12 text-slate-300" />
+          <p className="mt-3 text-sm font-medium text-slate-700">No active trip</p>
+          <p className="mt-1 text-xs text-slate-500">Open a trip before recording operations.</p>
+        </div>
       </div>
     );
   }
