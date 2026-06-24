@@ -89,8 +89,12 @@ type AddOperationItemInput = Omit<OperationItem, "id" | "createdAt" | "businessP
   walkInDetails?: WalkInDetails;
 };
 
+const DEMO_OWNER_EMAIL = "demo@atollcargo.mv";
+const DEMO_OWNER_PASSWORD = "AtollCargoDemo#2026";
+
 export interface AppActions {
   signIn: (email: string, password: string) => Promise<void>;
+  signInDemoUser: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   registerOwner: (name: string, email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
@@ -791,6 +795,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
         name: credential.user.displayName || credential.user.email?.split("@")[0] || "Cargo Operator",
         email: credential.user.email || email,
       },
+    }));
+  }, []);
+
+  const signInDemoUser = useCallback(async (email: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new Error("Enter the demo user's email.");
+    }
+
+    const credential = await signInWithFirebase(DEMO_OWNER_EMAIL, DEMO_OWNER_PASSWORD);
+    const db = getFirebaseFirestore();
+    const demoOwnerDoc = await getDoc(doc(db, "business_users", credential.user.uid));
+    if (!demoOwnerDoc.exists()) {
+      throw new Error("Demo account is not configured.");
+    }
+
+    const tenantState = await loadTenantState(credential.user, demoOwnerDoc.data());
+    if (tenantState.missingProfile) {
+      throw new Error("Demo business profile is missing.");
+    }
+
+    const demoUser = tenantState.users.find(user => user.email.trim().toLowerCase() === normalizedEmail);
+    if (!demoUser) {
+      throw new Error("This email is not invited inside the demo account.");
+    }
+
+    setState(s => ({
+      ...s,
+      ...tenantState,
+      isAuthed: true,
+      currentUser: { ...demoUser, online: true },
+      users: tenantState.users.map(user => user.id === demoUser.id ? { ...user, online: true } : user),
+      screen: "dashboard",
+      screenStack: [],
+      pendingOwnerRegistration: null,
     }));
   }, []);
 
@@ -2356,7 +2395,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextValue = {
     ...state,
-    signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back, openA4Document,
+    signIn, signInDemoUser, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back, openA4Document,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
     addOperationItem, addOperationItems, removeOperationItem, clearOperationCart,
     finalizeBill, postPayment, updateDraftBill, createTrip,

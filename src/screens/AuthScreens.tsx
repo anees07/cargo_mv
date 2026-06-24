@@ -77,10 +77,11 @@ export function WelcomeScreen() {
 // Login Screen
 // ============================================================================
 export function LoginScreen() {
-  const { signIn, navigate, toast, sendPasswordReset } = useApp();
+  const { signIn, signInDemoUser, navigate, toast, sendPasswordReset } = useApp();
   const [email, setEmail] = useState("demo@atollcargo.mv");
   const [password, setPassword] = useState("AtollCargoDemo#2026");
   const [loading, setLoading] = useState(false);
+  const [demoUserLoading, setDemoUserLoading] = useState(false);
 
   const [showForgot, setShowForgot] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
@@ -94,6 +95,22 @@ export function LoginScreen() {
       toast({ title: "Sign in failed", body: "Check details.", variant: "error" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDemoUserSignIn = async () => {
+    setDemoUserLoading(true);
+    try {
+      await signInDemoUser(email);
+      toast({ title: "Signed in to demo account", body: email.trim(), variant: "success" });
+    } catch (error) {
+      toast({
+        title: "Demo user not found",
+        body: error instanceof Error ? error.message : "Invite this email inside the demo account first.",
+        variant: "error",
+      });
+    } finally {
+      setDemoUserLoading(false);
     }
   };
 
@@ -137,7 +154,20 @@ export function LoginScreen() {
 
         <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
           <p className="text-xs font-semibold text-ocean-900">Demo account</p>
-          <p className="mt-1 text-xs text-slate-600">The prefilled owner account loads live cargo data.</p>
+          <p className="mt-1 text-xs text-slate-600">
+            Use the prefilled owner login, or enter an invited demo crew email like ali@atollmarine.mv.
+          </p>
+          <Btn
+            fullWidth
+            size="sm"
+            variant="outline"
+            loading={demoUserLoading}
+            disabled={!email.trim() || loading || demoUserLoading}
+            onClick={handleDemoUserSignIn}
+            className="mt-3"
+          >
+            Sign in as demo crew
+          </Btn>
           <p className="mt-2 text-xs font-medium text-ocean-800">{APP_RELEASE_DETAIL}</p>
         </Card>
       </div>
