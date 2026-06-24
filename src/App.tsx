@@ -13,6 +13,7 @@ import { ReportsScreen, SettingsScreen, UsersScreen, AuditLogsScreen, ProfileScr
 import { NotificationPanel } from "./screens/NotificationScreen";
 import { CustomerDetailScreen, DestinationDetailScreen, CreateTripScreen } from "./screens/DetailScreens";
 import { PdfDocumentsScreen, SyncConflictsScreen } from "./screens/SystemScreens";
+import { DocumentPreviewScreen } from "./screens/DocumentPreviewScreen";
 import { APP_RELEASE_LABEL } from "./appVersion";
 import { AppUpdatePrompt } from "./components/AppUpdatePrompt";
 
@@ -30,7 +31,7 @@ function BottomTab({ onDrawerOpen }: { onDrawerOpen: () => void }) {
   ];
 
   // Hide on specific screens
-  const hideOn = ["splash", "welcome", "login", "register", "business_setup", "invoice_preview", "customer_detail", "destination_detail", "create_trip", "notifications"];
+  const hideOn = ["splash", "welcome", "login", "register", "business_setup", "invoice_preview", "customer_detail", "destination_detail", "create_trip", "notifications", "document_preview"];
   if (hideOn.includes(screen)) return null;
 
   return (
@@ -236,6 +237,7 @@ function ScreenRouter() {
     notifications: <NotificationPanel onClose={() => {}} />,
     sync_conflicts: <SyncConflictsScreen />,
     pdf_documents: <PdfDocumentsScreen />,
+    document_preview: <DocumentPreviewScreen />,
   };
 
   return (

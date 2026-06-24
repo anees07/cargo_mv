@@ -1,7 +1,7 @@
 import { useApp } from "../useApp";
 import { Btn, Card, Section, TopBar } from "../components/ui";
 import { MVR, formatDate, formatDateTime } from "../utils/format";
-import { printA4Document, shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
+import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill } from "../types";
 
@@ -85,7 +85,7 @@ export function SyncConflictsScreen() {
 }
 
 export function PdfDocumentsScreen() {
-  const { back, bills, customers, destinations, trips, businessProfile, toast } = useApp();
+  const { back, bills, customers, destinations, trips, businessProfile, toast, openA4Document } = useApp();
   const buildBillA4Document = (bill: Bill): A4DocumentPayload => {
     const customer = customers.find(item => item.id === bill.customerId);
     const destination = destinations.find(item => item.id === bill.destinationId);
@@ -183,9 +183,7 @@ export function PdfDocumentsScreen() {
           totals: [{ label: "Total listed", value: MVR(docs.reduce((sum, doc) => sum + doc.amount, 0)), strong: true }],
           footer: [`${businessProfile.businessName} • ${businessProfile.email} • ${businessProfile.phone}`],
         } satisfies A4DocumentPayload;
-    if (!printA4Document(printDocument)) {
-      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
-    }
+    openA4Document(printDocument);
   };
   const handleShare = async (doc: typeof docs[number]) => {
     try {

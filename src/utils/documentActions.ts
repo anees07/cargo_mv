@@ -154,16 +154,18 @@ export function buildA4DocumentText(document: A4DocumentPayload) {
   ].filter((line): line is string => Boolean(line)).join("\n");
 }
 
-export function buildA4DocumentHtml(document: A4DocumentPayload) {
+export function buildA4DocumentHtml(document: A4DocumentPayload, options: { showScreenToolbar?: boolean } = {}) {
   const businessDetails = compact(document.businessDetails);
   const customerDetails = compact(document.customerDetails || []);
   const destinationDetails = compact(document.destinationDetails || []);
   const footer = compact(document.footer || []);
+  const showScreenToolbar = options.showScreenToolbar ?? true;
 
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>${escapeHtml(document.documentNumber)}</title>
   <style>
     @page {
@@ -173,6 +175,7 @@ export function buildA4DocumentHtml(document: A4DocumentPayload) {
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: #fff; color: #0f172a; font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; }
+    .screen-toolbar { display: none; }
     .page { display: flex; flex-direction: column; width: 186mm; min-height: 273mm; margin: 0 auto; }
     .content { flex: 1 0 auto; }
     .top { display: flex; justify-content: space-between; gap: 14mm; border-bottom: 1.5pt solid #0f172a; padding-bottom: 6mm; }
@@ -202,17 +205,100 @@ export function buildA4DocumentHtml(document: A4DocumentPayload) {
     .page-number { display: none; }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .screen-toolbar { display: none !important; }
       .page { width: auto; min-height: 273mm; }
       .content { flex: 1 0 auto; }
     }
     @media screen {
-      body { background: #e2e8f0; padding: 12mm 0; }
+      body { background: #e2e8f0; padding: calc(env(safe-area-inset-top, 0px) + 76px) 0 18px; }
+      body.embedded-document { padding-top: 12px; }
+      .screen-toolbar {
+        align-items: center;
+        background: rgba(255, 255, 255, .96);
+        border-bottom: 1px solid #cbd5e1;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
+        display: flex;
+        gap: 10px;
+        left: 0;
+        min-height: calc(env(safe-area-inset-top, 0px) + 60px);
+        padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px;
+        position: fixed;
+        right: 0;
+        top: 0;
+        z-index: 10;
+      }
+      .screen-toolbar button {
+        align-items: center;
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        color: #0f172a;
+        display: inline-flex;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        gap: 6px;
+        min-height: 40px;
+        padding: 0 14px;
+      }
+      .screen-toolbar .back-button {
+        border-color: transparent;
+        font-size: 22px;
+        justify-content: center;
+        min-width: 40px;
+        padding: 0;
+      }
+      .screen-toolbar-title { min-width: 0; flex: 1; }
+      .screen-toolbar-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+      .screen-toolbar-title span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; font-size: 12px; margin-top: 2px; }
       .page { min-height: 273mm; background: #fff; box-shadow: 0 12px 40px rgba(15, 23, 42, .18); padding: 0; }
       .page-number { display: block; margin-top: 4mm; text-align: right; color: #64748b; font-size: 8pt; }
     }
+    @media screen and (max-width: 720px) {
+      body { overflow-x: hidden; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); font-size: 14px; }
+      body.embedded-document { padding-top: 9px; }
+      .screen-toolbar { min-height: calc(env(safe-area-inset-top, 0px) + 58px); padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+      .screen-toolbar .print-button { justify-content: center; }
+      .page { width: calc(100vw - 18px); min-height: auto; overflow: hidden; }
+      .content { min-width: 0; }
+      .top { flex-direction: column; gap: 12px; padding: 18px 14px; }
+      .business h1 { font-size: 22px; line-height: 1.15; overflow-wrap: anywhere; }
+      .doc-title { text-align: left; }
+      .doc-title h2 { font-size: 24px; line-height: 1.1; overflow-wrap: anywhere; }
+      .doc-title p, .business p { line-height: 1.45; overflow-wrap: anywhere; }
+      .info { display: block; margin-top: 0; padding: 16px 14px; }
+      .details + .details { margin-top: 14px; text-align: left !important; }
+      table { display: block; margin-top: 0; width: 100%; }
+      thead { display: none; }
+      tbody { display: block; }
+      tr { display: block; border-bottom: 1px solid #cbd5e1; padding: 12px 14px; }
+      th, td { border-bottom: 0; padding: 0; }
+      td { display: grid; grid-template-columns: minmax(92px, 34%) minmax(0, 1fr); gap: 10px; margin-top: 8px; text-align: left !important; white-space: normal !important; overflow-wrap: anywhere; }
+      td:first-child { display: block; margin-top: 0; font-size: 16px; font-weight: 700; }
+      td:nth-child(2)::before { content: "Qty"; color: #64748b; font-weight: 700; }
+      td:nth-child(3)::before { content: "Unit"; color: #64748b; font-weight: 700; }
+      td:nth-child(4)::before { content: "Tax"; color: #64748b; font-weight: 700; }
+      td:nth-child(5)::before { content: "Total"; color: #64748b; font-weight: 700; }
+      .item-desc { font-size: 13px; line-height: 1.35; }
+      .totals { justify-content: stretch; margin: 0; padding: 16px 14px; }
+      .totals-inner { width: 100%; }
+      .total-row { gap: 12px; }
+      .footer { margin: 0 14px; padding-bottom: 14px; }
+      .page-number { padding: 0 14px 14px; }
+    }
   </style>
 </head>
-<body>
+<body${showScreenToolbar ? "" : ` class="embedded-document"`}>
+  ${showScreenToolbar ? `<nav class="screen-toolbar" aria-label="Document actions">
+    <button class="back-button" type="button" aria-label="Back" onclick="if (history.length > 1) history.back(); else window.close();">&#8592;</button>
+    <div class="screen-toolbar-title">
+      <strong>${escapeHtml(document.title)}</strong>
+      <span>${escapeHtml(document.documentNumber)}</span>
+    </div>
+    <button class="print-button" type="button" onclick="window.print()">
+      <span class="print-label">Print</span>
+    </button>
+  </nav>` : ""}
   <main class="page">
     <div class="content">
       <section class="top">

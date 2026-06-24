@@ -9,7 +9,7 @@ import { describeCompleteTripRoute } from "../utils/tripRoute";
 import { getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
 import { unreadNotificationCountForUser } from "../utils/notifications";
 import { buildTripEndBillSummary, buildTripEndBillSummaryA4Document, buildTripEndDestinationBillSummaryA4Document, type TripEndBillSummary, type TripEndDestinationSummary } from "../utils/tripEndReport";
-import { printA4Document, shareA4PdfDocument } from "../utils/documentActions";
+import { shareA4PdfDocument } from "../utils/documentActions";
 
 // ============================================================================
 // Dashboard
@@ -272,7 +272,7 @@ export function TripsScreen() {
 }
 
 export function TripDetailScreen() {
-  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, customers, bills, operations, currentUser, destinations, businessProfile, toast } = useApp();
+  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, customers, bills, operations, currentUser, destinations, businessProfile, toast, openA4Document } = useApp();
   const trip = trips.find(t => t.id === (selectedTripId || activeTripId));
   const [showEditStatus, setShowEditStatus] = useState(false);
   const [showEditSpecs, setShowEditSpecs] = useState(false);
@@ -293,9 +293,7 @@ export function TripDetailScreen() {
     customers,
   });
   const handlePrintTripEndReport = () => {
-    if (!printA4Document(tripEndReportDocument())) {
-      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
-    }
+    openA4Document(tripEndReportDocument());
   };
   const handleShareTripEndReport = async () => {
     try {
@@ -320,9 +318,7 @@ export function TripDetailScreen() {
     customers,
   });
   const handlePrintDestinationReport = (destinationSummary: TripEndDestinationSummary) => {
-    if (!printA4Document(destinationReportDocument(destinationSummary))) {
-      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
-    }
+    openA4Document(destinationReportDocument(destinationSummary));
   };
   const handleShareDestinationReport = async (destinationSummary: TripEndDestinationSummary) => {
     try {

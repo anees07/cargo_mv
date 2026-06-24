@@ -17,6 +17,7 @@ import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, buildCustomerPriceLevel, toFirestoreC
 import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, buildCatalogCategory, makeUniqueCatalogCategoryCode, toFirestoreCatalogCategory } from "./data/catalogCategories";
 import { SYSTEM_OTHER_ITEM_ID, buildSystemOtherCatalogItem, buildSystemOtherStandardRate } from "./data/systemCatalogItems";
 import { AppContext, type AppContextValue } from "./appContext";
+import type { A4DocumentPayload } from "./utils/documentActions";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, CatalogCategory, ItemPriceRate, CustomerPriceLevel,
   Trip, Bill, Payment, TaxSetting, NumberingSequence, AuditLog,
@@ -34,7 +35,7 @@ export type Screen =
   | "destinations" | "destination_detail" | "customers" | "customer_detail" | "catalog" | "price_levels"
   | "billing" | "invoice_preview" | "payments"
   | "reports" | "settings" | "users" | "audit_logs" | "profile" | "notifications"
-  | "sync_conflicts" | "pdf_documents";
+  | "sync_conflicts" | "pdf_documents" | "document_preview";
 
 export interface ToastMessage {
   id: string;
@@ -77,6 +78,7 @@ export interface AppState {
   selectedBillId: string | null;
   selectedCustomerId: string | null;
   selectedDestinationId: string | null;
+  selectedA4Document: A4DocumentPayload | null;
   isOnline: boolean;
   pendingSyncCount: number;
   pendingOwnerRegistration: { uid: string; name: string; email: string } | null;
@@ -103,6 +105,7 @@ export interface AppActions {
   selectBusinessProfile: (profileId: string) => void;
   navigate: (s: Screen) => void;
   back: () => void;
+  openA4Document: (document: A4DocumentPayload) => void;
   openTrip: (tripId: string) => void;
   endTrip: (tripId: string) => void;
   selectTrip: (id: string) => void;
@@ -204,6 +207,7 @@ const initialState: AppState = {
   selectedBillId: null,
   selectedCustomerId: null,
   selectedDestinationId: null,
+  selectedA4Document: null,
   isOnline: true,
   pendingSyncCount: 0,
   pendingOwnerRegistration: null,
@@ -993,6 +997,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ...s, screen: prev || "dashboard", screenStack: stack };
     });
   }, [clearOperationCart]);
+
+  const openA4Document = useCallback((document: A4DocumentPayload) => {
+    setState(s => ({
+      ...s,
+      selectedA4Document: document,
+      screen: "document_preview",
+      screenStack: [...s.screenStack, s.screen].slice(-8),
+    }));
+  }, []);
 
   const selectTrip = useCallback((tripId: string) => {
     setState(s => ({ ...s, selectedTripId: tripId }));
@@ -2343,7 +2356,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextValue = {
     ...state,
-    signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back,
+    signIn, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back, openA4Document,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
     addOperationItem, addOperationItems, removeOperationItem, clearOperationCart,
     finalizeBill, postPayment, updateDraftBill, createTrip,

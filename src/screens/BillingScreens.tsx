@@ -6,7 +6,7 @@ import { hasPermission } from "../utils/permissions";
 import { filterBillsForSearch } from "../utils/billSearch";
 import { filterBillsForListCategory, groupBillsByDestinationForList, groupBillsForList, type BillListGroupId } from "../utils/billListGroups";
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
-import { printA4Document, shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
+import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "../types";
 
@@ -325,7 +325,7 @@ function GenerateBillForm({
 // Invoice Preview — A4 PDF rendering
 // ============================================================================
 export function InvoicePreviewScreen() {
-  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd, updateDraftBill, cancelBill, toast } = useApp();
+  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd, updateDraftBill, cancelBill, toast, openA4Document } = useApp();
   const bill = bills.find(b => b.id === selectedBillId) || bills[0];
   const [showPay, setShowPay] = useState(false);
   const [showAlter, setShowAlter] = useState(false);
@@ -392,9 +392,7 @@ export function InvoicePreviewScreen() {
     ],
   };
   const handlePrint = () => {
-    if (!printA4Document(invoiceDocument)) {
-      toast({ title: "Print unavailable", body: "This device cannot open the print dialog.", variant: "error" });
-    }
+    openA4Document(invoiceDocument);
   };
   const handleShare = async () => {
     try {
