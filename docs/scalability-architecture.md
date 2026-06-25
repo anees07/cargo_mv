@@ -31,7 +31,19 @@ This app must treat transaction history as unbounded. A tenant can eventually ha
 - `src/components/ui.tsx` exposes `ListPageControls` for mobile-safe incremental rendering.
 - Billing, payments, trips, customers, destinations, and audit logs use bounded rendering.
 - `firestore.indexes.json` defines the composite indexes expected for common production filters.
+- On the current Spark plan, the web app clearly labels dashboard/report totals as a recent synced window unless backend summary documents exist.
+- `functions/` contains the backend aggregate worker and paginated backfill path for a future Blaze deployment, but it is not deployable on Spark because Cloud Functions requires billing-backed Artifact Registry.
 
 ## Next production step
 
-For a true 100M+ transaction deployment, move dashboard/report totals into Cloud Functions or another backend worker that maintains aggregate documents on every write. The app should read those aggregate documents for totals and only fetch raw rows for the current page, active trip, selected bill, or selected customer.
+For a true 100M+ transaction deployment, deploy the aggregate worker or another backend pipeline that maintains aggregate documents on every write. The app should read those aggregate documents for totals and only fetch raw rows for the current page, active trip, selected bill, or selected customer.
+
+## Spark deployment
+
+Use `npm run deploy:spark` while the project remains on Spark. This deploys Hosting, Firestore rules, and indexes without attempting Functions.
+
+Spark limitations that remain intentional:
+
+- Cloud Functions cannot deploy.
+- Point-in-time recovery cannot be enabled.
+- Full-history reports cannot be guaranteed unless summary documents are produced by a trusted backend or external batch process.

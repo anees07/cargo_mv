@@ -5,8 +5,16 @@ const app_1 = require("firebase-admin/app");
 const firestore_1 = require("firebase-admin/firestore");
 const firestore_2 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
+const options_1 = require("firebase-functions/v2/options");
 (0, app_1.initializeApp)();
+(0, options_1.setGlobalOptions)({
+    region: "us-central1",
+    memory: "512MiB",
+    timeoutSeconds: 60,
+    maxInstances: 20,
+});
 const db = (0, firestore_1.getFirestore)();
+const backfillPageSize = 500;
 const activeTripStatuses = new Set(["open", "loading", "sailing", "offloading"]);
 const num = (value) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 const str = (value) => typeof value === "string" ? value : "";
@@ -104,6 +112,26 @@ function touchSummary(transaction, businessProfileId, updates) {
         updatedAt: firestore_1.FieldValue.serverTimestamp(),
         ...updates,
     }, { merge: true });
+}
+async function* pagedCollection(collectionRef) {
+    let lastSnapshot;
+    for (;;) {
+        let pageQuery = collectionRef
+            .orderBy(firestore_1.FieldPath.documentId())
+            .limit(backfillPageSize);
+        if (lastSnapshot) {
+            pageQuery = pageQuery.startAfter(lastSnapshot);
+        }
+        const page = await pageQuery.get();
+        if (page.empty)
+            return;
+        for (const document of page.docs) {
+            yield document;
+        }
+        lastSnapshot = page.docs[page.docs.length - 1];
+        if (page.size < backfillPageSize)
+            return;
+    }
 }
 exports.aggregateBillSummary = (0, firestore_2.onDocumentWritten)("business_profiles/{businessProfileId}/bills/{billId}", async (event) => {
     const businessProfileId = event.params.businessProfileId;
@@ -254,7 +282,12 @@ exports.aggregateTripSummary = (0, firestore_2.onDocumentWritten)("business_prof
         }, { merge: true });
     });
 });
-exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
+exports.backfillTenantSummaries = (0, https_1.onCall)({
+    region: "us-central1",
+    memory: "1GiB",
+    timeoutSeconds: 540,
+    maxInstances: 1,
+}, async (request) => {
     const uid = request.auth?.uid;
     const businessProfileId = str(request.data?.businessProfileId);
     if (!uid) {
@@ -269,11 +302,6 @@ exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
         throw new https_1.HttpsError("permission-denied", "Only an owner or admin can backfill summaries.");
     }
     const tenantRef = db.collection("business_profiles").doc(businessProfileId);
-    const [billsSnapshot, paymentsSnapshot, tripsSnapshot] = await Promise.all([
-        tenantRef.collection("bills").get(),
-        tenantRef.collection("payments").get(),
-        tenantRef.collection("trips").get(),
-    ]);
     const dashboard = {
         businessProfileId,
         activeBillCount: 0,
@@ -285,7 +313,7 @@ exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
         outstandingCustomerCount: 0,
         totalTax: 0,
         itemCount: 0,
-        tripCount: tripsSnapshot.size,
+        tripCount: 0,
         tripStatusCounts: {},
         activeTripId: null,
         updatedAt: firestore_1.FieldValue.serverTimestamp(),
@@ -293,7 +321,11 @@ exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
     const destinations = new Map();
     const customers = new Map();
     const cashierDays = new Map();
-    for (const document of billsSnapshot.docs) {
+    let billCount = 0;
+    let paymentCount = 0;
+    let tripCount = 0;
+    for await (const document of pagedCollection(tenantRef.collection("bills"))) {
+        billCount += 1;
         const bill = asBill(document.data(), document.id);
         const value = activeBillValue(bill);
         dashboard.activeBillCount += value.count;
@@ -326,7 +358,8 @@ exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
         if (outstanding > 0)
             dashboard.outstandingCustomerCount += 1;
     }
-    for (const document of paymentsSnapshot.docs) {
+    for await (const document of pagedCollection(tenantRef.collection("payments"))) {
+        paymentCount += 1;
         const payment = paymentValue(asPayment(document.data(), document.id));
         dashboard.receiptCount += payment.count;
         dashboard.totalCollected += payment.total;
@@ -348,7 +381,8 @@ exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
         methods[payment.method].total += payment.total;
         cashierDays.set(payment.day, daySummary);
     }
-    for (const document of tripsSnapshot.docs) {
+    for await (const document of pagedCollection(tenantRef.collection("trips"))) {
+        tripCount += 1;
         const trip = asTrip(document.data(), document.id);
         if (!trip?.status)
             continue;
@@ -356,6 +390,7 @@ exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
         if (activeTripStatuses.has(trip.status))
             dashboard.activeTripId = trip.id || null;
     }
+    dashboard.tripCount = tripCount;
     const writer = db.bulkWriter();
     writer.set(tenantRef.collection("summary_reports").doc("dashboard"), dashboard, { merge: false });
     for (const [destinationId, summary] of destinations) {
@@ -375,9 +410,9 @@ exports.backfillTenantSummaries = (0, https_1.onCall)(async (request) => {
     await writer.close();
     return {
         businessProfileId,
-        bills: billsSnapshot.size,
-        payments: paymentsSnapshot.size,
-        trips: tripsSnapshot.size,
+        bills: billCount,
+        payments: paymentCount,
+        trips: tripCount,
         destinations: destinations.size,
         customers: customers.size,
         cashierDays: cashierDays.size,

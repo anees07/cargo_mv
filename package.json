@@ -11,6 +11,8 @@
     "bump:release": "node scripts/bump-release.mjs",
     "build:release": "node scripts/bump-release.mjs && npm run build:ci && npx cap sync android && cd android && ./gradlew :app:assembleRelease",
     "deploy:web-update": "npm run build:ci && firebase deploy --only hosting --project cargomv-d41f8",
+    "deploy:spark": "npm run build:ci && firebase deploy --only hosting,firestore:rules,firestore:indexes --project cargomv-d41f8",
+    "deploy:functions": "cd functions && npm run build && cd .. && firebase deploy --only functions --project cargomv-d41f8",
     "release:android": "bash scripts/release-android.sh",
     "deploy:release": "DEPLOY_FIREBASE=1 bash scripts/release-android.sh",
     "preview": "vite preview"

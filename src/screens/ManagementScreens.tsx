@@ -26,6 +26,10 @@ export function ReportsScreen() {
   const activeBillCount = dashboardSummary?.activeBillCount ?? activeBills.length;
   const receiptCount = dashboardSummary?.receiptCount ?? payments.length;
   const cashierMethods = cashierTodaySummary?.methods;
+  const hasBackendSummary = Boolean(dashboardSummary);
+  const reportScopeCopy = hasBackendSummary
+    ? "Backend summary totals"
+    : "Recent synced window";
 
   const destinationReport = destinations.map(d => {
     const destBills = activeBills.filter(b => b.destinationId === d.id);
@@ -40,7 +44,7 @@ export function ReportsScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar
         title="Reports"
-        subtitle="Real-time business analytics"
+        subtitle={reportScopeCopy}
         onBack={back}
         trailing={<Btn size="sm" icon="download" variant="outline" onClick={() => setShowExport(true)}>Export</Btn>}
       />
@@ -66,6 +70,11 @@ export function ReportsScreen() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
+        {!hasBackendSummary && (
+          <Card className="mb-4 border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            Reports are using the recent synced data window on the Spark plan. Full-history dashboard summaries require the prepared backend worker to be deployed later.
+          </Card>
+        )}
         {tab === "overview" && (
           <div className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
@@ -93,6 +102,7 @@ export function ReportsScreen() {
 
             <Card className="p-4">
               <p className="text-sm font-semibold text-slate-900">Trip summary</p>
+              <p className="mt-1 text-xs text-slate-500">{reportScopeCopy}</p>
               <div className="mt-3 space-y-2 text-xs">
                 {trips.map(t => (
                   <div key={t.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
@@ -113,6 +123,9 @@ export function ReportsScreen() {
 
         {tab === "destination" && (
           <Card className="p-0 overflow-hidden">
+            <div className="border-b border-slate-100 bg-white px-4 py-2 text-xs font-medium text-slate-500">
+              {reportScopeCopy}
+            </div>
             <div className="bg-slate-50 px-4 py-2.5 text-xs uppercase font-semibold tracking-wider text-slate-600 grid grid-cols-12 gap-2">
               <div className="col-span-6">Destination</div>
               <div className="col-span-2 text-right">Bills</div>
@@ -136,6 +149,9 @@ export function ReportsScreen() {
 
         {tab === "customer" && (
           <Card className="p-0 overflow-hidden">
+            <div className="border-b border-slate-100 bg-white px-4 py-2 text-xs font-medium text-slate-500">
+              {reportScopeCopy}
+            </div>
             <div className="divide-y divide-slate-100">
               {customers
                 .map(c => ({ customer: c, outstanding: customerOutstanding.get(c.id) || 0 }))

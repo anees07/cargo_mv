@@ -3,6 +3,8 @@ import { useApp } from "../useApp";
 import { Btn, Card, Icon, Modal, TopBar } from "../components/ui";
 import { APP_RELEASE_DETAIL } from "../appVersion";
 
+const demoAuthEnabled = import.meta.env.VITE_ENABLE_DEMO_AUTH === "true";
+
 // ============================================================================
 // Splash Screen
 // ============================================================================
@@ -78,8 +80,8 @@ export function WelcomeScreen() {
 // ============================================================================
 export function LoginScreen() {
   const { signIn, signInDemoUser, navigate, toast, sendPasswordReset } = useApp();
-  const [email, setEmail] = useState("demo@atollcargo.mv");
-  const [password, setPassword] = useState("AtollCargoDemo#2026");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [demoUserLoading, setDemoUserLoading] = useState(false);
 
@@ -152,24 +154,28 @@ export function LoginScreen() {
           <Btn fullWidth size="lg" loading={loading} onClick={handleSignIn}>Sign in</Btn>
         </div>
 
-        <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
-          <p className="text-xs font-semibold text-ocean-900">Demo account</p>
-          <p className="mt-1 text-xs text-slate-600">
-            Use the prefilled owner login, or enter an invited demo crew email like ali@atollmarine.mv.
-          </p>
-          <Btn
-            fullWidth
-            size="sm"
-            variant="outline"
-            loading={demoUserLoading}
-            disabled={!email.trim() || loading || demoUserLoading}
-            onClick={handleDemoUserSignIn}
-            className="mt-3"
-          >
-            Sign in as demo crew
-          </Btn>
-          <p className="mt-2 text-xs font-medium text-ocean-800">{APP_RELEASE_DETAIL}</p>
-        </Card>
+        {demoAuthEnabled ? (
+          <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
+            <p className="text-xs font-semibold text-ocean-900">Demo account</p>
+            <p className="mt-1 text-xs text-slate-600">
+              Enter an invited demo crew email like ali@atollmarine.mv.
+            </p>
+            <Btn
+              fullWidth
+              size="sm"
+              variant="outline"
+              loading={demoUserLoading}
+              disabled={!email.trim() || loading || demoUserLoading}
+              onClick={handleDemoUserSignIn}
+              className="mt-3"
+            >
+              Sign in as demo crew
+            </Btn>
+            <p className="mt-2 text-xs font-medium text-ocean-800">{APP_RELEASE_DETAIL}</p>
+          </Card>
+        ) : (
+          <p className="mt-4 text-center text-xs font-medium text-slate-400">{APP_RELEASE_DETAIL}</p>
+        )}
       </div>
 
       <Modal open={showForgot} onClose={() => setShowForgot(false)} title="Reset Password">

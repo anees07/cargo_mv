@@ -91,8 +91,9 @@ type AddOperationItemInput = Omit<OperationItem, "id" | "createdAt" | "businessP
   walkInDetails?: WalkInDetails;
 };
 
-const DEMO_OWNER_EMAIL = "demo@atollcargo.mv";
-const DEMO_OWNER_PASSWORD = "AtollCargoDemo#2026";
+const DEMO_AUTH_ENABLED = import.meta.env.VITE_ENABLE_DEMO_AUTH === "true";
+const DEMO_OWNER_EMAIL = import.meta.env.VITE_DEMO_OWNER_EMAIL || "";
+const DEMO_OWNER_PASSWORD = import.meta.env.VITE_DEMO_OWNER_PASSWORD || "";
 
 export interface AppActions {
   signIn: (email: string, password: string) => Promise<void>;
@@ -842,6 +843,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInDemoUser = useCallback(async (email: string) => {
+    if (!DEMO_AUTH_ENABLED || !DEMO_OWNER_EMAIL || !DEMO_OWNER_PASSWORD) {
+      throw new Error("Demo sign-in is not enabled for this build.");
+    }
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail) {
       throw new Error("Enter the demo user's email.");

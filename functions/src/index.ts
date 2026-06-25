@@ -1,11 +1,19 @@
 import { initializeApp } from "firebase-admin/app";
-import { FieldValue, getFirestore, type DocumentData, type DocumentReference, type Transaction } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore, type CollectionReference, type DocumentData, type DocumentReference, type QueryDocumentSnapshot, type Transaction } from "firebase-admin/firestore";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { setGlobalOptions } from "firebase-functions/v2/options";
 
 initializeApp();
+setGlobalOptions({
+  region: "us-central1",
+  memory: "512MiB",
+  timeoutSeconds: 60,
+  maxInstances: 20,
+});
 
 const db = getFirestore();
+const backfillPageSize = 500;
 
 type BillSnapshot = {
   id?: string;
@@ -135,6 +143,25 @@ function touchSummary(transaction: Transaction, businessProfileId: string, updat
     updatedAt: FieldValue.serverTimestamp(),
     ...updates,
   }, { merge: true });
+}
+
+async function* pagedCollection(collectionRef: CollectionReference): AsyncGenerator<QueryDocumentSnapshot> {
+  let lastSnapshot: QueryDocumentSnapshot | undefined;
+  for (;;) {
+    let pageQuery = collectionRef
+      .orderBy(FieldPath.documentId())
+      .limit(backfillPageSize);
+    if (lastSnapshot) {
+      pageQuery = pageQuery.startAfter(lastSnapshot);
+    }
+    const page = await pageQuery.get();
+    if (page.empty) return;
+    for (const document of page.docs) {
+      yield document;
+    }
+    lastSnapshot = page.docs[page.docs.length - 1];
+    if (page.size < backfillPageSize) return;
+  }
 }
 
 export const aggregateBillSummary = onDocumentWritten(
@@ -301,7 +328,12 @@ export const aggregateTripSummary = onDocumentWritten(
   }
 );
 
-export const backfillTenantSummaries = onCall(async request => {
+export const backfillTenantSummaries = onCall({
+  region: "us-central1",
+  memory: "1GiB",
+  timeoutSeconds: 540,
+  maxInstances: 1,
+}, async request => {
   const uid = request.auth?.uid;
   const businessProfileId = str(request.data?.businessProfileId);
   if (!uid) {
@@ -318,12 +350,6 @@ export const backfillTenantSummaries = onCall(async request => {
   }
 
   const tenantRef = db.collection("business_profiles").doc(businessProfileId);
-  const [billsSnapshot, paymentsSnapshot, tripsSnapshot] = await Promise.all([
-    tenantRef.collection("bills").get(),
-    tenantRef.collection("payments").get(),
-    tenantRef.collection("trips").get(),
-  ]);
-
   const dashboard = {
     businessProfileId,
     activeBillCount: 0,
@@ -335,7 +361,7 @@ export const backfillTenantSummaries = onCall(async request => {
     outstandingCustomerCount: 0,
     totalTax: 0,
     itemCount: 0,
-    tripCount: tripsSnapshot.size,
+    tripCount: 0,
     tripStatusCounts: {} as Record<string, number>,
     activeTripId: null as string | null,
     updatedAt: FieldValue.serverTimestamp(),
@@ -343,8 +369,12 @@ export const backfillTenantSummaries = onCall(async request => {
   const destinations = new Map<string, Record<string, unknown>>();
   const customers = new Map<string, number>();
   const cashierDays = new Map<string, Record<string, unknown>>();
+  let billCount = 0;
+  let paymentCount = 0;
+  let tripCount = 0;
 
-  for (const document of billsSnapshot.docs) {
+  for await (const document of pagedCollection(tenantRef.collection("bills"))) {
+    billCount += 1;
     const bill = asBill(document.data(), document.id);
     const value = activeBillValue(bill);
     dashboard.activeBillCount += value.count;
@@ -378,7 +408,8 @@ export const backfillTenantSummaries = onCall(async request => {
     if (outstanding > 0) dashboard.outstandingCustomerCount += 1;
   }
 
-  for (const document of paymentsSnapshot.docs) {
+  for await (const document of pagedCollection(tenantRef.collection("payments"))) {
+    paymentCount += 1;
     const payment = paymentValue(asPayment(document.data(), document.id));
     dashboard.receiptCount += payment.count;
     dashboard.totalCollected += payment.total;
@@ -400,12 +431,14 @@ export const backfillTenantSummaries = onCall(async request => {
     cashierDays.set(payment.day, daySummary);
   }
 
-  for (const document of tripsSnapshot.docs) {
+  for await (const document of pagedCollection(tenantRef.collection("trips"))) {
+    tripCount += 1;
     const trip = asTrip(document.data(), document.id);
     if (!trip?.status) continue;
     dashboard.tripStatusCounts[trip.status] = (dashboard.tripStatusCounts[trip.status] || 0) + 1;
     if (activeTripStatuses.has(trip.status)) dashboard.activeTripId = trip.id || null;
   }
+  dashboard.tripCount = tripCount;
 
   const writer = db.bulkWriter();
   writer.set(tenantRef.collection("summary_reports").doc("dashboard"), dashboard, { merge: false });
@@ -427,9 +460,9 @@ export const backfillTenantSummaries = onCall(async request => {
 
   return {
     businessProfileId,
-    bills: billsSnapshot.size,
-    payments: paymentsSnapshot.size,
-    trips: tripsSnapshot.size,
+    bills: billCount,
+    payments: paymentCount,
+    trips: tripCount,
     destinations: destinations.size,
     customers: customers.size,
     cashierDays: cashierDays.size,

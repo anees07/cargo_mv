@@ -24,6 +24,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
   const outstandingCustomers = dashboardSummary?.outstandingCustomerCount ?? getOutstandingCustomerCount(bills);
   const todayRevenue = dashboardSummary?.totalCollected ?? bills.filter(b => b.paymentStatus === "paid").reduce((s, b) => s + b.paidAmount, 0);
   const paidBillCount = dashboardSummary?.paidBillCount ?? bills.filter(b => b.paymentStatus === "paid").length;
+  const dashboardScope = dashboardSummary ? "backend summary" : "recent window";
   const onlineCount = users.filter(u => u.online).length;
   const unreadNotifs = unreadNotificationCountForUser(notifications, currentUser.id);
 
@@ -111,9 +112,16 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
         )}
 
         {/* Quick Stats */}
+        {!dashboardSummary && (
+          <div className="px-4 pt-4">
+            <Card className="border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              Dashboard totals use the recent synced window while this Spark-plan build runs without backend aggregate workers.
+            </Card>
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 px-4 pt-4">
-          <Stat label="Collected" value={MVRShort(todayRevenue)} sub={`${paidBillCount} paid bills`} icon="cash" color="emerald" />
-          <Stat label="Outstanding" value={MVRShort(outstanding)} sub={`${outstandingCustomers} customers`} icon="receipt" color="amber" />
+          <Stat label="Collected" value={MVRShort(todayRevenue)} sub={`${paidBillCount} paid bills • ${dashboardScope}`} icon="cash" color="emerald" />
+          <Stat label="Outstanding" value={MVRShort(outstanding)} sub={`${outstandingCustomers} customers • ${dashboardScope}`} icon="receipt" color="amber" />
           <Stat label="Active Trip" value={activeTrip?.tripNumber.split("-").pop() || "—"} sub={activeTrip?.status.toUpperCase() || "—"} icon="ship" color="ocean" />
           <Stat label="Destinations" value={String(destinations.length)} sub="across Maldives" icon="island" color="violet" />
         </div>
