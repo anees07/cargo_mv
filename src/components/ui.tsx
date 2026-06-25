@@ -319,3 +319,35 @@ export function DataListBuilder<T>({
     </div>
   );
 }
+
+export function ListPageControls({
+  visibleCount,
+  totalCount,
+  onShowMore,
+  pageSize = 50,
+  label = "records",
+}: {
+  visibleCount: number;
+  totalCount: number;
+  onShowMore: () => void;
+  pageSize?: number;
+  label?: string;
+}) {
+  if (totalCount <= visibleCount) return null;
+
+  const remaining = totalCount - visibleCount;
+  return (
+    <div className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-center sm:flex-row sm:justify-between sm:text-left">
+      <p className="text-xs font-medium text-slate-500">
+        Showing {visibleCount} of {totalCount} {label}
+      </p>
+      <button
+        type="button"
+        onClick={onShowMore}
+        className="inline-flex min-h-10 items-center justify-center rounded-lg border border-ocean-200 bg-ocean-50 px-4 text-sm font-semibold text-ocean-800 transition hover:bg-ocean-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean-500 focus-visible:ring-offset-2"
+      >
+        Show next {Math.min(pageSize, remaining)}
+      </button>
+    </div>
+  );
+}

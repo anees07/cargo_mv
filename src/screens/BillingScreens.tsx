@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../useApp";
-import { Btn, Card, Icon, Modal, StatusBadge, TopBar } from "../components/ui";
+import { Btn, Card, Icon, ListPageControls, Modal, StatusBadge, TopBar } from "../components/ui";
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { filterBillsForSearch } from "../utils/billSearch";
@@ -21,6 +21,7 @@ export function BillingScreen() {
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [cancellingBillId, setCancellingBillId] = useState<string | null>(null);
   const [expandedDestinationGroups, setExpandedDestinationGroups] = useState<string[]>([]);
+  const [visibleBillCount, setVisibleBillCount] = useState(50);
   const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
   const editingBill = activeBills.find(bill => bill.id === editingBillId);
   const cancellingBill = activeBills.find(bill => bill.id === cancellingBillId);
@@ -40,6 +41,15 @@ export function BillingScreen() {
         }))
       )
     : groupBillsByDestinationForList(filtered, destinations);
+  const visibleBillGroups = (() => {
+    let remaining = visibleBillCount;
+    return billGroups.flatMap(group => {
+      if (remaining <= 0) return [];
+      const visibleBills = group.bills.slice(0, remaining);
+      remaining -= visibleBills.length;
+      return visibleBills.length > 0 ? [{ ...group, bills: visibleBills }] : [];
+    });
+  })();
 
   const totals = {
     count: filtered.length,
@@ -62,6 +72,11 @@ export function BillingScreen() {
         : [...current, groupId]
     );
   };
+
+  useEffect(() => {
+    setVisibleBillCount(50);
+    setExpandedDestinationGroups([]);
+  }, [filter, search]);
 
   const renderBillCard = (b: Bill) => {
     const c = customers.find(c => c.id === b.customerId);
@@ -192,7 +207,7 @@ export function BillingScreen() {
               {isSearching ? "No bills match this search." : "No bills in this category."}
             </Card>
           )}
-          {billGroups.map(group => {
+          {visibleBillGroups.map(group => {
             const groupTotal = group.bills.reduce((sum, bill) => sum + bill.grandTotal, 0);
             const groupOutstanding = group.bills.reduce((sum, bill) => sum + (bill.grandTotal - bill.paidAmount), 0);
             const isExpanded = expandedDestinationGroups.includes(group.id);
@@ -233,6 +248,13 @@ export function BillingScreen() {
             );
           })}
         </div>
+        <ListPageControls
+          visibleCount={Math.min(visibleBillCount, filtered.length)}
+          totalCount={filtered.length}
+          pageSize={50}
+          label="bills"
+          onShowMore={() => setVisibleBillCount(current => current + 50)}
+        />
       </div>
 
       <Modal open={showGenerate} onClose={() => setShowGenerate(false)} title="Generate new bill" full>

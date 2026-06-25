@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApp } from "../useApp";
-import { Btn, Card, Icon, Modal, Section, TopBar } from "../components/ui";
+import { Btn, Card, Icon, ListPageControls, Modal, Section, TopBar } from "../components/ui";
 import type { BusinessProfile, User, UserRole } from "../types";
 import { MVR, MVRShort, formatDate, roleColor, roleLabel } from "../utils/format";
 import { buildQuarterTaxBillRows, quarterPeriod, recentQuarterOptions } from "../utils/taxReport";
@@ -1003,6 +1003,8 @@ function InviteCrewForm({
 // ============================================================================
 export function AuditLogsScreen() {
   const { auditLogs, users, back } = useApp();
+  const [visibleAuditLogCount, setVisibleAuditLogCount] = useState(50);
+  const visibleAuditLogs = auditLogs.slice(0, visibleAuditLogCount);
   return (
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar title="Audit log" subtitle={`${auditLogs.length} entries`} onBack={back} trailing={<Btn size="sm" icon="download" variant="outline">Export</Btn>} />
@@ -1010,7 +1012,7 @@ export function AuditLogsScreen() {
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
         <Card className="p-0 overflow-hidden">
           <div className="divide-y divide-slate-100">
-            {auditLogs.map(log => {
+            {visibleAuditLogs.map(log => {
               const actor = users.find(u => u.id === log.actorUserId);
               const actionColors: Record<string, string> = {
                 "trip.open": "bg-emerald-100 text-emerald-700",
@@ -1047,6 +1049,13 @@ export function AuditLogsScreen() {
             })}
           </div>
         </Card>
+        <ListPageControls
+          visibleCount={Math.min(visibleAuditLogCount, auditLogs.length)}
+          totalCount={auditLogs.length}
+          pageSize={50}
+          label="entries"
+          onShowMore={() => setVisibleAuditLogCount(current => current + 50)}
+        />
       </div>
     </div>
   );

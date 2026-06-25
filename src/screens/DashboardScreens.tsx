@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApp } from "../useApp";
-import { Btn, Card, Icon, Modal, Section, Stat, StatusBadge, TopBar, DataListBuilder } from "../components/ui";
+import { Btn, Card, Icon, Modal, Section, Stat, StatusBadge, TopBar, DataListBuilder, ListPageControls } from "../components/ui";
 import type { Trip, TripStatus } from "../types";
 import { MVR, MVRShort, formatDate, formatDateTime, formatTime, relativeTime, statusLabel } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
@@ -198,7 +198,9 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
 // ============================================================================
 export function TripsScreen() {
   const { trips, navigate, selectTrip, toast } = useApp();
+  const [visibleTripCount, setVisibleTripCount] = useState(50);
   const unfinishedTrip = trips.find(isUnfinishedTrip);
+  const visibleTrips = trips.slice(0, visibleTripCount);
   const handleNewTrip = () => {
     if (unfinishedTrip) {
       selectTrip(unfinishedTrip.id);
@@ -235,7 +237,7 @@ export function TripsScreen() {
         </div>
 
         <DataListBuilder
-          data={trips}
+          data={visibleTrips}
           keyExtractor={(trip) => trip.id}
           icon="ship"
           emptyTitle="No trips found"
@@ -265,6 +267,13 @@ export function TripsScreen() {
               </div>
             </Card>
           )}
+        />
+        <ListPageControls
+          visibleCount={Math.min(visibleTripCount, trips.length)}
+          totalCount={trips.length}
+          pageSize={50}
+          label="trips"
+          onShowMore={() => setVisibleTripCount(current => current + 50)}
         />
       </div>
     </div>

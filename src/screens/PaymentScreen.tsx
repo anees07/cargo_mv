@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../useApp";
-import { Btn, Card, Icon, Modal, Section, TopBar } from "../components/ui";
+import { Btn, Card, Icon, ListPageControls, Modal, Section, TopBar } from "../components/ui";
 import { MVR, relativeTime } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { walkInDisplayName } from "../utils/walkInDetails";
@@ -13,9 +13,15 @@ export function PaymentsScreen() {
   const { payments, bills, customers, postPayment, back, currentUser } = useApp();
   const [methodFilter, setMethodFilter] = useState<string>("all");
   const [showRecord, setShowRecord] = useState(false);
+  const [visiblePaymentCount, setVisiblePaymentCount] = useState(50);
   const filtered = payments.filter(p => methodFilter === "all" || p.method === methodFilter);
+  const visiblePayments = filtered.slice(0, visiblePaymentCount);
   const total = filtered.reduce((s, p) => s + p.amount, 0);
   const today = filtered.filter(p => new Date(p.collectedAt).toDateString() === new Date().toDateString()).reduce((s, p) => s + p.amount, 0);
+
+  useEffect(() => {
+    setVisiblePaymentCount(50);
+  }, [methodFilter]);
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -67,7 +73,7 @@ export function PaymentsScreen() {
         <Section title="Receipts" className="mt-5">
           <Card className="p-0 overflow-hidden">
             <div className="divide-y divide-slate-100">
-              {filtered.map(p => {
+              {visiblePayments.map(p => {
                 const bill = bills.find(b => b.id === p.billId);
                 const c = customers.find(c => c.id === bill?.customerId);
                 const customerName = walkInDisplayName(c, bill?.walkInDetails);
@@ -96,6 +102,13 @@ export function PaymentsScreen() {
               })}
             </div>
           </Card>
+          <ListPageControls
+            visibleCount={Math.min(visiblePaymentCount, filtered.length)}
+            totalCount={filtered.length}
+            pageSize={50}
+            label="receipts"
+            onShowMore={() => setVisiblePaymentCount(current => current + 50)}
+          />
         </Section>
       </div>
 

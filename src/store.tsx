@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
-import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, runTransaction, setDoc, updateDoc, type Unsubscribe } from "firebase/firestore";
+import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, setDoc, updateDoc, type QueryConstraint, type Unsubscribe } from "firebase/firestore";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
   createFirebaseOwnerAccount,
@@ -345,12 +345,28 @@ const tenantCollections = {
   notifications: "notifications",
 } as const;
 
+const transactionCollectionWindows: Partial<Record<typeof tenantCollections[keyof typeof tenantCollections], { orderField: string; size: number }>> = {
+  [tenantCollections.trips]: { orderField: "createdAt", size: 500 },
+  [tenantCollections.operations]: { orderField: "createdAt", size: 1000 },
+  [tenantCollections.bills]: { orderField: "createdAt", size: 1000 },
+  [tenantCollections.payments]: { orderField: "collectedAt", size: 1000 },
+  [tenantCollections.auditLogs]: { orderField: "createdAt", size: 300 },
+  [tenantCollections.notifications]: { orderField: "createdAt", size: 300 },
+};
+
+function tenantCollectionQuery(businessProfileId: string, collectionName: string) {
+  const db = getFirebaseFirestore();
+  const base = collection(db, "business_profiles", businessProfileId, collectionName);
+  const window = transactionCollectionWindows[collectionName as typeof tenantCollections[keyof typeof tenantCollections]];
+  const constraints: QueryConstraint[] = window ? [orderBy(window.orderField, "desc"), limit(window.size)] : [];
+  return constraints.length > 0 ? query(base, ...constraints) : base;
+}
+
 async function loadTenantCollection<T extends { id?: string }>(
   collectionName: string,
   businessProfileId: string,
 ): Promise<T[]> {
-  const db = getFirebaseFirestore();
-  const snapshot = await getDocs(collection(db, "business_profiles", businessProfileId, collectionName));
+  const snapshot = await getDocs(tenantCollectionQuery(businessProfileId, collectionName));
   return snapshot.docs.map(document => ({ id: document.id, ...document.data() }) as T);
 }
 
@@ -439,14 +455,6 @@ const deleteTenantDoc = (collectionName: string, businessProfileId: string, docI
     console.error(`Failed to delete business_profiles/${businessProfileId}/${collectionName}/${docId}`, error);
   });
 };
-
-async function getMaxSequenceFromFirestore(businessProfileId: string, collectionName: string, numberField: string) {
-  const snapshot = await getDocs(collection(getFirebaseFirestore(), "business_profiles", businessProfileId, collectionName));
-  return snapshot.docs.reduce((max, document) => {
-    const numberValue = String((document.data() as Record<string, unknown>)[numberField] || "");
-    return Math.max(max, sequenceFromNumber(numberValue));
-  }, 0);
-}
 
 const operationDocumentId = (tripId: string, operationType: OperationType, destinationId: string, customerId: string) =>
   `op_${[tripId, operationType, destinationId, customerId].join("_").replace(/[^A-Za-z0-9_-]/g, "_")}`;
@@ -647,7 +655,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastRemoteUpdateAt.current = Date.now();
     };
     const tenantCollection = (collectionName: string) =>
-      collection(db, "business_profiles", businessProfileId, collectionName);
+      tenantCollectionQuery(businessProfileId, collectionName);
 
     unsubscribers.push(onSnapshot(doc(db, "business_profiles", businessProfileId), snapshot => {
       if (!snapshot.exists()) return;
@@ -816,7 +824,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("Demo business profile is missing.");
     }
 
-    const demoUser = tenantState.users.find(user => user.email.trim().toLowerCase() === normalizedEmail);
+    const tenantUsers = tenantState.users ?? [];
+    const demoUser = tenantUsers.find(user => user.email.trim().toLowerCase() === normalizedEmail);
     if (!demoUser) {
       throw new Error("This email is not invited inside the demo account.");
     }
@@ -826,7 +835,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...tenantState,
       isAuthed: true,
       currentUser: { ...demoUser, online: true },
-      users: tenantState.users.map(user => user.id === demoUser.id ? { ...user, online: true } : user),
+      users: tenantUsers.map(user => user.id === demoUser.id ? { ...user, online: true } : user),
       screen: "dashboard",
       screenStack: [],
       pendingOwnerRegistration: null,
@@ -1297,7 +1306,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     try {
       const db = getFirebaseFirestore();
-      const remoteMaxSequence = await getMaxSequenceFromFirestore(businessProfileId, tenantCollections.payments, "paymentNumber");
       const localMaxSequence = stateRef.current.payments.reduce((max, payment) => Math.max(max, sequenceFromNumber(payment.paymentNumber)), 0);
       const paymentId = id("pm");
       const billRef = doc(db, "business_profiles", businessProfileId, tenantCollections.bills, billId);
@@ -1333,7 +1341,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : localSeq;
         const nextSequence = Math.max(
           Number(sequenceData.currentSequence || 0),
-          remoteMaxSequence,
           localMaxSequence
         ) + 1;
         const receiptNum = formatSequenceNumber(sequenceData, nextSequence);
@@ -1475,7 +1482,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      const remoteMaxSequence = remoteTrips.reduce((max, trip) => Math.max(max, sequenceFromNumber(trip.tripNumber)), 0);
       const localMaxSequence = state.trips.reduce((max, trip) => Math.max(max, sequenceFromNumber(trip.tripNumber)), 0);
       const tripId = id("t");
       const tripRef = doc(db, "business_profiles", businessProfileId, tenantCollections.trips, tripId);
@@ -1505,7 +1511,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : localSeq;
         const nextSequence = Math.max(
           Number(sequenceData.currentSequence || 0),
-          remoteMaxSequence,
           localMaxSequence
         ) + 1;
         const tripNumber = formatSequenceNumber(sequenceData, nextSequence);
@@ -1920,7 +1925,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     try {
       const db = getFirebaseFirestore();
-      const remoteMaxSequence = await getMaxSequenceFromFirestore(businessProfileId, tenantCollections.bills, "billNumber");
       const localMaxSequence = stateRef.current.bills.reduce((max, bill) => Math.max(max, sequenceFromNumber(bill.billNumber)), 0);
       const billId = id("b");
       const billRef = doc(db, "business_profiles", businessProfileId, tenantCollections.bills, billId);
@@ -1940,7 +1944,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : localSeq;
         const nextSequence = Math.max(
           Number(sequenceData.currentSequence || 0),
-          remoteMaxSequence,
           localMaxSequence
         ) + 1;
         const billNumber = formatSequenceNumber(sequenceData, nextSequence, dest?.destinationCode);

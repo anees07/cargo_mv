@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "../useApp";
-import { Btn, Card, Icon, Modal, TopBar, DataListBuilder } from "../components/ui";
+import { Btn, Card, Icon, Modal, TopBar, DataListBuilder, ListPageControls } from "../components/ui";
 import { MVR, MVRShort } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { buildCustomerOutstandingMap, getTotalOutstanding } from "../utils/billingSummary";
@@ -17,7 +17,13 @@ export function DestinationsScreen() {
   const { destinations, customers, navigate, addDestination, selectDestination, toast, back, currentUser } = useApp();
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [visibleDestinationCount, setVisibleDestinationCount] = useState(50);
   const filtered = destinations.filter(d => d.islandName.toLowerCase().includes(search.toLowerCase()) || d.destinationCode.toLowerCase().includes(search.toLowerCase()));
+  const visibleDestinations = filtered.slice(0, visibleDestinationCount);
+
+  useEffect(() => {
+    setVisibleDestinationCount(50);
+  }, [search]);
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -42,7 +48,7 @@ export function DestinationsScreen() {
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
         <DataListBuilder
-          data={filtered}
+          data={visibleDestinations}
           keyExtractor={(d) => d.id}
           icon="island"
           emptyTitle="No destinations found"
@@ -67,6 +73,13 @@ export function DestinationsScreen() {
               </Card>
             );
           }}
+        />
+        <ListPageControls
+          visibleCount={Math.min(visibleDestinationCount, filtered.length)}
+          totalCount={filtered.length}
+          pageSize={50}
+          label="destinations"
+          onShowMore={() => setVisibleDestinationCount(current => current + 50)}
         />
       </div>
 
@@ -114,13 +127,19 @@ export function CustomersScreen() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [visibleCustomerCount, setVisibleCustomerCount] = useState(50);
   const filtered = customers.filter(c => {
     const matchesSearch = c.displayName.toLowerCase().includes(search.toLowerCase());
     const matchesType = typeFilter === "all" || c.customerType === typeFilter;
     return matchesSearch && matchesType;
   });
+  const visibleCustomers = filtered.slice(0, visibleCustomerCount);
   const customerOutstanding = buildCustomerOutstandingMap(bills);
   const totalOutstanding = getTotalOutstanding(bills);
+
+  useEffect(() => {
+    setVisibleCustomerCount(50);
+  }, [search, typeFilter]);
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -156,7 +175,7 @@ export function CustomersScreen() {
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
         <DataListBuilder
-          data={filtered}
+          data={visibleCustomers}
           keyExtractor={(c) => c.id}
           icon="users"
           emptyTitle="No customers found"
@@ -204,6 +223,13 @@ export function CustomersScreen() {
               </Card>
             );
           }}
+        />
+        <ListPageControls
+          visibleCount={Math.min(visibleCustomerCount, filtered.length)}
+          totalCount={filtered.length}
+          pageSize={50}
+          label="customers"
+          onShowMore={() => setVisibleCustomerCount(current => current + 50)}
         />
       </div>
 
