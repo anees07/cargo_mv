@@ -77,6 +77,7 @@ export function Icon({ name, className = "h-5 w-5" }: { name: string; className?
     arrow_down: <><path d="M12 5v14" /><path d="M19 12l-7 7-7-7" /></>,
     cash: <><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 12h.01" /><path d="M18 12h.01" /></>,
     eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>,
+    eye_off: <><path d="M17.94 17.94A10.94 10.94 0 0112 20C5 20 1 12 1 12a20.29 20.29 0 015.06-5.94" /><path d="M9.9 4.24A10.43 10.43 0 0112 4c7 0 11 8 11 8a20.18 20.18 0 01-2.16 3.19" /><path d="M14.12 14.12a3 3 0 01-4.24-4.24" /><path d="M1 1l22 22" /></>,
     save: <><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" /><path d="M17 21v-8H7v8" /><path d="M7 3v5h8" /></>,
     link: <><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" /></>,
     refresh: <><path d="M23 4v6h-6" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" /></>,

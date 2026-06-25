@@ -104,7 +104,11 @@ function ResponsiveAppShell() {
   const isAuthScreen = ["splash", "welcome", "login", "register", "business_setup", "select_profile"].includes(screen);
   
   if (isAuthScreen) {
-    return <div className="flex h-[var(--app-height)] w-full items-center justify-center bg-slate-50 safe-area">{routedScreen}</div>;
+    return (
+      <div className="flex h-[var(--app-height)] w-full min-w-0 bg-slate-50 safe-area">
+        <div className="h-full w-full min-w-0">{routedScreen}</div>
+      </div>
+    );
   }
 
   const navItems = [

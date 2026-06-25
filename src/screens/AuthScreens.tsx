@@ -10,7 +10,7 @@ const demoAuthEnabled = import.meta.env.VITE_ENABLE_DEMO_AUTH === "true";
 // ============================================================================
 export function SplashScreen() {
   return (
-    <div className="flex h-full flex-col items-center justify-center bg-gradient-to-br from-ocean-800 via-ocean-900 to-ocean-950 text-white">
+    <div className="relative flex h-full w-full min-w-0 flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-ocean-800 via-ocean-900 to-ocean-950 text-white">
       <div className="relative mb-6 flex h-24 w-24 items-center justify-center rounded-3xl bg-white/10 backdrop-blur-sm pulse-ring">
         <span className="text-5xl">⛴️</span>
       </div>
@@ -82,6 +82,7 @@ export function LoginScreen() {
   const { signIn, signInDemoUser, navigate, toast, sendPasswordReset } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [demoUserLoading, setDemoUserLoading] = useState(false);
 
@@ -117,10 +118,11 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full w-full min-w-0 flex-col bg-white">
       <TopBar title="" leading={<div className="h-9 w-9" />} onBack={() => navigate("welcome")} />
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900">Sign in</h2>
+      <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6 md:px-10 lg:px-12">
+        <div className="w-full">
+        <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">Sign in</h2>
         <p className="mt-1 text-sm text-slate-500">Use your business profile email.</p>
 
         <div className="mt-8 space-y-4">
@@ -135,12 +137,22 @@ export function LoginScreen() {
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700">Password</label>
-            <input
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              type="password"
-              className="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
-            />
+            <div className="relative">
+              <input
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                type={passwordVisible ? "text" : "password"}
+                className="h-12 w-full rounded-xl border border-slate-300 bg-white py-0 pl-3 pr-12 text-sm outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
+              />
+              <button
+                type="button"
+                onClick={() => setPasswordVisible(visible => !visible)}
+                aria-label={passwordVisible ? "Hide password" : "Show password"}
+                className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean-500"
+              >
+                <Icon name={passwordVisible ? "eye_off" : "eye"} className="h-5 w-5" />
+              </button>
+            </div>
           </div>
           <div className="flex items-center justify-between text-xs">
             <label className="flex items-center gap-2 text-slate-600">
@@ -176,6 +188,7 @@ export function LoginScreen() {
         ) : (
           <p className="mt-4 text-center text-xs font-medium text-slate-400">{APP_RELEASE_DETAIL}</p>
         )}
+        </div>
       </div>
 
       <Modal open={showForgot} onClose={() => setShowForgot(false)} title="Reset Password">
