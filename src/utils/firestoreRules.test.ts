@@ -20,3 +20,16 @@ test("customer price level adjustment writes are covered by Firestore rules", ()
   assert.match(validator, /'fixed_amount'/);
   assert.match(validator, /data\.adjustmentValue >= -100000/);
 });
+
+test("summary aggregate collections are server-owned in Firestore rules", () => {
+  const rules = readFileSync("firestore.rules", "utf8");
+  const summaryRule = rules.match(/match \/summary_reports\/\{summaryId\} \{[\s\S]*?allow write: if false;\n      \}/)?.[0] || "";
+  const aggregateEventsRule = rules.match(/match \/aggregate_events\/\{eventId\} \{[\s\S]*?allow read, write: if false;\n      \}/)?.[0] || "";
+  const genericTenantRule = rules.match(/match \/\{collectionName\}\/\{docId\} \{[\s\S]*?\n      \}/)?.[0] || "";
+
+  assert.match(summaryRule, /allow read: if isBusinessMember\(businessProfileId\)/);
+  assert.match(summaryRule, /allow write: if false/);
+  assert.match(aggregateEventsRule, /allow read, write: if false/);
+  assert.match(genericTenantRule, /collectionName != 'summary_reports'/);
+  assert.match(genericTenantRule, /collectionName != 'aggregate_events'/);
+});

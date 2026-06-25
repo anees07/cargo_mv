@@ -12,17 +12,20 @@ import { unreadNotificationCountForUser } from "../utils/notifications";
 // Reports
 // ============================================================================
 export function ReportsScreen() {
-  const { bills, customers, destinations, payments, trips, businessProfile, toast, back } = useApp();
+  const { bills, customers, destinations, payments, trips, businessProfile, toast, back, dashboardSummary, cashierTodaySummary } = useApp();
   const [tab, setTab] = useState<"overview" | "destination" | "customer" | "tax" | "cashier">("overview");
   const [showExport, setShowExport] = useState(false);
   const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
 
-  const totalBilled = activeBills.reduce((s, b) => s + b.grandTotal, 0);
-  const totalCollected = payments.reduce((s, p) => s + p.amount, 0);
+  const totalBilled = dashboardSummary?.totalBilled ?? activeBills.reduce((s, b) => s + b.grandTotal, 0);
+  const totalCollected = dashboardSummary?.totalCollected ?? payments.reduce((s, p) => s + p.amount, 0);
   const customerOutstanding = buildCustomerOutstandingMap(bills);
-  const totalOutstanding = getTotalOutstanding(bills);
-  const outstandingCustomerCount = getOutstandingCustomerCount(bills);
-  const totalTax = activeBills.reduce((s, b) => s + b.taxTotal, 0);
+  const totalOutstanding = dashboardSummary?.totalOutstanding ?? getTotalOutstanding(bills);
+  const outstandingCustomerCount = dashboardSummary?.outstandingCustomerCount ?? getOutstandingCustomerCount(bills);
+  const totalTax = dashboardSummary?.totalTax ?? activeBills.reduce((s, b) => s + b.taxTotal, 0);
+  const activeBillCount = dashboardSummary?.activeBillCount ?? activeBills.length;
+  const receiptCount = dashboardSummary?.receiptCount ?? payments.length;
+  const cashierMethods = cashierTodaySummary?.methods;
 
   const destinationReport = destinations.map(d => {
     const destBills = activeBills.filter(b => b.destinationId === d.id);
@@ -69,12 +72,12 @@ export function ReportsScreen() {
               <Card className="p-4">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Total billed</p>
                 <p className="mt-1 text-2xl font-bold text-slate-900">{MVRShort(totalBilled)}</p>
-                <p className="mt-1 text-xs text-slate-500">{activeBills.length} bills this period</p>
+                <p className="mt-1 text-xs text-slate-500">{activeBillCount} bills this period</p>
               </Card>
               <Card className="p-4">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Collected</p>
                 <p className="mt-1 text-2xl font-bold text-emerald-700">{MVRShort(totalCollected)}</p>
-                <p className="mt-1 text-xs text-slate-500">{payments.length} receipts</p>
+                <p className="mt-1 text-xs text-slate-500">{receiptCount} receipts</p>
               </Card>
               <Card className="p-4">
                 <p className="text-xs uppercase tracking-wider text-slate-500">Outstanding</p>
@@ -162,26 +165,28 @@ export function ReportsScreen() {
             <p className="mt-1 text-xs text-slate-500">Aggregated by collection method for the day.</p>
             <div className="mt-4 space-y-2">
               {[
-                { method: "Cash", icon: "💵", count: 0, total: 0 },
-                { method: "Bank transfer", icon: "🏦", count: 2, total: 33600 },
-                { method: "Cheque", icon: "📝", count: 1, total: 28900 },
-                { method: "Mobile wallet", icon: "📱", count: 0, total: 0 },
-              ].map(m => (
-                <div key={m.method} className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+                { id: "cash" as const, method: "Cash", icon: "💵" },
+                { id: "bank_transfer" as const, method: "Bank transfer", icon: "🏦" },
+                { id: "cheque" as const, method: "Cheque", icon: "📝" },
+                { id: "mobile_wallet" as const, method: "Mobile wallet", icon: "📱" },
+              ].map(m => {
+                const summary = cashierMethods?.[m.id];
+                return (
+                <div key={m.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
                   <div className="flex items-center gap-3">
                     <div className="text-2xl">{m.icon}</div>
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{m.method}</p>
-                      <p className="text-xs text-slate-500">{m.count} receipts</p>
+                      <p className="text-xs text-slate-500">{summary?.count ?? 0} receipts</p>
                     </div>
                   </div>
-                  <p className="text-sm font-bold text-slate-900">{MVR(m.total)}</p>
+                  <p className="text-sm font-bold text-slate-900">{MVR(summary?.total ?? 0)}</p>
                 </div>
-              ))}
+              );})}
             </div>
             <div className="mt-4 flex items-center justify-between rounded-xl bg-ocean-700 p-3 text-white">
               <span className="text-sm font-semibold">Day total</span>
-              <span className="text-lg font-bold">{MVR(62500)}</span>
+              <span className="text-lg font-bold">{MVR(cashierTodaySummary?.total ?? 0)}</span>
             </div>
           </Card>
         )}

@@ -21,7 +21,7 @@ import type { A4DocumentPayload } from "./utils/documentActions";
 import type {
   BusinessProfile, User, Destination, Customer, CatalogItem, CatalogCategory, ItemPriceRate, CustomerPriceLevel,
   Trip, Bill, Payment, TaxSetting, NumberingSequence, AuditLog,
-  OperationItem, Operation, AppNotification, OperationType, WalkInDetails
+  OperationItem, Operation, AppNotification, OperationType, WalkInDetails, DashboardSummary, CashierSummary
 } from "./types";
 
 // ============================================================================
@@ -70,6 +70,8 @@ export interface AppState {
   // system
   auditLogs: AuditLog[];
   notifications: AppNotification[];
+  dashboardSummary: DashboardSummary | null;
+  cashierTodaySummary: CashierSummary | null;
   toasts: ToastMessage[];
   // ui
   screen: Screen;
@@ -204,6 +206,8 @@ const initialState: AppState = {
   numbering: [],
   auditLogs: [],
   notifications: [],
+  dashboardSummary: null,
+  cashierTodaySummary: null,
   toasts: [],
   screen: "splash",
   screenStack: [],
@@ -219,6 +223,7 @@ const initialState: AppState = {
 
 const id = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 const toastTimeoutMs = 2500;
+const todaySummaryId = () => `cashier_${new Date().toISOString().slice(0, 10)}`;
 
 function appendToast(toasts: ToastMessage[], toast: ToastMessage) {
   const duplicateIndex = toasts.findIndex(item =>
@@ -566,6 +571,8 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     numbering,
     auditLogs,
     notifications,
+    dashboardSummarySnapshot,
+    cashierTodaySummarySnapshot,
   ] = await Promise.all([
     loadTenantCollection<Record<string, unknown>>(tenantCollections.users, businessProfileId),
     loadTenantCollection<Destination>(tenantCollections.destinations, businessProfileId),
@@ -582,6 +589,8 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     loadTenantCollection<NumberingSequence & { id?: string; businessProfileId?: string }>(tenantCollections.numbering, businessProfileId),
     loadTenantCollection<AuditLog>(tenantCollections.auditLogs, businessProfileId),
     loadTenantCollection<AppNotification & { businessProfileId?: string }>(tenantCollections.notifications, businessProfileId),
+    getDoc(doc(db, "business_profiles", businessProfileId, "summary_reports", "dashboard")),
+    getDoc(doc(db, "business_profiles", businessProfileId, "summary_reports", todaySummaryId())),
   ]);
 
   await ensureSystemOtherCatalogItem(businessProfileId, catalogItems, itemPriceRates);
@@ -617,6 +626,12 @@ async function loadTenantState(firebaseUser: FirebaseUser, userData: Record<stri
     numbering,
     auditLogs: auditLogs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     notifications,
+    dashboardSummary: dashboardSummarySnapshot.exists()
+      ? ({ ...dashboardSummarySnapshot.data(), businessProfileId } as DashboardSummary)
+      : null,
+    cashierTodaySummary: cashierTodaySummarySnapshot.exists()
+      ? ({ ...cashierTodaySummarySnapshot.data(), businessProfileId } as CashierSummary)
+      : null,
   };
 }
 
@@ -777,6 +792,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       markRemoteUpdate();
       setState(s => ({ ...s, notifications }));
+    }));
+
+    unsubscribers.push(onSnapshot(doc(db, "business_profiles", businessProfileId, "summary_reports", "dashboard"), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({
+        ...s,
+        dashboardSummary: snapshot.exists()
+          ? ({ ...snapshot.data(), businessProfileId } as DashboardSummary)
+          : null,
+      }));
+    }));
+
+    unsubscribers.push(onSnapshot(doc(db, "business_profiles", businessProfileId, "summary_reports", todaySummaryId()), snapshot => {
+      markRemoteUpdate();
+      setState(s => ({
+        ...s,
+        cashierTodaySummary: snapshot.exists()
+          ? ({ ...snapshot.data(), businessProfileId } as CashierSummary)
+          : null,
+      }));
     }));
 
     return () => unsubscribers.forEach(unsubscribe => unsubscribe());

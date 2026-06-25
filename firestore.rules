@@ -458,15 +458,29 @@ service cloud.firestore {
           && resource.data.businessProfileId == businessProfileId;
       }
 
+      match /summary_reports/{summaryId} {
+        allow read: if isBusinessMember(businessProfileId);
+        allow write: if false;
+      }
+
+      match /aggregate_events/{eventId} {
+        allow read, write: if false;
+      }
+
       match /{collectionName}/{docId} {
         allow read: if collectionName != 'vessels'
+          && collectionName != 'aggregate_events'
           && isBusinessMember(businessProfileId);
         allow create: if collectionName != 'vessels'
+          && collectionName != 'summary_reports'
+          && collectionName != 'aggregate_events'
           && isBusinessMember(businessProfileId)
           && request.resource.data.businessProfileId == businessProfileId
           && validTenantDoc(request.resource.data)
           && isManagerOrAbove();
         allow update: if collectionName != 'vessels'
+          && collectionName != 'summary_reports'
+          && collectionName != 'aggregate_events'
           && isBusinessMember(businessProfileId)
           && resource.data.businessProfileId == businessProfileId
           && request.resource.data.businessProfileId == businessProfileId
@@ -475,6 +489,8 @@ service cloud.firestore {
           && validTenantDoc(request.resource.data)
           && isManagerOrAbove();
         allow delete: if collectionName != 'vessels'
+          && collectionName != 'summary_reports'
+          && collectionName != 'aggregate_events'
           && isBusinessMember(businessProfileId)
           && resource.data.businessProfileId == businessProfileId
           && isOwnerOrAdmin();

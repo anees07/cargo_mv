@@ -268,6 +268,37 @@ export interface Payment {
   notes?: string;
 }
 
+export interface DashboardSummary {
+  businessProfileId: ID;
+  activeBillCount: number;
+  paidBillCount: number;
+  receiptCount: number;
+  totalBilled: number;
+  totalCollected: number;
+  totalOutstanding: number;
+  outstandingCustomerCount: number;
+  totalTax: number;
+  itemCount: number;
+  tripCount: number;
+  tripStatusCounts?: Partial<Record<TripStatus, number>>;
+  activeTripId?: ID | null;
+  updatedAt?: unknown;
+}
+
+export interface CashierMethodSummary {
+  count: number;
+  total: number;
+}
+
+export interface CashierSummary {
+  businessProfileId: ID;
+  day: string;
+  receiptCount: number;
+  total: number;
+  methods?: Partial<Record<PaymentMethod, CashierMethodSummary>>;
+  updatedAt?: unknown;
+}
+
 export interface TaxSetting {
   id: ID;
   businessProfileId: ID;
