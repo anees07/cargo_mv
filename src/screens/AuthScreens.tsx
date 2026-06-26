@@ -4,6 +4,8 @@ import { Btn, Card, Icon, Modal, TopBar } from "../components/ui";
 import { APP_RELEASE_DETAIL } from "../appVersion";
 
 const demoAuthEnabled = import.meta.env.VITE_ENABLE_DEMO_AUTH === "true";
+const demoOwnerEmail = import.meta.env.VITE_DEMO_OWNER_EMAIL || "demo@atollcargo.mv";
+const demoOwnerPassword = import.meta.env.VITE_DEMO_OWNER_PASSWORD || "AtollCargoDemo#2026";
 
 // ============================================================================
 // Splash Screen
@@ -80,8 +82,8 @@ export function WelcomeScreen() {
 // ============================================================================
 export function LoginScreen() {
   const { signIn, signInDemoUser, navigate, toast, sendPasswordReset } = useApp();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(demoOwnerEmail);
+  const [password, setPassword] = useState(demoOwnerPassword);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [demoUserLoading, setDemoUserLoading] = useState(false);
@@ -170,7 +172,7 @@ export function LoginScreen() {
           <Card className="mt-6 border-dashed bg-ocean-50/40 p-4">
             <p className="text-xs font-semibold text-ocean-900">Demo account</p>
             <p className="mt-1 text-xs text-slate-600">
-              Enter an invited demo crew email like ali@atollmarine.mv.
+              Use the prefilled owner login, or enter an invited demo crew email like ali@atollmarine.mv.
             </p>
             <Btn
               fullWidth
