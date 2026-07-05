@@ -1,30 +1,49 @@
 import { useState } from "react";
 import { useApp } from "../useApp";
 import { Btn, Card, Icon, ListPageControls, Modal, Section, TopBar } from "../components/ui";
-import type { BusinessProfile, User, UserRole } from "../types";
+import type { Bill, BusinessProfile, Customer, Destination, User, UserRole } from "../types";
 import { MVR, MVRShort, formatDate, roleColor, roleLabel } from "../utils/format";
 import { buildQuarterTaxBillRows, quarterPeriod, recentQuarterOptions } from "../utils/taxReport";
 import { APP_RELEASE_DETAIL } from "../appVersion";
 import { buildCustomerOutstandingMap, getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
 import { unreadNotificationCountForUser } from "../utils/notifications";
+import type { A4DocumentPayload } from "../utils/documentActions";
+import { walkInDisplayName } from "../utils/walkInDetails";
 
 // ============================================================================
 // Reports
 // ============================================================================
 export function ReportsScreen() {
-  const { bills, customers, destinations, payments, trips, businessProfile, toast, back, dashboardSummary, cashierTodaySummary } = useApp();
+  const { bills, customers, destinations, payments, trips, businessProfile, back, dashboardSummary, cashierTodaySummary, openA4Document } = useApp();
   const [tab, setTab] = useState<"overview" | "destination" | "customer" | "tax" | "cashier">("overview");
-  const [showExport, setShowExport] = useState(false);
+  const [reportTripId, setReportTripId] = useState("");
+  const [reportMode, setReportMode] = useState<"destination" | "customer">("destination");
+  const [reportFilterId, setReportFilterId] = useState("");
   const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
+  const archivedTrips = trips
+    .filter(trip => trip.status === "closed")
+    .sort((a, b) => (b.closedAt || b.endedAt || b.createdAt).localeCompare(a.closedAt || a.endedAt || a.createdAt));
+  const selectedTrip = trips.find(trip => trip.id === reportTripId);
+  const tripFilteredBills = reportTripId ? activeBills.filter(bill => bill.tripId === reportTripId) : activeBills;
+  const customerOptions = buildReportCustomerOptions(tripFilteredBills, customers);
+  const selectedReportBills = tripFilteredBills.filter(bill => {
+    if (!reportFilterId) return true;
+    return reportMode === "destination"
+      ? bill.destinationId === reportFilterId
+      : reportCustomerFilterKey(bill) === reportFilterId;
+  });
 
-  const totalBilled = dashboardSummary?.totalBilled ?? activeBills.reduce((s, b) => s + b.grandTotal, 0);
-  const totalCollected = dashboardSummary?.totalCollected ?? payments.reduce((s, p) => s + p.amount, 0);
-  const customerOutstanding = buildCustomerOutstandingMap(bills);
-  const totalOutstanding = dashboardSummary?.totalOutstanding ?? getTotalOutstanding(bills);
-  const outstandingCustomerCount = dashboardSummary?.outstandingCustomerCount ?? getOutstandingCustomerCount(bills);
-  const totalTax = dashboardSummary?.totalTax ?? activeBills.reduce((s, b) => s + b.taxTotal, 0);
-  const activeBillCount = dashboardSummary?.activeBillCount ?? activeBills.length;
-  const receiptCount = dashboardSummary?.receiptCount ?? payments.length;
+  const totalBilled = reportTripId || reportFilterId ? selectedReportBills.reduce((s, b) => s + b.grandTotal, 0) : dashboardSummary?.totalBilled ?? activeBills.reduce((s, b) => s + b.grandTotal, 0);
+  const scopedPayments = reportTripId
+    ? payments.filter(payment => tripFilteredBills.some(bill => bill.id === payment.billId))
+    : payments;
+  const totalCollected = reportTripId || reportFilterId ? selectedReportBills.reduce((s, b) => s + b.paidAmount, 0) : dashboardSummary?.totalCollected ?? payments.reduce((s, p) => s + p.amount, 0);
+  const customerOutstanding = buildCustomerOutstandingMap(selectedReportBills.length || reportTripId || reportFilterId ? selectedReportBills : bills);
+  const totalOutstanding = reportTripId || reportFilterId ? selectedReportBills.reduce((s, b) => s + Math.max(0, b.grandTotal - b.paidAmount), 0) : dashboardSummary?.totalOutstanding ?? getTotalOutstanding(bills);
+  const outstandingCustomerCount = reportTripId || reportFilterId ? customerOutstanding.size : dashboardSummary?.outstandingCustomerCount ?? getOutstandingCustomerCount(bills);
+  const totalTax = reportTripId || reportFilterId ? selectedReportBills.reduce((s, b) => s + b.taxTotal, 0) : dashboardSummary?.totalTax ?? activeBills.reduce((s, b) => s + b.taxTotal, 0);
+  const activeBillCount = reportTripId || reportFilterId ? selectedReportBills.length : dashboardSummary?.activeBillCount ?? activeBills.length;
+  const receiptCount = reportTripId || reportFilterId ? scopedPayments.length : dashboardSummary?.receiptCount ?? payments.length;
   const cashierMethods = cashierTodaySummary?.methods;
   const hasBackendSummary = Boolean(dashboardSummary);
   const reportScopeCopy = hasBackendSummary
@@ -32,7 +51,7 @@ export function ReportsScreen() {
     : "Recent synced window";
 
   const destinationReport = destinations.map(d => {
-    const destBills = activeBills.filter(b => b.destinationId === d.id);
+    const destBills = selectedReportBills.filter(b => b.destinationId === d.id);
     return {
       ...d,
       billCount: destBills.length,
@@ -44,9 +63,17 @@ export function ReportsScreen() {
     <div className="flex h-full flex-col bg-slate-50">
       <TopBar
         title="Reports"
-        subtitle={reportScopeCopy}
+        subtitle={selectedTrip ? selectedTrip.tripNumber : reportScopeCopy}
         onBack={back}
-        trailing={<Btn size="sm" icon="download" variant="outline" onClick={() => setShowExport(true)}>Export</Btn>}
+        trailing={<Btn size="sm" icon="download" variant="outline" onClick={() => openA4Document(buildReportA4Document({
+          businessProfile,
+          bills: selectedReportBills,
+          customers,
+          destinations,
+          tripNumber: selectedTrip?.tripNumber,
+          mode: reportMode,
+          filterLabel: reportFilterLabel(reportMode, reportFilterId, destinations, customerOptions),
+        }))}>Export</Btn>}
       />
 
       <div className="border-b border-slate-200 bg-white">
@@ -70,6 +97,64 @@ export function ReportsScreen() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-24 lg:p-8 no-scrollbar">
+        <Card className="mb-4 p-3">
+          <div className="grid gap-2 md:grid-cols-3">
+            <div className="relative">
+              <Icon name="ship" className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+              <select
+                value={reportTripId}
+                onChange={event => {
+                  setReportTripId(event.target.value);
+                  setReportFilterId("");
+                }}
+                className="h-11 w-full appearance-none rounded-xl border border-slate-300 bg-white pl-11 pr-9 text-sm font-medium outline-none focus:border-ocean-500"
+                aria-label="Filter report by archived trip number"
+              >
+                <option value="">All archived trips</option>
+                {archivedTrips.map(trip => (
+                  <option key={trip.id} value={trip.id}>{trip.tripNumber}</option>
+                ))}
+              </select>
+              <Icon name="chevron_down" className="pointer-events-none absolute right-3 top-3 h-5 w-5 text-slate-400" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "destination" as const, label: "Destination" },
+                { id: "customer" as const, label: "Customer" },
+              ].map(option => (
+                <button
+                  key={option.id}
+                  onClick={() => {
+                    setReportMode(option.id);
+                    setReportFilterId("");
+                  }}
+                  className={`h-11 rounded-xl border px-3 text-sm font-semibold ${reportMode === option.id ? "border-ocean-600 bg-ocean-700 text-white" : "border-slate-200 bg-white text-slate-700"}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <Icon name={reportMode === "destination" ? "island" : "users"} className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+              <select
+                value={reportFilterId}
+                onChange={event => setReportFilterId(event.target.value)}
+                className="h-11 w-full appearance-none rounded-xl border border-slate-300 bg-white pl-11 pr-9 text-sm font-medium outline-none focus:border-ocean-500"
+                aria-label={`Filter report by ${reportMode}`}
+              >
+                <option value="">All {reportMode === "destination" ? "destinations" : "customers"}</option>
+                {reportMode === "destination"
+                  ? destinations.map(destination => (
+                    <option key={destination.id} value={destination.id}>{destination.islandName}</option>
+                  ))
+                  : customerOptions.map(customer => (
+                    <option key={customer.id} value={customer.id}>{customer.label}</option>
+                  ))}
+              </select>
+              <Icon name="chevron_down" className="pointer-events-none absolute right-3 top-3 h-5 w-5 text-slate-400" />
+            </div>
+          </div>
+        </Card>
         {!hasBackendSummary && (
           <Card className="mb-4 border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
             Reports are using the recent synced data window on the Spark plan. Full-history dashboard summaries require the prepared backend worker to be deployed later.
@@ -104,14 +189,14 @@ export function ReportsScreen() {
               <p className="text-sm font-semibold text-slate-900">Trip summary</p>
               <p className="mt-1 text-xs text-slate-500">{reportScopeCopy}</p>
               <div className="mt-3 space-y-2 text-xs">
-                {trips.map(t => (
+              {(reportTripId ? trips.filter(t => t.id === reportTripId) : trips).map(t => (
                   <div key={t.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
                     <div>
                       <p className="font-semibold text-slate-900">{t.tripNumber}</p>
                       <p className="text-slate-500">{formatDate(t.createdAt)}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-slate-900">{activeBills.filter(b => b.tripId === t.id).length} bills</p>
+                      <p className="font-semibold text-slate-900">{selectedReportBills.filter(b => b.tripId === t.id).length} bills</p>
                       <p className="text-slate-500">{t.status}</p>
                     </div>
                   </div>
@@ -207,99 +292,117 @@ export function ReportsScreen() {
           </Card>
         )}
       </div>
-
-      <Modal open={showExport} onClose={() => setShowExport(false)} title="Export business reports">
-        <ExportAccountingForm
-          businessName={businessProfile.businessName}
-          gstNumber={businessProfile.gstNumber}
-          onExport={() => {
-            toast({
-              title: "Report ready",
-              body: "Download ready.",
-              variant: "success",
-            });
-            setShowExport(false);
-          }}
-        />
-      </Modal>
     </div>
   );
 }
 
-function ExportAccountingForm({
-  businessName,
-  gstNumber,
-  onExport,
+function reportCustomerFilterKey(bill: Bill) {
+  return bill.walkInDetails ? `walkin:${bill.customerId}:${bill.walkInDetails.phone || bill.walkInDetails.name || bill.id}` : `customer:${bill.customerId}`;
+}
+
+function buildReportCustomerOptions(bills: Bill[], customers: Customer[]) {
+  const options = new Map<string, { id: string; label: string }>();
+  for (const bill of bills) {
+    const customer = customers.find(item => item.id === bill.customerId);
+    const key = reportCustomerFilterKey(bill);
+    if (!options.has(key)) {
+      options.set(key, { id: key, label: walkInDisplayName(customer, bill.walkInDetails) });
+    }
+  }
+  return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function reportFilterLabel(
+  mode: "destination" | "customer",
+  filterId: string,
+  destinations: Destination[],
+  customers: Array<{ id: string; label: string }>,
+) {
+  if (!filterId) return mode === "destination" ? "All destinations" : "All customers";
+  if (mode === "destination") {
+    return destinations.find(destination => destination.id === filterId)?.islandName || "Selected destination";
+  }
+  return customers.find(customer => customer.id === filterId)?.label || "Selected customer";
+}
+
+function buildReportA4Document({
+  businessProfile,
+  bills,
+  customers,
+  destinations,
+  tripNumber,
+  mode,
+  filterLabel,
 }: {
-  businessName: string;
-  gstNumber: string;
-  onExport: (format: string) => void;
-}) {
-  const [format, setFormat] = useState("MIRA XML Tax Return");
-  const [period, setPeriod] = useState("Q1 2025 (Jan - Mar)");
-  const [exporting, setExporting] = useState(false);
+  businessProfile: BusinessProfile;
+  bills: Bill[];
+  customers: Customer[];
+  destinations: Destination[];
+  tripNumber?: string;
+  mode: "destination" | "customer";
+  filterLabel: string;
+}): A4DocumentPayload {
+  const customersById = new Map(customers.map(customer => [customer.id, customer]));
+  const destinationsById = new Map(destinations.map(destination => [destination.id, destination]));
+  const totalBilled = bills.reduce((sum, bill) => sum + bill.grandTotal, 0);
+  const totalTax = bills.reduce((sum, bill) => sum + bill.taxTotal, 0);
+  const totalPaid = bills.reduce((sum, bill) => sum + bill.paidAmount, 0);
+  const totalBalance = bills.reduce((sum, bill) => sum + Math.max(0, bill.grandTotal - bill.paidAmount), 0);
 
-  const formats = [
-    { id: "MIRA XML Tax Return", label: "MIRA XML Tax Return", desc: "Official MIRA electronic portal formatted filing." },
-    { id: "CSV Complete General Ledger", label: "CSV Complete Ledger", desc: "All line items, payments, bills, and original/override prices." },
-    { id: "PDF Trip Ledger Summaries", label: "PDF Trip Ledgers", desc: "Print-ready A4 summary breakdown per active/closed trip." },
-    { id: "JSON Daily Cashier Reconciliations", label: "JSON Cashier Reconciliations", desc: "Automated point-of-sale audit export." },
-  ];
-
-  const handleStart = () => {
-    setExporting(true);
-    setTimeout(() => {
-      onExport(format);
-      setExporting(false);
-    }, 900);
+  return {
+    title: mode === "destination" ? "DESTINATION BILL REPORT" : "CUSTOMER BILL REPORT",
+    documentNumber: `${tripNumber || "ALL-TRIPS"}-${mode.toUpperCase()}-REPORT`,
+    businessName: businessProfile.businessName,
+    businessDetails: [
+      businessProfile.vesselName,
+      businessProfile.address,
+      businessProfile.gstNumber ? `GST: ${businessProfile.gstNumber}` : undefined,
+      businessProfile.vesselRegistrationNumber ? `Reg: ${businessProfile.vesselRegistrationNumber}` : undefined,
+      `${businessProfile.email} • ${businessProfile.phone}`,
+    ].filter((line): line is string => Boolean(line)),
+    customerName: filterLabel,
+    customerDetails: [
+      tripNumber ? `Trip: ${tripNumber}` : "All archived trips",
+      `${bills.length} bills selected`,
+      `Generated: ${new Date().toLocaleString()}`,
+    ],
+    destinationDetails: [
+      mode === "destination" ? "Grouped/filterable by destination" : "Grouped/filterable by customer",
+    ],
+    meta: [
+      { label: "Trip", value: tripNumber || "All archived trips" },
+      { label: "Filter", value: filterLabel },
+      { label: "Bills", value: String(bills.length) },
+    ],
+    items: bills.map(bill => {
+      const customer = customersById.get(bill.customerId);
+      const destination = destinationsById.get(bill.destinationId);
+      return {
+        name: bill.billNumber,
+        description: [
+          walkInDisplayName(customer, bill.walkInDetails),
+          destination?.islandName,
+          bill.paymentStatus.replace("_", " "),
+          formatDate(bill.createdAt),
+        ].filter(Boolean).join(" • "),
+        quantity: bill.itemCount || bill.items?.length || 1,
+        unitType: "items",
+        unitPrice: bill.itemCount > 0 ? Number((bill.grandTotal / bill.itemCount).toFixed(2)) : bill.grandTotal,
+        taxAmount: bill.taxTotal,
+        total: bill.grandTotal,
+      };
+    }),
+    totals: [
+      { label: "Total billed", value: MVR(totalBilled), strong: true },
+      { label: "GST included", value: MVR(totalTax) },
+      { label: "Paid", value: MVR(totalPaid) },
+      { label: "Balance due", value: MVR(totalBalance), strong: totalBalance > 0 },
+    ],
+    footer: [
+      "Generated from selected archived trip, destination, and customer filters.",
+      `${businessProfile.businessName} • ${businessProfile.email} • ${businessProfile.phone}`,
+    ],
   };
-
-  return (
-    <div className="space-y-4 p-4 md:p-6 lg:p-8">
-      <Card className="border-ocean-200 bg-ocean-50 p-3">
-        <p className="text-xs font-semibold text-ocean-950">{businessName}</p>
-        <p className="mt-0.5 font-mono text-xs text-ocean-800">{gstNumber}</p>
-      </Card>
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Accounting / filing format</label>
-        <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-          {formats.map(f => (
-            <button
-              key={f.id}
-              onClick={() => setFormat(f.id)}
-              className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all ${format === f.id ? "border-ocean-500 bg-ocean-50/60 shadow-sm" : "border-slate-200 hover:bg-slate-50"}`}
-            >
-              <div className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded-full border ${format === f.id ? "border-ocean-600 bg-ocean-700 text-white" : "border-slate-300 bg-white"}`}>
-                {format === f.id && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-              </div>
-              <div>
-                <p className={`text-xs font-semibold ${format === f.id ? "text-ocean-950" : "text-slate-900"}`}>{f.label}</p>
-                <p className="text-xs text-slate-500">{f.desc}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-semibold text-slate-700">Reporting period</label>
-        <select value={period} onChange={e => setPeriod(e.target.value)} className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500">
-          <option value="Q1 2025 (Jan - Mar)">Q1 2025 (Jan - Mar)</option>
-          <option value="Q4 2024 (Oct - Dec)">Q4 2024 (Oct - Dec)</option>
-          <option value="Last 30 Days Operations">Last 30 Days Operations</option>
-          <option value="All Time Master Archive">All Time Master Archive</option>
-        </select>
-      </div>
-      <Btn
-        fullWidth
-        size="lg"
-        icon="download"
-        loading={exporting}
-        onClick={handleStart}
-      >
-        Generate & download report
-      </Btn>
-    </div>
-  );
 }
 
 function GstReportingSuite() {

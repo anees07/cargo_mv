@@ -15,11 +15,12 @@ import { shareA4PdfDocument } from "../utils/documentActions";
 // Dashboard
 // ============================================================================
 export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
-  const { businessProfile, trips, bills, customers, destinations, activeTripId, navigate, currentUser, auditLogs, users, notifications, dashboardSummary } = useApp();
+  const { businessProfile, trips, bills, customers, destinations, activeTripId, navigate, selectBill, currentUser, auditLogs, users, notifications, dashboardSummary } = useApp();
   const summaryActiveTripId = dashboardSummary?.activeTripId || activeTripId;
   const activeTrip = trips.find(t => t.id === summaryActiveTripId) || trips.find(t => t.id === activeTripId);
   const activeTripRoute = activeTrip ? describeCompleteTripRoute(activeTrip, destinations) : "";
-  const recentBills = bills.slice(0, 4);
+  const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
+  const recentBills = (activeTrip ? activeBills.filter(bill => bill.tripId === activeTrip.id) : activeBills).slice(0, 4);
   const outstanding = dashboardSummary?.totalOutstanding ?? getTotalOutstanding(bills);
   const outstandingCustomers = dashboardSummary?.outstandingCustomerCount ?? getOutstandingCustomerCount(bills);
   const todayRevenue = dashboardSummary?.totalCollected ?? bills.filter(b => b.paymentStatus === "paid").reduce((s, b) => s + b.paidAmount, 0);
@@ -152,7 +153,7 @@ export function DashboardScreen({ onMenuOpen }: { onMenuOpen?: () => void }) {
             {recentBills.map(b => {
               const customer = customers.find(c => c.id === b.customerId);
               return (
-                <Card key={b.id} className="p-3" onClick={() => { useApp; navigate("invoice_preview"); }}>
+                <Card key={b.id} className="p-3" onClick={() => selectBill(b.id)}>
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -283,7 +284,7 @@ export function TripsScreen() {
 }
 
 export function TripDetailScreen() {
-  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, customers, bills, operations, currentUser, destinations, businessProfile, toast, openA4Document } = useApp();
+  const { trips, selectedTripId, activeTripId, navigate, openTrip, endTrip, closeTrip, updateTripStatus, updateTripNotes, deleteTrip, selectBill, customers, bills, operations, currentUser, destinations, businessProfile, toast, openA4Document } = useApp();
   const trip = trips.find(t => t.id === (selectedTripId || activeTripId));
   const [showEditStatus, setShowEditStatus] = useState(false);
   const [showEditSpecs, setShowEditSpecs] = useState(false);
@@ -293,8 +294,10 @@ export function TripDetailScreen() {
   if (!trip) return null;
   const tripOps = operations.filter(o => o.tripId === trip.id);
   const tripBills = bills.filter(b => b.tripId === trip.id);
-  const tripEndSummary = buildTripEndBillSummary(trip, tripBills, destinations);
-  const tripRevenue = tripBills.reduce((s, b) => s + b.grandTotal, 0);
+  const activeTripBills = tripBills.filter(b => b.billStatus !== "cancelled");
+  const paidTripBills = activeTripBills.filter(b => b.paymentStatus === "paid");
+  const tripEndSummary = buildTripEndBillSummary(trip, activeTripBills, destinations);
+  const tripRevenue = activeTripBills.reduce((s, b) => s + b.grandTotal, 0);
   const tripItems = tripOps.reduce((s, o) => s + o.items.length, 0);
   const canOperate = ["open", "loading", "sailing", "offloading"].includes(trip.status);
   const tripEndReportDocument = () => buildTripEndBillSummaryA4Document({
@@ -395,7 +398,7 @@ export function TripDetailScreen() {
 
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
           <Stat label="Operations" value={String(tripOps.length)} sub={`${tripItems} items`} icon="package" />
-          <Stat label="Bills" value={String(tripBills.length)} sub={`${tripBills.filter(b => b.paymentStatus === "paid").length} paid`} icon="receipt" color="emerald" />
+          <Stat label="Bills" value={String(activeTripBills.length)} sub={`${paidTripBills.length} paid`} icon="receipt" color="emerald" />
           <Stat label="Revenue" value={MVRShort(tripRevenue)} sub="trip total" icon="cash" color="amber" />
         </div>
 
@@ -492,12 +495,12 @@ export function TripDetailScreen() {
         </Section>
 
         <Section title="Bills on this trip" className="mt-6">
-          {tripBills.length === 0 ? (
+          {activeTripBills.length === 0 ? (
             <Card className="p-6 text-center text-sm text-slate-500">No bills yet.</Card>
-          ) : tripBills.map(b => {
+          ) : activeTripBills.map(b => {
             const c = customers.find(x => x.id === b.customerId);
             return (
-              <Card key={b.id} className="mb-2 p-3" onClick={() => { useApp; navigate("invoice_preview"); }}>
+              <Card key={b.id} className="mb-2 p-3" onClick={() => selectBill(b.id)}>
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-900">{b.billNumber}</p>
@@ -598,6 +601,11 @@ function TripEndBillSummaryCard({
             <p className="text-xs text-amber-700">Balance</p>
             <p className="mt-1 text-sm font-bold text-amber-900">{MVR(summary.balanceDue)}</p>
           </div>
+        </div>
+        <div className="mt-4">
+          <Btn fullWidth size="lg" icon="receipt" onClick={onPrint}>
+            Generate end trip report
+          </Btn>
         </div>
       </div>
 

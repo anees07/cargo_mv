@@ -139,26 +139,12 @@ export function buildTripEndBillSummaryA4Document({
       { label: "Status", value: trip.status },
       { label: "Ended", value: trip.endedAt ? formatDateTime(trip.endedAt) : undefined },
     ],
-    items: summary.destinations.flatMap(group => [
-      {
-        name: `${group.destinationName}${group.destinationCode ? ` (${group.destinationCode})` : ""}`,
-        description: [
-          group.atoll ? `${group.atoll} Atoll` : undefined,
-          `${group.billCount} bills`,
-          `${group.itemCount} line items`,
-          `Paid ${MVR(group.paidAmount)}`,
-          `Balance ${MVR(group.balanceDue)}`,
-        ].filter(Boolean).join(" • "),
-        quantity: group.billCount,
-        unitType: "bills",
-        unitPrice: group.billCount > 0 ? money(group.grandTotal / group.billCount) : 0,
-        taxAmount: group.taxTotal,
-        total: group.grandTotal,
-      },
-      ...group.bills.map(bill => ({
+    items: summary.destinations.flatMap(group =>
+      group.bills.map(bill => ({
         name: bill.billNumber,
         description: [
           walkInDisplayName(customersById.get(bill.customerId), bill.walkInDetails),
+          group.destinationName,
           bill.billStatus.replace("_", " "),
           formatDate(bill.createdAt),
           `Paid ${MVR(bill.paidAmount)}`,
@@ -169,8 +155,8 @@ export function buildTripEndBillSummaryA4Document({
         unitPrice: bill.itemCount > 0 ? money(bill.grandTotal / bill.itemCount) : bill.grandTotal,
         taxAmount: bill.taxTotal,
         total: bill.grandTotal,
-      })),
-    ]),
+      }))
+    ),
     totals: [
       { label: "Total billed", value: MVR(summary.grandTotal), strong: true },
       { label: "GST included", value: MVR(summary.taxTotal) },

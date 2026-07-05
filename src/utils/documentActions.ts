@@ -251,7 +251,7 @@ export function buildA4DocumentHtml(document: A4DocumentPayload, options: { show
       .screen-toolbar-title { min-width: 0; flex: 1; }
       .screen-toolbar-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
       .screen-toolbar-title span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; font-size: 12px; margin-top: 2px; }
-      .page { min-height: 273mm; background: #fff; box-shadow: 0 12px 40px rgba(15, 23, 42, .18); padding: 0; }
+      .page { min-height: 273mm; background: #fff; box-shadow: 0 12px 40px rgba(15, 23, 42, .18); padding: 10mm; }
       .page-number { display: block; margin-top: 4mm; text-align: right; color: #64748b; font-size: 8pt; }
     }
     @media screen and (max-width: 720px) {
@@ -259,7 +259,7 @@ export function buildA4DocumentHtml(document: A4DocumentPayload, options: { show
       body.embedded-document { padding-top: 9px; }
       .screen-toolbar { min-height: calc(env(safe-area-inset-top, 0px) + 58px); padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
       .screen-toolbar .print-button { justify-content: center; }
-      .page { width: calc(100vw - 18px); min-height: auto; overflow: hidden; }
+      .page { width: calc(100vw - 18px); min-height: auto; overflow: hidden; padding: 0; }
       .content { min-width: 0; }
       .top { flex-direction: column; gap: 12px; padding: 18px 14px; }
       .business h1 { font-size: 22px; line-height: 1.15; overflow-wrap: anywhere; }

@@ -75,6 +75,20 @@ test("bill list category filter returns only one selected category", () => {
   assert.deepEqual(filterBillsForListCategory(bills, "paid").map(item => item.id), ["paid"]);
 });
 
+test("current bill list category can be scoped to the active trip without removing older bills", () => {
+  const bills = [
+    bill({ id: "old_trip", tripId: "trip_old", billStatus: "draft", paymentStatus: "unpaid" }),
+    bill({ id: "new_trip", tripId: "trip_new", billStatus: "draft", paymentStatus: "unpaid" }),
+    bill({ id: "new_trip_finalized", tripId: "trip_new", billStatus: "finalized", paymentStatus: "unpaid" }),
+  ];
+
+  assert.deepEqual(filterBillsForListCategory(bills, "current", "trip_new").map(item => item.id), [
+    "new_trip",
+    "new_trip_finalized",
+  ]);
+  assert.deepEqual(bills.map(item => item.id), ["old_trip", "new_trip", "new_trip_finalized"]);
+});
+
 test("bill list destination groups keep selected category bills separated by destination", () => {
   const groups = groupBillsByDestinationForList([
     bill({ id: "male_1", destinationId: "male" }),

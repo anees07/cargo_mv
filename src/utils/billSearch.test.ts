@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { filterBillsForSearch } from "./billSearch.js";
-import type { Bill, Customer } from "../types.js";
+import type { Bill, Customer, Trip } from "../types.js";
 
 const bill = (overrides: Partial<Bill>): Bill => ({
   id: "bill_1",
@@ -41,6 +41,22 @@ const customer = (overrides: Partial<Customer>): Customer => ({
   ...overrides,
 });
 
+const trip = (overrides: Partial<Trip>): Trip => ({
+  id: "trip_1",
+  businessProfileId: "bp_1",
+  tripNumber: "TRIP-2026-000063",
+  vesselName: "MV Ocean Star",
+  originDestinationId: "dest_1",
+  returnDestinationId: "dest_2",
+  plannedDepartureAt: "2026-06-18T08:00:00.000Z",
+  plannedArrivalAt: "2026-06-18T18:00:00.000Z",
+  status: "closed",
+  openedBy: "user_1",
+  notes: "",
+  createdAt: "2026-06-18T07:00:00.000Z",
+  ...overrides,
+});
+
 test("bill search matches customer display name", () => {
   const results = filterBillsForSearch([
     bill({ id: "north", customerId: "customer_1" }),
@@ -74,4 +90,16 @@ test("bill search matches bill number and walk-in details", () => {
 
   assert.deepEqual(results.map(item => item.id), ["number_match"]);
   assert.deepEqual(filterBillsForSearch(bills, [], "sarusana").map(item => item.id), ["name_match"]);
+});
+
+test("bill search matches archived trip number", () => {
+  const results = filterBillsForSearch([
+    bill({ id: "trip_match", tripId: "trip_63" }),
+    bill({ id: "trip_miss", tripId: "trip_64" }),
+  ], [], "000063", [
+    trip({ id: "trip_63", tripNumber: "TRIP-2026-000063" }),
+    trip({ id: "trip_64", tripNumber: "TRIP-2026-000064" }),
+  ]);
+
+  assert.deepEqual(results.map(item => item.id), ["trip_match"]);
 });

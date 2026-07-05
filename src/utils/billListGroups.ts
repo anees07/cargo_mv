@@ -60,7 +60,11 @@ export function groupBillsForList(bills: Bill[]): BillListGroup[] {
     .filter(group => group.bills.length > 0);
 }
 
-export function filterBillsForListCategory(bills: Bill[], category: BillListGroupId): Bill[] {
+export function filterBillsForListCategory(bills: Bill[], category: BillListGroupId, currentTripId?: string | null): Bill[] {
+  if (category === "current" && currentTripId) {
+    return bills.filter(bill => bill.tripId === currentTripId);
+  }
+
   const matches = groupMatchers.get(category);
   return matches ? bills.filter(matches) : bills;
 }

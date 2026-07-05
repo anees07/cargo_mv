@@ -122,7 +122,7 @@ test("trip end bill summary groups active bills by destination and excludes canc
   assert.deepEqual(summary.destinations.map(group => group.billCount), [2, 1]);
 });
 
-test("trip end A4 document contains destination rows and accounting totals", () => {
+test("trip end A4 document contains only bill rows and accounting totals", () => {
   const summary = buildTripEndBillSummary(trip, [
     bill({ id: "bill_1", grandTotal: 100, paidAmount: 40 }),
   ], destinations);
@@ -130,8 +130,10 @@ test("trip end A4 document contains destination rows and accounting totals", () 
 
   assert.equal(document.title, "TRIP END BILL SUMMARY");
   assert.equal(document.documentNumber, "TRIP-2026-000001-BILL-SUMMARY");
-  assert.equal(document.items[0].name, "Hithadhoo (HIT)");
-  assert.match(document.items[1].description || "", /Atoll Traders/);
+  assert.equal(document.items.length, 1);
+  assert.equal(document.items[0].name, "BILL-HIT-0001");
+  assert.match(document.items[0].description || "", /Atoll Traders/);
+  assert.match(document.items[0].description || "", /Hithadhoo/);
   assert.deepEqual(document.totals.map(total => total.label), ["Total billed", "GST included", "Paid", "Balance due"]);
 });
 

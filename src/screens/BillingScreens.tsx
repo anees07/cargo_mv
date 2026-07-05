@@ -4,8 +4,9 @@ import { Btn, Card, Icon, ListPageControls, Modal, StatusBadge, TopBar } from ".
 import { MVR, formatDate } from "../utils/format";
 import { hasPermission } from "../utils/permissions";
 import { filterBillsForSearch } from "../utils/billSearch";
-import { filterBillsForListCategory, groupBillsByDestinationForList, groupBillsForList, type BillListGroupId } from "../utils/billListGroups";
+import { filterBillsForListCategory, groupBillsByDestinationForList, type BillListGroupId } from "../utils/billListGroups";
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
+import { isUnfinishedTrip } from "../utils/trips";
 import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "../types";
@@ -14,8 +15,9 @@ import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "..
 // Billing — list, filter, generate, finalize
 // ============================================================================
 export function BillingScreen() {
-  const { bills, customers, destinations, trips, operations, navigate, selectBill, createBillFromOperation, updateDraftBill, cancelBill, finalizeBill, back, currentUser } = useApp();
-  const [filter, setFilter] = useState<BillListGroupId>("all");
+  const { bills, customers, destinations, trips, operations, activeTripId, navigate, selectBill, createBillFromOperation, updateDraftBill, cancelBill, finalizeBill, back, currentUser } = useApp();
+  const [filter, setFilter] = useState<BillListGroupId>("current");
+  const [tripFilterId, setTripFilterId] = useState("");
   const [search, setSearch] = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
@@ -23,24 +25,32 @@ export function BillingScreen() {
   const [expandedDestinationGroups, setExpandedDestinationGroups] = useState<string[]>([]);
   const [visibleBillCount, setVisibleBillCount] = useState(50);
   const activeBills = bills.filter(bill => bill.billStatus !== "cancelled");
+  const currentTripId = activeTripId || trips.find(isUnfinishedTrip)?.id || null;
+  const archivedTripOptions = trips
+    .filter(trip => trip.status === "closed")
+    .sort((a, b) => (b.closedAt || b.endedAt || b.createdAt).localeCompare(a.closedAt || a.endedAt || a.createdAt));
   const editingBill = activeBills.find(bill => bill.id === editingBillId);
   const cancellingBill = activeBills.find(bill => bill.id === cancellingBillId);
   const billableOperations = operations.filter(operation => isOperationBillable(operation, trips, bills));
 
   const isSearching = Boolean(search.trim());
+  const isCurrentFilter = filter === "current";
+  const tripScopedBills = tripFilterId
+    ? activeBills.filter(bill => bill.tripId === tripFilterId)
+    : activeBills;
+  const baseBillsForFilter = isCurrentFilter ? activeBills : tripScopedBills;
+  const statusFilteredBills = filterBillsForListCategory(
+    baseBillsForFilter,
+    filter,
+    isCurrentFilter ? currentTripId : tripFilterId || currentTripId
+  );
   const filtered = isSearching
-    ? filterBillsForSearch(activeBills, customers, search)
-    : filterBillsForListCategory(activeBills, filter);
+    ? filterBillsForSearch(statusFilteredBills, customers, search, trips)
+    : statusFilteredBills;
   const billGroups = isSearching
-    ? groupBillsForList(filtered).flatMap(categoryGroup =>
-        groupBillsByDestinationForList(categoryGroup.bills, destinations).map(destinationGroup => ({
-          id: `${categoryGroup.id}:${destinationGroup.id}`,
-          title: `${categoryGroup.title} • ${destinationGroup.title}`,
-          description: destinationGroup.description,
-          bills: destinationGroup.bills,
-        }))
-      )
+    ? []
     : groupBillsByDestinationForList(filtered, destinations);
+  const visibleSearchedBills = isSearching ? filtered.slice(0, visibleBillCount) : [];
   const visibleBillGroups = (() => {
     let remaining = visibleBillCount;
     return billGroups.flatMap(group => {
@@ -76,7 +86,7 @@ export function BillingScreen() {
   useEffect(() => {
     setVisibleBillCount(50);
     setExpandedDestinationGroups([]);
-  }, [filter, search]);
+  }, [filter, search, tripFilterId]);
 
   const renderBillCard = (b: Bill) => {
     const c = customers.find(c => c.id === b.customerId);
@@ -163,14 +173,33 @@ export function BillingScreen() {
           {billingTabs.map(f => (
             <button
               key={f.id}
-              onClick={() => setFilter(f.id)}
+              onClick={() => {
+                setFilter(f.id);
+                if (f.id === "current") setTripFilterId("");
+              }}
               className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${!isSearching && filter === f.id ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-700"}`}
             >
               {f.label}
             </button>
           ))}
         </div>
-        <div className="border-t border-slate-100 px-4 py-3">
+        <div className="grid gap-2 border-t border-slate-100 px-4 py-3 md:grid-cols-[minmax(180px,260px)_1fr]">
+          <div className="relative">
+            <Icon name="ship" className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
+            <select
+              value={isCurrentFilter ? "" : tripFilterId}
+              onChange={event => setTripFilterId(event.target.value)}
+              disabled={isCurrentFilter}
+              className="min-h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white pl-11 pr-9 text-base text-slate-950 outline-none transition focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
+              aria-label="Filter by archived trip number"
+            >
+              <option value="">{isCurrentFilter ? "Current trip only" : "All archived trips"}</option>
+              {archivedTripOptions.map(trip => (
+                <option key={trip.id} value={trip.id}>{trip.tripNumber}</option>
+              ))}
+            </select>
+            <Icon name="chevron_down" className="pointer-events-none absolute right-3 top-3.5 h-5 w-5 text-slate-400" />
+          </div>
           <div className="relative">
             <Icon name="search" className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
             <input
@@ -207,7 +236,8 @@ export function BillingScreen() {
               {isSearching ? "No bills match this search." : "No bills in this category."}
             </Card>
           )}
-          {visibleBillGroups.map(group => {
+          {isSearching && visibleSearchedBills.map(renderBillCard)}
+          {!isSearching && visibleBillGroups.map(group => {
             const groupTotal = group.bills.reduce((sum, bill) => sum + bill.grandTotal, 0);
             const groupOutstanding = group.bills.reduce((sum, bill) => sum + (bill.grandTotal - bill.paidAmount), 0);
             const isExpanded = expandedDestinationGroups.includes(group.id);
