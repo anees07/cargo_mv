@@ -1307,6 +1307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const current = stateRef.current;
     const bill = current.bills.find(b => b.id === billId);
     if (!bill) return;
+    if (bill.billStatus !== "draft") return;
     const updatedBill: Bill = {
       ...bill,
       billStatus: "finalized",

@@ -25,17 +25,20 @@ import {
   walkInDisplayName,
   walkInPhone,
 } from "../utils/walkInDetails";
-import type { CatalogItem, Customer, WalkInDetails } from "../types";
+import type { Bill, CatalogItem, Customer, WalkInDetails } from "../types";
 
 // ============================================================================
 // Operation Screen — Loading & Offloading for the active trip
 // ============================================================================
+type BillMode = "credit" | "cash";
+type CashPaymentQueueItem = { billId: string; billNumber: string; amount: number };
+
 export function OperationScreen() {
   const {
     trips, activeTripId, customers, destinations, catalogItems, catalogCategories, itemPriceRates,
     priceLevels,
     businessProfile, addOperationItem, addOperationItems, removeOperationItem, operations, bills, addCustomer, addDestination, back, toast,
-    createBillFromOperation, currentUser, addCatalogItem, clearOperationCart,
+    createBillFromOperation, finalizeBill, postPayment, currentUser, addCatalogItem, clearOperationCart,
   } = useApp();
   const activeTrip = trips.find(t => t.id === activeTripId);
 
@@ -50,6 +53,13 @@ export function OperationScreen() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [walkInByDestination, setWalkInByDestination] = useState<Record<string, WalkInDetails>>({});
   const [expandedOffloadCustomers, setExpandedOffloadCustomers] = useState<Record<string, boolean>>({});
+  const [billMode, setBillMode] = useState<BillMode>("credit");
+  const [cashBillsAwaitingFinalize, setCashBillsAwaitingFinalize] = useState<CashPaymentQueueItem[]>([]);
+  const [cashPaymentQueue, setCashPaymentQueue] = useState<CashPaymentQueueItem[]>([]);
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashReference, setCashReference] = useState("");
+  const [cashPaymentPosting, setCashPaymentPosting] = useState(false);
+  const [cashFinalizeRetryTick, setCashFinalizeRetryTick] = useState(0);
   const entryCartClearedForTripRef = useRef<string | null>(null);
 
   const dest = destinations.find(d => d.id === selectedDestId);
@@ -141,6 +151,60 @@ export function OperationScreen() {
   const canAddItem = Boolean(selectedCustomerId && selectedDestId) &&
     isWalkInDetailsComplete(customer, selectedWalkInDetails) &&
     (opType !== "offloading" || offloadRows.length > 0);
+  const canCollectPayment = hasPermission(currentUser.role, "manage_payment");
+  const cashPaymentTarget = cashPaymentQueue[0] || null;
+  const cashBill = cashPaymentTarget ? bills.find(bill => bill.id === cashPaymentTarget.billId) : undefined;
+  const cashBillReady = Boolean(cashBill && cashBill.billStatus !== "draft");
+  const cashDue = Number(((cashBill ? cashBill.grandTotal - cashBill.paidAmount : cashPaymentTarget?.amount || 0)).toFixed(2));
+  const cashAmountValue = Number(cashAmount);
+  const canPostCashPayment = Boolean(cashPaymentTarget) &&
+    cashBillReady &&
+    canCollectPayment &&
+    cashAmountValue > 0 &&
+    cashAmountValue <= cashDue &&
+    !cashPaymentPosting;
+  const cashBillPreparationPending = cashBillsAwaitingFinalize.length > 0;
+
+  useEffect(() => {
+    if (cashBillsAwaitingFinalize.length === 0) return;
+
+    let triedFinalize = false;
+    for (const pendingBill of cashBillsAwaitingFinalize) {
+      const billToFinalize = bills.find(bill => bill.id === pendingBill.billId);
+      if (!billToFinalize || billToFinalize.billStatus !== "draft") {
+        continue;
+      }
+      triedFinalize = true;
+      finalizeBill(pendingBill.billId);
+    }
+
+    if (!triedFinalize) return;
+    const retryTimer = window.setTimeout(() => {
+      setCashFinalizeRetryTick(tick => tick + 1);
+    }, 150);
+    return () => window.clearTimeout(retryTimer);
+  }, [bills, cashBillsAwaitingFinalize, cashFinalizeRetryTick, finalizeBill]);
+
+  useEffect(() => {
+    if (cashBillsAwaitingFinalize.length === 0 || cashPaymentQueue.length > 0) return;
+
+    const readyQueue = cashBillsAwaitingFinalize.map<CashPaymentQueueItem | null>(pendingBill => {
+      const finalizedBill = bills.find(bill => bill.id === pendingBill.billId);
+      if (!finalizedBill || finalizedBill.billStatus === "draft") return null;
+      return {
+        billId: finalizedBill.id,
+        billNumber: finalizedBill.billNumber,
+        amount: Number((finalizedBill.grandTotal - finalizedBill.paidAmount).toFixed(2)),
+      };
+    });
+    if (readyQueue.some(item => item === null)) return;
+
+    const payableQueue = readyQueue.filter((item): item is CashPaymentQueueItem => Boolean(item && item.amount > 0));
+    setCashBillsAwaitingFinalize([]);
+    setCashPaymentQueue(payableQueue);
+    setCashAmount(String(payableQueue[0]?.amount || ""));
+    setCashReference("");
+  }, [bills, cashBillsAwaitingFinalize, cashPaymentQueue.length]);
 
   useEffect(() => {
     if (!activeTripId || entryCartClearedForTripRef.current === activeTripId) return;
@@ -431,6 +495,45 @@ export function OperationScreen() {
           </Section>
         )}
 
+        {opType === "loading" && (
+          <Section title="Bill type" className="mt-5">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "credit" as const, label: "Credit bill", hint: "Generate bill without collecting now", icon: "receipt" },
+                { id: "cash" as const, label: "Cash bill", hint: "Generate and collect cash payment", icon: "cash" },
+              ].map(option => {
+                const selected = billMode === option.id;
+                const disabled = option.id === "cash" && !canCollectPayment;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={disabled}
+                    onClick={() => setBillMode(option.id)}
+                    className={`relative flex min-h-12 items-center gap-2 rounded-xl border p-2 pr-7 text-left transition disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:gap-3 sm:p-3 sm:pr-9 ${
+                      selected
+                        ? "border-ocean-500 bg-ocean-50 ring-2 ring-ocean-100"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-9 sm:w-9 ${
+                      selected ? "bg-ocean-700 text-white" : "bg-slate-100 text-slate-500"
+                    }`}>
+                      <Icon name={option.icon} className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-slate-900 sm:text-sm">{option.label}</p>
+                      <p className="mt-0.5 hidden truncate text-xs text-slate-500 sm:block">{disabled ? "Payment permission required" : option.hint}</p>
+                    </div>
+                    {selected && <Icon name="check_circle" className="absolute right-2 h-4 w-4 shrink-0 text-ocean-700 sm:right-3 sm:h-5 sm:w-5" />}
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
         {/* Live items list */}
         {opType !== "offloading" && currentItems.length > 0 && (
           <Section title={`Items (${currentItems.length})`} className="mt-5">
@@ -561,22 +664,37 @@ export function OperationScreen() {
             <Btn
               size="lg"
               icon="receipt"
-              disabled={currentItems.length === 0 || currentOpHasLockedBill}
+              loading={billMode === "cash" && cashBillPreparationPending}
+              disabled={currentItems.length === 0 || currentOpHasLockedBill || (billMode === "cash" && (!canCollectPayment || cashBillPreparationPending))}
               onClick={async () => {
-                let billCreated = false;
+                const generatedBills: Bill[] = [];
                 for (const operation of [...currentOperations].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
                   const bill = await createBillFromOperation(operation.id, "loading_bill");
-                  if (bill) {
-                    billCreated = true;
+                  if (bill && !generatedBills.some(generatedBill => generatedBill.id === bill.id)) {
+                    generatedBills.push(bill);
                   }
                 }
-                if (billCreated) {
+                if (generatedBills.length === 0) return;
+
+                if (billMode === "cash") {
+                  setCashPaymentQueue([]);
+                  setCashBillsAwaitingFinalize(generatedBills.map(bill => ({
+                    billId: bill.id,
+                    billNumber: bill.billNumber,
+                    amount: Number((bill.grandTotal - bill.paidAmount).toFixed(2)),
+                  })));
+                  setCashAmount("");
+                  setCashReference("");
+                  return;
+                }
+
+                if (billMode === "credit") {
                   resetSelectedWalkInDetails();
                   resetOperationForm();
                 }
               }}
             >
-              {currentOpHasLockedBill ? "Bill already exists" : "Generate bill"}
+              {currentOpHasLockedBill ? "Bill already exists" : cashBillPreparationPending ? "Preparing payment..." : billMode === "cash" ? "Generate & collect" : "Generate bill"}
             </Btn>
           )}
         </div>
@@ -674,6 +792,91 @@ export function OperationScreen() {
             return newItem;
           }}
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(cashPaymentTarget)}
+        onClose={() => {
+          if (cashPaymentPosting) return;
+          setCashBillsAwaitingFinalize([]);
+          setCashPaymentQueue([]);
+          setCashReference("");
+        }}
+        title="Collect payment"
+      >
+        <div className="space-y-4 p-4 md:p-6">
+          <Card className="border-l-4 border-l-emerald-500 bg-emerald-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-emerald-950">{cashBill?.billNumber || cashPaymentTarget?.billNumber}</p>
+                <p className="mt-1 text-xs text-emerald-800">Cash bill payment</p>
+              </div>
+              <p className="shrink-0 text-sm font-bold text-emerald-950">{MVR(cashDue)}</p>
+            </div>
+          </Card>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Cash received</label>
+            <div className="relative">
+              <span className="absolute left-3 top-3.5 text-sm text-slate-500">MVR</span>
+              <input
+                type="number"
+                min={0}
+                max={cashDue}
+                step={0.5}
+                value={cashAmount}
+                onFocus={event => event.currentTarget.select()}
+                onChange={event => setCashAmount(event.target.value)}
+                className="h-11 w-full rounded-xl border border-slate-300 pl-12 pr-3 text-sm outline-none focus:border-ocean-500"
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">Outstanding: {MVR(cashDue)}</p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Reference</label>
+            <input
+              value={cashReference}
+              onChange={event => setCashReference(event.target.value)}
+              placeholder="Optional cash reference"
+              className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-ocean-500"
+            />
+          </div>
+          <Btn
+            fullWidth
+            size="lg"
+            icon="cash"
+            loading={cashPaymentPosting}
+            disabled={!canPostCashPayment}
+            onClick={async () => {
+              if (!cashPaymentTarget) return;
+              setCashPaymentPosting(true);
+              try {
+                const posted = await postPayment(
+                  cashPaymentTarget.billId,
+                  cashAmountValue,
+                  "cash",
+                  cashReference.trim() || undefined,
+                  "Cash bill payment from operation",
+                );
+                if (!posted) return;
+
+                const remainingQueue = cashPaymentQueue.slice(1);
+                setCashPaymentQueue(remainingQueue);
+                setCashReference("");
+                if (remainingQueue[0]) {
+                  setCashAmount(String(remainingQueue[0].amount));
+                } else {
+                  setCashAmount("");
+                  resetSelectedWalkInDetails();
+                  resetOperationForm();
+                }
+              } finally {
+                setCashPaymentPosting(false);
+              }
+            }}
+          >
+            {cashPaymentPosting ? "Posting payment..." : "Collect cash payment"}
+          </Btn>
+        </div>
       </Modal>
 
       <Modal open={showAddCustomer} onClose={() => setShowAddCustomer(false)} title="Add instant customer">
