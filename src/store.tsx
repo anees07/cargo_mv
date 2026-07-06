@@ -10,6 +10,7 @@ import {
 } from "./lib/firebase";
 import { MVR } from "./utils/format";
 import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
+import { moveDraftBillDestination } from "./utils/billDestination";
 import { isBillEditableBeforeFinalize, operationIdsForTripCarts, validatePaymentRequest } from "./utils/operationFlow";
 import { isUnfinishedTrip } from "./utils/trips";
 import { buildDestinationWalkInCustomer, ensureDestinationWalkInCustomers } from "./utils/walkInDetails";
@@ -125,6 +126,8 @@ export interface AppActions {
   clearOperationCart: (operationIds: string[]) => void;
   finalizeBill: (billId: string) => void;
   postPayment: (billId: string, amount: number, method: Payment["method"], reference?: string, notes?: string) => Promise<boolean>;
+  updateBillRouteDescription: (billIds: string[], routeDescription: string) => Promise<boolean>;
+  updateBillDestination: (billId: string, destinationId: string, reason: string) => void;
   updateDraftBill: (billId: string, items: OperationItem[], reason: string) => void;
   createTrip: (originDestinationId: string, returnDestinationId: string, plannedArrivalAt: string, notes: string) => Promise<Trip | null>;
   addDestination: (islandName: string, atoll: string, code: string) => Destination;
@@ -1441,6 +1444,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const updateBillRouteDescription = useCallback(async (billIds: string[], routeDescription: string) => {
+    const normalizedBillIds = Array.from(new Set(billIds)).filter(Boolean);
+    const cleanRouteDescription = routeDescription.trim();
+    if (normalizedBillIds.length === 0 || cleanRouteDescription.length === 0) return true;
+
+    const current = stateRef.current;
+    const businessProfileId = current.businessProfile.id;
+    if (!businessProfileId) return false;
+    const updatedAt = new Date().toISOString();
+    const billsToPersist = normalizedBillIds.map(billId => ({
+        id: billId,
+        businessProfileId,
+        notes: cleanRouteDescription,
+        updatedAt,
+      }));
+
+    try {
+      await Promise.all(billsToPersist.map(bill =>
+        persistTenantDocAsync(tenantCollections.bills, bill.id, bill as unknown as Record<string, unknown>)
+      ));
+      setState(s => ({
+        ...s,
+        bills: s.bills.map(bill => normalizedBillIds.includes(bill.id)
+          ? {
+              ...bill,
+              routeDescription: cleanRouteDescription,
+              notes: cleanRouteDescription,
+              updatedAt,
+            }
+          : bill),
+        auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+          actorUserId: s.currentUser.id,
+          action: "billing.update_route",
+          entityType: "bill",
+          entityId: normalizedBillIds[0],
+          summary: `Saved route text for ${normalizedBillIds.length} bill${normalizedBillIds.length !== 1 ? "s" : ""}`,
+        }),
+      }));
+      return true;
+    } catch (error) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Route not saved", body: error instanceof Error ? error.message : "Try again.", variant: "error" as const }],
+      }));
+      return false;
+    }
+  }, []);
+
+  const updateBillDestination = useCallback((billId: string, destinationId: string, reason: string) => {
+    const current = stateRef.current;
+    const bill = current.bills.find(item => item.id === billId);
+    const nextDestination = current.destinations.find(destination => destination.id === destinationId);
+    if (!bill || !nextDestination) return;
+    if (!isBillEditableBeforeFinalize(bill)) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "Bill locked", body: bill.billNumber, variant: "warning" as const }],
+      }));
+      return;
+    }
+    if (bill.destinationId === destinationId) {
+      setState(s => ({
+        ...s,
+        toasts: [...s.toasts, { id: id("t"), title: "No change", body: bill.billNumber, variant: "info" as const }],
+      }));
+      return;
+    }
+
+    const previousDestination = current.destinations.find(destination => destination.id === bill.destinationId);
+    const oldBillNumber = bill.billNumber;
+    const updatedBill = moveDraftBillDestination(bill, nextDestination, new Date().toISOString());
+    setState(s => ({
+      ...s,
+      bills: s.bills.map(item => item.id === billId ? updatedBill : item),
+      auditLogs: addAudit(s.auditLogs, s.businessProfile.id, {
+        actorUserId: s.currentUser.id,
+        action: "billing.update_destination",
+        entityType: "bill",
+        entityId: billId,
+        summary: `Moved draft bill ${oldBillNumber} from ${previousDestination?.islandName || "Unknown destination"} to ${nextDestination.islandName}. New number ${updatedBill.billNumber}. Reason: ${reason || "Destination correction"}`,
+      }),
+      toasts: [...s.toasts, { id: id("t"), title: "Destination changed", body: `${oldBillNumber} → ${updatedBill.billNumber}`, variant: "success" as const }],
+    }));
+    persistTenantDoc(tenantCollections.bills, updatedBill.id, updatedBill as unknown as Record<string, unknown>);
+  }, []);
+
   const updateDraftBill = useCallback((billId: string, items: OperationItem[], reason: string) => {
     const bill = state.bills.find(b => b.id === billId);
     if (!bill) return;
@@ -2441,7 +2530,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     signIn, signInDemoUser, signOut, registerOwner, sendPasswordReset, createOwnerBusinessProfile, selectBusinessProfile, navigate, back, openA4Document,
     openTrip, endTrip, closeTrip, selectTrip, selectBill, selectCustomer, selectDestination,
     addOperationItem, addOperationItems, removeOperationItem, clearOperationCart,
-    finalizeBill, postPayment, updateDraftBill, createTrip,
+    finalizeBill, postPayment, updateBillRouteDescription, updateBillDestination, updateDraftBill, createTrip,
     createBillFromOperation,
     addDestination, addCustomer, syncCatalogCategories, saveCatalogCategory, addCatalogItem, syncCustomerPriceLevels, saveCustomerPriceLevel,
     toast, dismissToast, markNotificationRead,

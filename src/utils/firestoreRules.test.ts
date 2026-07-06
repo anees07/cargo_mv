@@ -7,6 +7,7 @@ test("bill reconciliation fields are allowed by Firestore tenant writes", () => 
   const validTenantDoc = rules.match(/function validTenantDoc\(data\) \{[\s\S]*?\n    \}/)?.[0] || "";
 
   assert.match(validTenantDoc, /'offloadedItems'/);
+  assert.match(validTenantDoc, /'routeDescription'/);
 });
 
 test("customer price level adjustment writes are covered by Firestore rules", () => {

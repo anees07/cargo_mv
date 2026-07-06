@@ -20,3 +20,9 @@ export function formatSequenceNumber(
     .replace("{DEST}", destCode || "GEN")
     .replace("{000000}", padded);
 }
+
+export function replaceBillDestinationCode(billNumber: string, destCode?: string) {
+  const cleanDestCode = destCode?.trim().toUpperCase();
+  if (!cleanDestCode) return billNumber;
+  return billNumber.replace(/^(BILL-)[^-]+(-\d+)$/, `$1${cleanDestCode}$2`);
+}

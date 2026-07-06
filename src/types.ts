@@ -235,6 +235,8 @@ export interface Bill {
   destinationId: ID;
   customerId: ID;
   walkInDetails?: WalkInDetails;
+  routeDescription?: string;
+  notes?: string;
   billNumber: string;
   billType: BillType;
   billStatus: BillStatus;

@@ -9,18 +9,19 @@ import { billTypeForOperationType, isOperationBillable } from "../utils/operatio
 import { isUnfinishedTrip } from "../utils/trips";
 import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
-import type { Bill, BillType, Operation, OperationItem, PaymentMethod } from "../types";
+import type { Bill, BillType, Destination, Operation, OperationItem, PaymentMethod } from "../types";
 
 // ============================================================================
 // Billing — list, filter, generate, finalize
 // ============================================================================
 export function BillingScreen() {
-  const { bills, customers, destinations, trips, operations, activeTripId, navigate, selectBill, createBillFromOperation, updateDraftBill, cancelBill, finalizeBill, back, currentUser } = useApp();
+  const { bills, customers, destinations, trips, operations, activeTripId, navigate, selectBill, createBillFromOperation, updateDraftBill, updateBillDestination, cancelBill, finalizeBill, back, currentUser } = useApp();
   const [filter, setFilter] = useState<BillListGroupId>("current");
   const [tripFilterId, setTripFilterId] = useState("");
   const [search, setSearch] = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
+  const [movingBillId, setMovingBillId] = useState<string | null>(null);
   const [cancellingBillId, setCancellingBillId] = useState<string | null>(null);
   const [expandedDestinationGroups, setExpandedDestinationGroups] = useState<string[]>([]);
   const [visibleBillCount, setVisibleBillCount] = useState(50);
@@ -30,6 +31,7 @@ export function BillingScreen() {
     .filter(trip => trip.status === "closed")
     .sort((a, b) => (b.closedAt || b.endedAt || b.createdAt).localeCompare(a.closedAt || a.endedAt || a.createdAt));
   const editingBill = activeBills.find(bill => bill.id === editingBillId);
+  const movingBill = activeBills.find(bill => bill.id === movingBillId);
   const cancellingBill = activeBills.find(bill => bill.id === cancellingBillId);
   const billableOperations = operations.filter(operation => isOperationBillable(operation, trips, bills));
 
@@ -127,6 +129,17 @@ export function BillingScreen() {
               }}
             >
               Edit
+            </Btn>
+            <Btn
+              size="sm"
+              variant="outline"
+              icon="pin"
+              onClick={event => {
+                event.stopPropagation();
+                setMovingBillId(b.id);
+              }}
+            >
+              Destination
             </Btn>
             <Btn
               size="sm"
@@ -313,6 +326,19 @@ export function BillingScreen() {
         )}
       </Modal>
 
+      <Modal open={Boolean(movingBill)} onClose={() => setMovingBillId(null)} title="Change bill destination">
+        {movingBill && (
+          <ChangeBillDestinationForm
+            bill={movingBill}
+            destinations={destinations}
+            onSave={(destinationId, reason) => {
+              updateBillDestination(movingBill.id, destinationId, reason);
+              setMovingBillId(null);
+            }}
+          />
+        )}
+      </Modal>
+
       <Modal open={Boolean(cancellingBill)} onClose={() => setCancellingBillId(null)} title="Cancel draft bill">
         {cancellingBill && (
           <CancelBillForm
@@ -377,11 +403,12 @@ function GenerateBillForm({
 // Invoice Preview — A4 PDF rendering
 // ============================================================================
 export function InvoicePreviewScreen() {
-  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd, updateDraftBill, cancelBill, toast, openA4Document } = useApp();
+  const { bills, customers, destinations, trips, businessProfile, currentUser, selectedBillId, navigate, postPayment, finalizeBill, alterBillAfterTripEnd, updateDraftBill, updateBillDestination, cancelBill, toast, openA4Document } = useApp();
   const bill = bills.find(b => b.id === selectedBillId) || bills[0];
   const [showPay, setShowPay] = useState(false);
   const [showAlter, setShowAlter] = useState(false);
   const [showEditDraft, setShowEditDraft] = useState(false);
+  const [showMoveDestination, setShowMoveDestination] = useState(false);
   const [showCancelDraft, setShowCancelDraft] = useState(false);
 
   if (!bill) return null;
@@ -394,6 +421,7 @@ export function InvoicePreviewScreen() {
   const billToName = walkInDisplayName(customer, bill.walkInDetails);
   const billToPhone = walkInPhone(customer, bill.walkInDetails);
   const billToDescription = isWalkInCustomer(customer) ? bill.walkInDetails?.description : undefined;
+  const routeDescription = (bill.routeDescription || bill.notes || "").trim();
   const invoiceDocument: A4DocumentPayload = {
     title: "TAX INVOICE",
     documentNumber: bill.billNumber,
@@ -416,6 +444,7 @@ export function InvoicePreviewScreen() {
       destination?.islandName,
       destination?.atoll ? `${destination.atoll} Atoll` : undefined,
       destination?.destinationCode,
+      routeDescription ? `Route: ${routeDescription}` : undefined,
     ].filter((line): line is string => Boolean(line)),
     meta: [
       { label: "Date", value: formatDate(bill.createdAt) },
@@ -512,6 +541,11 @@ export function InvoicePreviewScreen() {
               <p className="mt-1 text-sm font-semibold text-slate-900">{destination?.islandName}</p>
               <p className="text-slate-600">{destination?.atoll} Atoll</p>
               <p className="text-slate-500">{destination?.destinationCode}</p>
+              {routeDescription && (
+                <p className="mt-1 text-slate-500">
+                  <span className="font-semibold text-slate-600">Route:</span> {routeDescription}
+                </p>
+              )}
             </div>
           </div>
 
@@ -581,6 +615,7 @@ export function InvoicePreviewScreen() {
             <strong>Draft.</strong> Edit or cancel before finalizing. Finalized bills are locked for payment collection.
             <div className="mt-2 flex flex-wrap gap-2">
               <Btn size="sm" variant="outline" icon="edit" onClick={() => setShowEditDraft(true)}>Edit draft</Btn>
+              <Btn size="sm" variant="outline" icon="pin" onClick={() => setShowMoveDestination(true)}>Destination</Btn>
               <Btn size="sm" variant="danger" icon="x" onClick={() => setShowCancelDraft(true)}>Cancel bill</Btn>
               <Btn size="sm" variant="primary" onClick={() => finalizeBill(bill.id)}>Finalize bill</Btn>
             </div>
@@ -624,6 +659,17 @@ export function InvoicePreviewScreen() {
         />
       </Modal>
 
+      <Modal open={showMoveDestination} onClose={() => setShowMoveDestination(false)} title="Change bill destination">
+        <ChangeBillDestinationForm
+          bill={bill}
+          destinations={destinations}
+          onSave={(destinationId, reason) => {
+            updateBillDestination(bill.id, destinationId, reason);
+            setShowMoveDestination(false);
+          }}
+        />
+      </Modal>
+
       <Modal open={showCancelDraft} onClose={() => setShowCancelDraft(false)} title="Cancel draft bill">
         <CancelBillForm
           billNumber={bill.billNumber}
@@ -647,6 +693,78 @@ export function InvoicePreviewScreen() {
           }}
         />
       </Modal>
+    </div>
+  );
+}
+
+function ChangeBillDestinationForm({
+  bill,
+  destinations,
+  onSave,
+}: {
+  bill: Bill;
+  destinations: Destination[];
+  onSave: (destinationId: string, reason: string) => void;
+}) {
+  const [destinationId, setDestinationId] = useState(bill.destinationId);
+  const [reason, setReason] = useState("");
+  const currentDestination = destinations.find(destination => destination.id === bill.destinationId);
+  const selectedDestination = destinations.find(destination => destination.id === destinationId);
+  const destinationOptions = [...destinations]
+    .filter(destination => destination.activeStatus || destination.id === bill.destinationId)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.islandName.localeCompare(b.islandName));
+  const canSave = Boolean(destinationId && destinationId !== bill.destinationId && reason.trim());
+
+  useEffect(() => {
+    setDestinationId(bill.destinationId);
+    setReason("");
+  }, [bill.id, bill.destinationId]);
+
+  return (
+    <div className="space-y-4 p-4 md:p-6">
+      <div className="rounded-xl border border-ocean-100 bg-ocean-50 p-3">
+        <p className="text-sm font-semibold text-ocean-950">{bill.billNumber}</p>
+        <p className="mt-1 text-xs text-ocean-800">
+          {currentDestination?.islandName || "Unknown destination"} → {selectedDestination?.islandName || "Select destination"}
+        </p>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">New destination *</label>
+        <div className="relative">
+          <Icon name="island" className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
+          <select
+            value={destinationId}
+            onChange={event => setDestinationId(event.target.value)}
+            className="min-h-12 w-full appearance-none rounded-xl border border-slate-300 bg-white pl-11 pr-9 text-base text-slate-950 outline-none transition focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
+          >
+            {destinationOptions.map(destination => (
+              <option key={destination.id} value={destination.id}>
+                {destination.islandName} ({destination.destinationCode}) — {destination.atoll}
+              </option>
+            ))}
+          </select>
+          <Icon name="chevron_down" className="pointer-events-none absolute right-3 top-3.5 h-5 w-5 text-slate-400" />
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Correction reason *</label>
+        <textarea
+          value={reason}
+          onChange={event => setReason(event.target.value)}
+          placeholder="Example: customer cargo was loaded for Gan, not Muli"
+          className="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100"
+        />
+      </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+        This changes the draft bill destination, bill number code, and bill line destinations together. Finalized or paid bills stay locked.
+      </div>
+
+      <Btn fullWidth size="lg" icon="check" disabled={!canSave} onClick={() => onSave(destinationId, reason.trim())}>
+        Save destination
+      </Btn>
     </div>
   );
 }
@@ -772,13 +890,17 @@ function CancelBillForm({
   );
 }
 
-function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: (amount: number, method: string, ref?: string) => void | Promise<void> }) {
+export function CollectPaymentForm({ maxAmount, onPost }: { maxAmount: number; onPost: (amount: number, method: string, ref?: string) => void | Promise<void> }) {
   const [amount, setAmount] = useState(maxAmount);
   const [method, setMethod] = useState("cash");
   const [ref, setRef] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const needsReference = ["bank_transfer", "cheque", "mobile_wallet"].includes(method);
   const canSubmit = amount > 0 && amount <= maxAmount && (!needsReference || Boolean(ref.trim())) && !submitting;
+
+  useEffect(() => {
+    setAmount(maxAmount);
+  }, [maxAmount]);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;

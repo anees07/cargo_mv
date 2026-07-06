@@ -92,6 +92,7 @@ export function PdfDocumentsScreen() {
     const trip = trips.find(item => item.id === bill.tripId);
     const customerName = walkInDisplayName(customer, bill.walkInDetails);
     const customerPhone = walkInPhone(customer, bill.walkInDetails);
+    const routeDescription = bill.routeDescription || bill.notes;
     const subtotal = Number((bill.subtotalTaxInclusive - bill.taxTotal).toFixed(2));
     const balanceDue = Number((bill.grandTotal - bill.paidAmount).toFixed(2));
 
@@ -117,6 +118,7 @@ export function PdfDocumentsScreen() {
         destination?.islandName,
         destination?.atoll ? `${destination.atoll} Atoll` : undefined,
         destination?.destinationCode,
+        routeDescription ? `Route: ${routeDescription}` : undefined,
       ].filter((line): line is string => Boolean(line)),
       meta: [
         { label: "Date", value: formatDate(bill.createdAt) },
