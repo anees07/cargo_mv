@@ -1103,7 +1103,7 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
   const [category, setCategory] = useState<string>("all");
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [showAddItem, setShowAddItem] = useState(false);
-  const [qty, setQty] = useState(1);
+  const [qty, setQty] = useState<number | "">(1);
   const [price, setPrice] = useState(0);
   const [lineDescription, setLineDescription] = useState("");
 
@@ -1161,13 +1161,14 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
     const defaultPrice = getPrice(selected, customer);
     const isOther = isSystemOtherItem(selected);
     const maxQty = operationType === "offloading" ? availability[selected.id]?.remaining || 0 : undefined;
-    const safeQty = maxQty ? Math.min(qty, maxQty) : qty;
+    const parsedQty = qty === "" ? 0 : qty;
+    const safeQty = maxQty ? Math.min(parsedQty, maxQty) : parsedQty;
     const effectivePrice = price || (isOther ? 0 : defaultPrice);
     const canAddSelected = operationType === "offloading"
-      ? Boolean(maxQty)
+      ? Boolean(maxQty) && safeQty > 0
       : isOther
         ? lineDescription.trim().length > 0 && safeQty > 0 && effectivePrice > 0
-        : effectivePrice > 0;
+        : safeQty > 0 && effectivePrice > 0;
     return (
       <div className="p-4">
         <button onClick={() => { setSelected(null); setPrice(0); setLineDescription(""); }} className="mb-3 flex items-center gap-1 text-xs text-ocean-700 font-semibold">
@@ -1202,9 +1203,13 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
               type="number"
               min={1}
               max={maxQty}
-              value={safeQty}
+              value={qty === "" ? "" : safeQty}
               onFocus={e => e.currentTarget.select()}
               onChange={e => {
+                if (e.target.value === "") {
+                  setQty("");
+                  return;
+                }
                 const next = Math.max(1, Number(e.target.value));
                 setQty(maxQty ? Math.min(next, maxQty) : next);
               }}
