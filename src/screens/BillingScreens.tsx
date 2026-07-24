@@ -8,7 +8,7 @@ import { filterBillsForListCategory, groupBillsByDestinationForList, type BillLi
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
 import { isUnfinishedTrip } from "../utils/trips";
 import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
-import { buildOperationLineTaxBreakdowns, calculateBillTaxBreakdown, operationUnitPriceExcludingTax, roundMoney } from "../utils/taxBreakdown";
+import { buildOperationLineTaxBreakdowns, calculateBillTaxBreakdown, roundMoney } from "../utils/taxBreakdown";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill, BillType, Destination, Operation, OperationItem, PaymentMethod } from "../types";
 
@@ -453,14 +453,19 @@ export function InvoicePreviewScreen() {
       { label: "Date", value: formatDate(bill.createdAt) },
       { label: "Trip", value: trip?.tripNumber },
     ],
+    lineItemLabels: {
+      unitPrice: "Unit (incl GST)",
+      taxAmount: "GST",
+      total: "Total (incl GST)",
+    },
     items: billItems.map((item, index) => ({
       name: item.itemNameSnapshot,
       description: item.lineDescription,
       quantity: item.quantity,
       unitType: item.unitType,
-      unitPrice: billLineBreakdowns[index]?.unitPriceExcludingTax ?? operationUnitPriceExcludingTax(item),
+      unitPrice: roundMoney(item.unitPriceTaxInclusive),
       taxAmount: billLineBreakdowns[index]?.taxAmount ?? item.taxAmount,
-      total: billLineBreakdowns[index]?.subtotalExcludingTax ?? item.lineTotalTaxInclusive,
+      total: roundMoney(Number.isFinite(Number(item.lineTotalTaxInclusive)) ? item.lineTotalTaxInclusive : item.quantity * item.unitPriceTaxInclusive),
     })),
     totals: [
       { label: "Subtotal (excl. tax)", value: MVR(subtotal) },
@@ -559,9 +564,9 @@ export function InvoicePreviewScreen() {
                 <tr className="bg-slate-100 text-slate-700">
                   <th className="border-b border-slate-300 px-2 py-1.5 text-left">Item</th>
                   <th className="border-b border-slate-300 px-2 py-1.5 text-center">Qty</th>
-                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Unit (ex GST)</th>
+                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Unit (incl GST)</th>
                   <th className="border-b border-slate-300 px-2 py-1.5 text-right">GST</th>
-                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Total (ex GST)</th>
+                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Total (incl GST)</th>
                 </tr>
               </thead>
               <tbody>
@@ -574,9 +579,9 @@ export function InvoicePreviewScreen() {
                       {item.lineDescription && <div className="mt-0.5 text-[11px] text-slate-500">{item.lineDescription}</div>}
                     </td>
                     <td className="px-2 py-1.5 text-center font-mono">{item.quantity} {item.unitType}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{(lineBreakdown?.unitPriceExcludingTax ?? operationUnitPriceExcludingTax(item)).toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{roundMoney(item.unitPriceTaxInclusive).toFixed(2)}</td>
                     <td className="px-2 py-1.5 text-right font-mono">{(lineBreakdown?.taxAmount ?? item.taxAmount).toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{(lineBreakdown?.subtotalExcludingTax ?? item.lineTotalTaxInclusive).toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{roundMoney(Number.isFinite(Number(item.lineTotalTaxInclusive)) ? item.lineTotalTaxInclusive : item.quantity * item.unitPriceTaxInclusive).toFixed(2)}</td>
                   </tr>
                   );
                 }) : (

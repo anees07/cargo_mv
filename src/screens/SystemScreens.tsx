@@ -2,7 +2,7 @@ import { useApp } from "../useApp";
 import { Btn, Card, Section, TopBar } from "../components/ui";
 import { MVR, formatDate, formatDateTime } from "../utils/format";
 import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
-import { buildOperationLineTaxBreakdowns, calculateBillTaxBreakdown, operationUnitPriceExcludingTax } from "../utils/taxBreakdown";
+import { buildOperationLineTaxBreakdowns, calculateBillTaxBreakdown, roundMoney } from "../utils/taxBreakdown";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill } from "../types";
 
@@ -129,14 +129,19 @@ export function PdfDocumentsScreen() {
         { label: "Trip", value: trip?.tripNumber },
         { label: "Status", value: bill.finalizedAt ? "Saved" : "Draft" },
       ],
+      lineItemLabels: {
+        unitPrice: "Unit (incl GST)",
+        taxAmount: "GST",
+        total: "Total (incl GST)",
+      },
       items: billItems.map((item, index) => ({
         name: item.itemNameSnapshot,
         description: item.lineDescription,
         quantity: item.quantity,
         unitType: item.unitType,
-        unitPrice: lineBreakdowns[index]?.unitPriceExcludingTax ?? operationUnitPriceExcludingTax(item),
+        unitPrice: roundMoney(item.unitPriceTaxInclusive),
         taxAmount: lineBreakdowns[index]?.taxAmount ?? item.taxAmount,
-        total: lineBreakdowns[index]?.subtotalExcludingTax ?? item.lineTotalTaxInclusive,
+        total: roundMoney(Number.isFinite(Number(item.lineTotalTaxInclusive)) ? item.lineTotalTaxInclusive : item.quantity * item.unitPriceTaxInclusive),
       })),
       totals: [
         { label: "Subtotal (excl. tax)", value: MVR(subtotal) },

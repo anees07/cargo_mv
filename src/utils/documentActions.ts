@@ -89,6 +89,12 @@ export type A4DocumentLineItem = {
   total: number;
 };
 
+export type A4DocumentLineItemLabels = {
+  unitPrice: string;
+  taxAmount: string;
+  total: string;
+};
+
 export type A4DocumentPayload = {
   title: string;
   documentNumber: string;
@@ -99,8 +105,15 @@ export type A4DocumentPayload = {
   destinationDetails?: string[];
   meta: Array<{ label: string; value?: string }>;
   items: A4DocumentLineItem[];
+  lineItemLabels?: Partial<A4DocumentLineItemLabels>;
   totals: Array<{ label: string; value: string; strong?: boolean }>;
   footer?: string[];
+};
+
+const defaultLineItemLabels: A4DocumentLineItemLabels = {
+  unitPrice: "Unit",
+  taxAmount: "GST",
+  total: "Total",
 };
 
 function escapeHtml(value: string) {
@@ -112,8 +125,20 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#039;");
 }
 
+function escapeCssString(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+}
+
 function compact(values: Array<string | undefined | null>) {
   return values.map(value => value?.trim()).filter((value): value is string => Boolean(value));
+}
+
+function resolveLineItemLabels(labels?: Partial<A4DocumentLineItemLabels>): A4DocumentLineItemLabels {
+  return {
+    unitPrice: labels?.unitPrice || defaultLineItemLabels.unitPrice,
+    taxAmount: labels?.taxAmount || defaultLineItemLabels.taxAmount,
+    total: labels?.total || defaultLineItemLabels.total,
+  };
 }
 
 function sanitizedPdfFileName(documentNumber: string) {
@@ -133,6 +158,8 @@ async function blobToBase64(blob: Blob) {
 }
 
 export function buildA4DocumentText(document: A4DocumentPayload) {
+  const lineLabels = resolveLineItemLabels(document.lineItemLabels);
+
   return [
     document.businessName,
     document.title,
@@ -145,8 +172,8 @@ export function buildA4DocumentText(document: A4DocumentPayload) {
     ...document.items.flatMap(item => [
       item.name,
       item.description ? `  ${item.description}` : undefined,
-      `${item.quantity} ${item.unitType} x ${MVR(item.unitPrice)}`,
-      `GST: ${MVR(item.taxAmount)}  Total ex GST: ${MVR(item.total)}`,
+      `${lineLabels.unitPrice}: ${item.quantity} ${item.unitType} x ${MVR(item.unitPrice)}`,
+      `${lineLabels.taxAmount}: ${MVR(item.taxAmount)}  ${lineLabels.total}: ${MVR(item.total)}`,
     ]),
     divider,
     ...document.totals.map(item => `${item.label}: ${item.value}`),
@@ -159,6 +186,7 @@ export function buildA4DocumentHtml(document: A4DocumentPayload, options: { show
   const customerDetails = compact(document.customerDetails || []);
   const destinationDetails = compact(document.destinationDetails || []);
   const footer = compact(document.footer || []);
+  const lineLabels = resolveLineItemLabels(document.lineItemLabels);
   const showScreenToolbar = options.showScreenToolbar ?? true;
 
   return `<!doctype html>
@@ -276,9 +304,9 @@ export function buildA4DocumentHtml(document: A4DocumentPayload, options: { show
       td { display: grid; grid-template-columns: minmax(92px, 34%) minmax(0, 1fr); gap: 10px; margin-top: 8px; text-align: left !important; white-space: normal !important; overflow-wrap: anywhere; }
       td:first-child { display: block; margin-top: 0; font-size: 16px; font-weight: 700; }
       td:nth-child(2)::before { content: "Qty"; color: #64748b; font-weight: 700; }
-      td:nth-child(3)::before { content: "Unit ex GST"; color: #64748b; font-weight: 700; }
-      td:nth-child(4)::before { content: "GST"; color: #64748b; font-weight: 700; }
-      td:nth-child(5)::before { content: "Total ex GST"; color: #64748b; font-weight: 700; }
+      td:nth-child(3)::before { content: "${escapeCssString(lineLabels.unitPrice)}"; color: #64748b; font-weight: 700; }
+      td:nth-child(4)::before { content: "${escapeCssString(lineLabels.taxAmount)}"; color: #64748b; font-weight: 700; }
+      td:nth-child(5)::before { content: "${escapeCssString(lineLabels.total)}"; color: #64748b; font-weight: 700; }
       .item-desc { font-size: 13px; line-height: 1.35; }
       .totals { justify-content: stretch; margin: 0; padding: 16px 14px; }
       .totals-inner { width: 100%; }
@@ -328,9 +356,9 @@ export function buildA4DocumentHtml(document: A4DocumentPayload, options: { show
           <tr>
             <th style="width: 38%">Item</th>
             <th class="center" style="width: 16%">Qty</th>
-            <th class="num" style="width: 16%">Unit ex GST</th>
-            <th class="num" style="width: 14%">GST</th>
-            <th class="num" style="width: 16%">Total ex GST</th>
+            <th class="num" style="width: 16%">${escapeHtml(lineLabels.unitPrice)}</th>
+            <th class="num" style="width: 14%">${escapeHtml(lineLabels.taxAmount)}</th>
+            <th class="num" style="width: 16%">${escapeHtml(lineLabels.total)}</th>
           </tr>
         </thead>
         <tbody>
@@ -416,6 +444,7 @@ export function buildInvoicePrintText({
   paidAmount,
   balanceDue,
   footer,
+  lineItemLabels,
 }: {
   businessName: string;
   billNumber: string;
@@ -438,7 +467,9 @@ export function buildInvoicePrintText({
   paidAmount: number;
   balanceDue: number;
   footer?: string;
+  lineItemLabels?: Partial<A4DocumentLineItemLabels>;
 }) {
+  const lineLabels = resolveLineItemLabels(lineItemLabels);
   const lines = [
     businessName,
     "TAX INVOICE",
@@ -451,8 +482,8 @@ export function buildInvoicePrintText({
     ...items.flatMap(item => [
       item.name,
       item.description ? `  ${item.description}` : undefined,
-      `${item.quantity} ${item.unitType} x ${MVR(item.unitPrice)}`,
-      `GST: ${MVR(item.taxAmount)}  Total ex GST: ${MVR(item.total)}`,
+      `${lineLabels.unitPrice}: ${item.quantity} ${item.unitType} x ${MVR(item.unitPrice)}`,
+      `${lineLabels.taxAmount}: ${MVR(item.taxAmount)}  ${lineLabels.total}: ${MVR(item.total)}`,
     ]),
     divider,
     `Subtotal: ${MVR(subtotal)}`,
@@ -540,6 +571,7 @@ function addPdfPageNumbers(pdf: jsPDF, pageWidth: number, pageHeight: number, ma
 }
 
 export function buildA4PdfDocument(document: A4DocumentPayload) {
+  const lineLabels = resolveLineItemLabels(document.lineItemLabels);
   const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const margin = 12;
   const pageWidth = 210;
@@ -620,9 +652,9 @@ export function buildA4PdfDocument(document: A4DocumentPayload) {
     pdf.setFontSize(8);
     pdf.text("Item", col.item, y);
     pdf.text("Qty", col.qty, y, { align: "center" });
-    pdf.text("Unit ex GST", col.unit + 20, y, { align: "right" });
-    pdf.text("GST", col.tax + 18, y, { align: "right" });
-    pdf.text("Total ex GST", pageWidth - margin, y, { align: "right" });
+    pdf.text(lineLabels.unitPrice, col.unit + 20, y, { align: "right" });
+    pdf.text(lineLabels.taxAmount, col.tax + 18, y, { align: "right" });
+    pdf.text(lineLabels.total, pageWidth - margin, y, { align: "right" });
     y += 6;
     pdf.line(margin, y, pageWidth - margin, y);
     y += 3;

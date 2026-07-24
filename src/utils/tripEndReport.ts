@@ -140,6 +140,11 @@ export function buildTripEndBillSummaryA4Document({
       { label: "Status", value: trip.status },
       { label: "Ended", value: trip.endedAt ? formatDateTime(trip.endedAt) : undefined },
     ],
+    lineItemLabels: {
+      unitPrice: "Avg unit (ex GST)",
+      taxAmount: "GST",
+      total: "Subtotal (ex GST)",
+    },
     items: summary.destinations.flatMap(group =>
       group.bills.map(bill => ({
         name: bill.billNumber,
@@ -214,6 +219,11 @@ export function buildTripEndDestinationBillSummaryA4Document({
       { label: "Status", value: trip.status },
       { label: "Ended", value: trip.endedAt ? formatDateTime(trip.endedAt) : undefined },
     ],
+    lineItemLabels: {
+      unitPrice: "Avg unit (ex GST)",
+      taxAmount: "GST",
+      total: "Subtotal (ex GST)",
+    },
     items: destinationSummary.bills.map(bill => ({
       name: bill.billNumber,
       description: [

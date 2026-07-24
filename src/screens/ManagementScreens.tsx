@@ -375,6 +375,11 @@ function buildReportA4Document({
       { label: "Filter", value: filterLabel },
       { label: "Bills", value: String(bills.length) },
     ],
+    lineItemLabels: {
+      unitPrice: "Avg unit (ex GST)",
+      taxAmount: "GST",
+      total: "Subtotal (ex GST)",
+    },
     items: bills.map(bill => {
       const customer = customersById.get(bill.customerId);
       const destination = destinationsById.get(bill.destinationId);
