@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 MODE="${RELEASE_BUMP_MODE:-patch}"
 REPO_SLUG="${GITHUB_REPOSITORY:-anees07/cargo_mv}"
 
-node scripts/bump-release.mjs --mode="$MODE" --repo="$REPO_SLUG"
+node scripts/bump-release.mjs --mode="$MODE" --repo="$REPO_SLUG" --requires-native-update=true
 
 VERSION="$(node -e "console.log(require('./package.json').version)")"
 BUILD="$(node -e "const fs=require('fs'); const m=fs.readFileSync('src/appVersion.ts','utf8').match(/APP_BUILD = \"(\\d+)\"/); console.log(m[1])")"

@@ -65,6 +65,9 @@ const releaseTag = `v${nextVersion}`;
 const apkFileName = `maldives-cargo-${nextVersion}-build${nextBuild}.apk`;
 const apkUrl = args.get("apk-url") || `https://github.com/${repository}/releases/download/${releaseTag}/${apkFileName}`;
 const mandatory = args.has("mandatory") ? args.get("mandatory") === "true" : true;
+const requiresNativeUpdate = args.has("requires-native-update")
+  ? args.get("requires-native-update") === "true"
+  : undefined;
 const checkIntervalMs = Number(args.get("check-interval-ms") || 60000);
 const releasedAt = args.get("released-at") || new Date().toISOString();
 const notes = args.has("notes")
@@ -103,10 +106,12 @@ for (const file of ["public/app-update.json", "dist/app-update.json"]) {
   manifest.mandatory = mandatory;
   manifest.checkIntervalMs = checkIntervalMs;
   manifest.targets = manifest.targets || {};
+  const androidTarget = manifest.targets.android || {};
   manifest.targets.android = {
-    ...(manifest.targets.android || {}),
+    ...androidTarget,
     enabled: true,
     apkUrl,
+    ...(requiresNativeUpdate === undefined ? {} : { requiresNativeUpdate }),
   };
   writeJson(file, manifest);
 }

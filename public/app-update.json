@@ -1,11 +1,11 @@
 {
   "latest": {
-    "versionName": "1.0.32",
-    "buildNumber": 33,
-    "releasedAt": "2026-07-24T15:06:29.292Z",
+    "versionName": "1.0.33",
+    "buildNumber": 34,
+    "releasedAt": "2026-07-24T15:15:58.861Z",
     "notes": [
       "GST-inclusive billing extracts tax from menu prices",
-      "Invoice lines show quantity-aware line GST and GST-excluded totals"
+      "Android APK includes quantity-aware line GST invoice display"
     ]
   },
   "mandatory": true,
@@ -17,8 +17,8 @@
     },
     "android": {
       "enabled": true,
-      "requiresNativeUpdate": false,
-      "apkUrl": "https://github.com/anees07/cargo_mv/releases/download/v1.0.32/maldives-cargo-1.0.32-build33.apk"
+      "requiresNativeUpdate": true,
+      "apkUrl": "https://github.com/anees07/cargo_mv/releases/download/v1.0.33/maldives-cargo-1.0.33-build34.apk"
     }
   }
 }
