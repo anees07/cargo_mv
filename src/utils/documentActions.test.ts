@@ -111,6 +111,8 @@ test("invoice print text includes line items and totals for native raw printing"
   assert.match(text, /BILL-MLE-000033/);
   assert.match(text, /Rice Sack \(50kg\)/);
   assert.match(text, /2 sack x MVR 143\.36/);
+  assert.match(text, /GST: MVR 21\.24  Total ex GST: MVR 286\.72/);
+  assert.doesNotMatch(text, /GST Rate/);
   assert.match(text, /Grand Total: MVR 286\.72/);
   assert.match(text, /Balance Due: MVR 286\.72/);
 });
@@ -147,6 +149,9 @@ test("A4 document html declares A4 print page and invoice table", () => {
   assert.match(html, /thead \{ display: table-header-group; \}/);
   assert.match(html, /TAX INVOICE/);
   assert.match(html, /Rice Sack \(50kg\)/);
+  assert.match(html, />GST<\/th>/);
+  assert.match(html, />MVR 21\.24<\/td>/);
+  assert.doesNotMatch(html, /GST Rate/);
   assert.match(html, /Grand Total/);
 });
 

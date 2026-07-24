@@ -1,5 +1,6 @@
 import type { A4DocumentPayload } from "./documentActions.js";
 import { MVR, formatDate, formatDateTime } from "./format.js";
+import { billAverageUnitSubtotalExcludingTax, calculateBillTaxBreakdown } from "./taxBreakdown.js";
 import type { Bill, BusinessProfile, Customer, Destination, Trip } from "../types.js";
 import { walkInDisplayName } from "./walkInDetails.js";
 
@@ -152,9 +153,9 @@ export function buildTripEndBillSummaryA4Document({
         ].filter(Boolean).join(" • "),
         quantity: bill.itemCount || bill.items?.length || 0,
         unitType: "items",
-        unitPrice: bill.itemCount > 0 ? money(bill.grandTotal / bill.itemCount) : bill.grandTotal,
+        unitPrice: billAverageUnitSubtotalExcludingTax(bill, businessProfile.defaultTaxRate),
         taxAmount: bill.taxTotal,
-        total: bill.grandTotal,
+        total: calculateBillTaxBreakdown(bill, businessProfile.defaultTaxRate).subtotalExcludingTax,
       }))
     ),
     totals: [
@@ -224,9 +225,9 @@ export function buildTripEndDestinationBillSummaryA4Document({
       ].filter(Boolean).join(" • "),
       quantity: bill.itemCount || bill.items?.length || 0,
       unitType: "items",
-      unitPrice: bill.itemCount > 0 ? money(bill.grandTotal / bill.itemCount) : bill.grandTotal,
+      unitPrice: billAverageUnitSubtotalExcludingTax(bill, businessProfile.defaultTaxRate),
       taxAmount: bill.taxTotal,
-      total: bill.grandTotal,
+      total: calculateBillTaxBreakdown(bill, businessProfile.defaultTaxRate).subtotalExcludingTax,
     })),
     totals: [
       { label: "Destination total", value: MVR(destinationSummary.grandTotal), strong: true },

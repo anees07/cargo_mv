@@ -8,6 +8,7 @@ import { filterBillsForListCategory, groupBillsByDestinationForList, type BillLi
 import { billTypeForOperationType, isOperationBillable } from "../utils/operationFlow";
 import { isUnfinishedTrip } from "../utils/trips";
 import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
+import { buildOperationLineTaxBreakdowns, calculateBillTaxBreakdown, operationUnitPriceExcludingTax, roundMoney } from "../utils/taxBreakdown";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill, BillType, Destination, Operation, OperationItem, PaymentMethod } from "../types";
 
@@ -416,8 +417,10 @@ export function InvoicePreviewScreen() {
   const destination = destinations.find(d => d.id === bill.destinationId);
   const trip = trips.find(t => t.id === bill.tripId);
   const taxRate = businessProfile.defaultTaxRate;
-  const subtotal = bill.subtotalTaxInclusive - bill.taxTotal;
   const billItems = bill.items || [];
+  const billLineBreakdowns = buildOperationLineTaxBreakdowns(billItems, taxRate);
+  const billBreakdown = calculateBillTaxBreakdown(bill, taxRate);
+  const subtotal = billBreakdown.subtotalExcludingTax;
   const billToName = walkInDisplayName(customer, bill.walkInDetails);
   const billToPhone = walkInPhone(customer, bill.walkInDetails);
   const billToDescription = isWalkInCustomer(customer) ? bill.walkInDetails?.description : undefined;
@@ -450,18 +453,18 @@ export function InvoicePreviewScreen() {
       { label: "Date", value: formatDate(bill.createdAt) },
       { label: "Trip", value: trip?.tripNumber },
     ],
-    items: billItems.map(item => ({
+    items: billItems.map((item, index) => ({
       name: item.itemNameSnapshot,
       description: item.lineDescription,
       quantity: item.quantity,
       unitType: item.unitType,
-      unitPrice: item.unitPriceTaxInclusive,
-      taxAmount: item.taxAmount,
-      total: item.lineTotalTaxInclusive,
+      unitPrice: billLineBreakdowns[index]?.unitPriceExcludingTax ?? operationUnitPriceExcludingTax(item),
+      taxAmount: billLineBreakdowns[index]?.taxAmount ?? item.taxAmount,
+      total: billLineBreakdowns[index]?.subtotalExcludingTax ?? item.lineTotalTaxInclusive,
     })),
     totals: [
       { label: "Subtotal (excl. tax)", value: MVR(subtotal) },
-      { label: `GST ${taxRate}% (inclusive)`, value: MVR(bill.taxTotal) },
+      { label: `GST ${taxRate}% (inclusive)`, value: MVR(billBreakdown.taxAmount) },
       { label: "Grand Total", value: MVR(bill.grandTotal), strong: true },
       { label: "Paid", value: MVR(bill.paidAmount) },
       ...(bill.grandTotal - bill.paidAmount > 0 ? [{ label: "Balance due", value: MVR(bill.grandTotal - bill.paidAmount), strong: true }] : []),
@@ -556,24 +559,27 @@ export function InvoicePreviewScreen() {
                 <tr className="bg-slate-100 text-slate-700">
                   <th className="border-b border-slate-300 px-2 py-1.5 text-left">Item</th>
                   <th className="border-b border-slate-300 px-2 py-1.5 text-center">Qty</th>
-                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Unit (incl)</th>
-                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Tax</th>
-                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Total (incl)</th>
+                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Unit (ex GST)</th>
+                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">GST</th>
+                  <th className="border-b border-slate-300 px-2 py-1.5 text-right">Total (ex GST)</th>
                 </tr>
               </thead>
               <tbody>
-                {billItems.length > 0 ? billItems.map(item => (
+                {billItems.length > 0 ? billItems.map((item, index) => {
+                  const lineBreakdown = billLineBreakdowns[index];
+                  return (
                   <tr key={item.id} className="border-b border-slate-200">
                     <td className="px-2 py-1.5">
                       <div>{item.itemNameSnapshot}</div>
                       {item.lineDescription && <div className="mt-0.5 text-[11px] text-slate-500">{item.lineDescription}</div>}
                     </td>
                     <td className="px-2 py-1.5 text-center font-mono">{item.quantity} {item.unitType}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{item.unitPriceTaxInclusive.toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{item.taxAmount.toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono">{item.lineTotalTaxInclusive.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{(lineBreakdown?.unitPriceExcludingTax ?? operationUnitPriceExcludingTax(item)).toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{(lineBreakdown?.taxAmount ?? item.taxAmount).toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{(lineBreakdown?.subtotalExcludingTax ?? item.lineTotalTaxInclusive).toFixed(2)}</td>
                   </tr>
-                )) : (
+                  );
+                }) : (
                   <tr>
                     <td colSpan={5} className="px-2 py-4 text-center text-slate-500">No line items saved.</td>
                   </tr>
@@ -586,7 +592,7 @@ export function InvoicePreviewScreen() {
           <div className="mt-3 flex justify-end">
             <div className="w-64 space-y-1 text-xs">
               <div className="flex justify-between"><span className="text-slate-600">Subtotal (excl. tax)</span><span className="font-mono">{MVR(subtotal)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-600">GST {taxRate}% (inclusive)</span><span className="font-mono">{MVR(bill.taxTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-600">GST {taxRate}% (inclusive)</span><span className="font-mono">{MVR(billBreakdown.taxAmount)}</span></div>
               <div className="flex justify-between border-t-2 border-slate-900 pt-1 text-sm font-bold">
                 <span>Grand Total</span>
                 <span className="font-mono">{MVR(bill.grandTotal)}</span>
@@ -785,7 +791,18 @@ function EditDraftBillForm({
   const removeLine = (itemId: string) => {
     setDraftItems(current => current.filter(item => item.id !== itemId));
   };
-  const estimatedTotal = draftItems.reduce((sum, item) => sum + item.quantity * item.unitPriceTaxInclusive, 0);
+  const estimatedLineBreakdowns = buildOperationLineTaxBreakdowns(draftItems.map(item => ({
+    ...item,
+    lineTotalTaxInclusive: roundMoney(item.quantity * item.unitPriceTaxInclusive),
+  })));
+  const estimatedTotals = estimatedLineBreakdowns.reduce((totals, line) => ({
+    subtotal: roundMoney(totals.subtotal + line.subtotalExcludingTax),
+    tax: roundMoney(totals.tax + line.taxAmount),
+    total: roundMoney(totals.total + line.totalTaxInclusive),
+  }), { subtotal: 0, tax: 0, total: 0 });
+  const estimatedTotal = estimatedTotals.total;
+  const estimatedTax = estimatedTotals.tax;
+  const estimatedSubtotal = estimatedTotals.subtotal;
   const canSave = draftItems.length > 0 &&
     draftItems.every(item => item.quantity > 0 && item.unitPriceTaxInclusive > 0) &&
     reason.trim().length > 0;
@@ -832,14 +849,22 @@ function EditDraftBillForm({
               </div>
             </div>
             <p className="mt-2 text-right text-xs font-semibold text-slate-700">
-              Line estimate {MVR(item.quantity * item.unitPriceTaxInclusive)}
+              Line estimate {MVR(item.quantity * item.unitPriceTaxInclusive)} incl GST
             </p>
           </Card>
         ))}
       </div>
       <div className="rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-sm">
         <div className="flex justify-between">
-          <span className="text-slate-600">New bill total</span>
+          <span className="text-slate-600">Subtotal (ex GST)</span>
+          <span className="font-bold text-ocean-800">{MVR(estimatedSubtotal)}</span>
+        </div>
+        <div className="mt-1 flex justify-between text-xs text-slate-500">
+          <span>GST extracted</span>
+          <span>{MVR(estimatedTax)}</span>
+        </div>
+        <div className="mt-2 flex justify-between border-t border-ocean-200 pt-2">
+          <span className="text-slate-700">New bill total</span>
           <span className="font-bold text-ocean-800">{MVR(estimatedTotal)}</span>
         </div>
       </div>

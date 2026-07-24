@@ -146,7 +146,7 @@ export function buildA4DocumentText(document: A4DocumentPayload) {
       item.name,
       item.description ? `  ${item.description}` : undefined,
       `${item.quantity} ${item.unitType} x ${MVR(item.unitPrice)}`,
-      `Tax: ${MVR(item.taxAmount)}  Total: ${MVR(item.total)}`,
+      `GST: ${MVR(item.taxAmount)}  Total ex GST: ${MVR(item.total)}`,
     ]),
     divider,
     ...document.totals.map(item => `${item.label}: ${item.value}`),
@@ -276,9 +276,9 @@ export function buildA4DocumentHtml(document: A4DocumentPayload, options: { show
       td { display: grid; grid-template-columns: minmax(92px, 34%) minmax(0, 1fr); gap: 10px; margin-top: 8px; text-align: left !important; white-space: normal !important; overflow-wrap: anywhere; }
       td:first-child { display: block; margin-top: 0; font-size: 16px; font-weight: 700; }
       td:nth-child(2)::before { content: "Qty"; color: #64748b; font-weight: 700; }
-      td:nth-child(3)::before { content: "Unit"; color: #64748b; font-weight: 700; }
-      td:nth-child(4)::before { content: "Tax"; color: #64748b; font-weight: 700; }
-      td:nth-child(5)::before { content: "Total"; color: #64748b; font-weight: 700; }
+      td:nth-child(3)::before { content: "Unit ex GST"; color: #64748b; font-weight: 700; }
+      td:nth-child(4)::before { content: "GST"; color: #64748b; font-weight: 700; }
+      td:nth-child(5)::before { content: "Total ex GST"; color: #64748b; font-weight: 700; }
       .item-desc { font-size: 13px; line-height: 1.35; }
       .totals { justify-content: stretch; margin: 0; padding: 16px 14px; }
       .totals-inner { width: 100%; }
@@ -328,9 +328,9 @@ export function buildA4DocumentHtml(document: A4DocumentPayload, options: { show
           <tr>
             <th style="width: 38%">Item</th>
             <th class="center" style="width: 16%">Qty</th>
-            <th class="num" style="width: 16%">Unit</th>
-            <th class="num" style="width: 14%">Tax</th>
-            <th class="num" style="width: 16%">Total</th>
+            <th class="num" style="width: 16%">Unit ex GST</th>
+            <th class="num" style="width: 14%">GST</th>
+            <th class="num" style="width: 16%">Total ex GST</th>
           </tr>
         </thead>
         <tbody>
@@ -452,7 +452,7 @@ export function buildInvoicePrintText({
       item.name,
       item.description ? `  ${item.description}` : undefined,
       `${item.quantity} ${item.unitType} x ${MVR(item.unitPrice)}`,
-      `Tax: ${MVR(item.taxAmount)}  Total: ${MVR(item.total)}`,
+      `GST: ${MVR(item.taxAmount)}  Total ex GST: ${MVR(item.total)}`,
     ]),
     divider,
     `Subtotal: ${MVR(subtotal)}`,
@@ -620,9 +620,9 @@ export function buildA4PdfDocument(document: A4DocumentPayload) {
     pdf.setFontSize(8);
     pdf.text("Item", col.item, y);
     pdf.text("Qty", col.qty, y, { align: "center" });
-    pdf.text("Unit", col.unit + 20, y, { align: "right" });
-    pdf.text("Tax", col.tax + 18, y, { align: "right" });
-    pdf.text("Total", pageWidth - margin, y, { align: "right" });
+    pdf.text("Unit ex GST", col.unit + 20, y, { align: "right" });
+    pdf.text("GST", col.tax + 18, y, { align: "right" });
+    pdf.text("Total ex GST", pageWidth - margin, y, { align: "right" });
     y += 6;
     pdf.line(margin, y, pageWidth - margin, y);
     y += 3;

@@ -12,6 +12,7 @@ import { MVR } from "./utils/format";
 import { formatSequenceNumber, sequenceFromNumber } from "./utils/numbering";
 import { moveDraftBillDestination } from "./utils/billDestination";
 import { isBillEditableBeforeFinalize, operationIdsForTripCarts, validatePaymentRequest } from "./utils/operationFlow";
+import { applyOperationLineTaxBreakdowns, calculateTaxInclusiveBreakdown, operationLinesTaxTotal, roundMoney } from "./utils/taxBreakdown";
 import { isUnfinishedTrip } from "./utils/trips";
 import { buildDestinationWalkInCustomer, ensureDestinationWalkInCustomers } from "./utils/walkInDetails";
 import { CUSTOMER_PRICE_LEVEL_DEFINITIONS, buildCustomerPriceLevel, toFirestoreCustomerPriceLevel } from "./data/customerPriceLevels";
@@ -296,10 +297,10 @@ function mergeDuplicateDraftBills(bills: Bill[], customers: Customer[]) {
     if (group.length < 2) continue;
     const [target, ...duplicates] = [...group].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const allBills = [target, ...duplicates];
-    const items = allBills.reduce<OperationItem[]>(
+    const items = applyOperationLineTaxBreakdowns(allBills.reduce<OperationItem[]>(
       (mergedItems, bill) => mergeOperationItems(bill.items || [], mergedItems),
       []
-    );
+    ));
     const offloadedItems = allBills.reduce<OperationItem[]>(
       (mergedItems, bill) => mergeOperationItems(bill.offloadedItems || [], mergedItems),
       []
@@ -311,7 +312,9 @@ function mergeDuplicateDraftBills(bills: Bill[], customers: Customer[]) {
       offloadedItems: offloadedItems.length ? offloadedItems : undefined,
       itemCount: items.length,
       subtotalTaxInclusive: Number(allBills.reduce((sum, bill) => sum + Number(bill.subtotalTaxInclusive || 0), 0).toFixed(2)),
-      taxTotal: Number(allBills.reduce((sum, bill) => sum + Number(bill.taxTotal || 0), 0).toFixed(2)),
+      taxTotal: items.length
+        ? operationLinesTaxTotal(items)
+        : Number(allBills.reduce((sum, bill) => sum + Number(bill.taxTotal || 0), 0).toFixed(2)),
       grandTotal: Number(allBills.reduce((sum, bill) => sum + Number(bill.grandTotal || 0), 0).toFixed(2)),
       paidAmount: Number(allBills.reduce((sum, bill) => sum + Number(bill.paidAmount || 0), 0).toFixed(2)),
       updatedAt: now,
@@ -1169,10 +1172,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const operationId = reusableOperation?.id || operationDocumentId(first.tripId, operationType, first.destinationId, first.customerId);
     const existingOp = current.operations.find(o => o.id === operationId);
     const createdAt = new Date().toISOString();
-    const newItems: OperationItem[] = items.map(item => {
+    const newItemsRaw: OperationItem[] = items.map(item => {
       const { operationType: _operationType, walkInDetails: _walkInDetails, ...operationItem } = item;
-      const taxAmount = (operationItem.unitPriceTaxInclusive * operationItem.quantity) - (operationItem.unitPriceTaxInclusive * operationItem.quantity) / (1 + operationItem.taxRate / 100);
-      const lineTotal = operationItem.unitPriceTaxInclusive * operationItem.quantity;
+      const lineTotal = roundMoney(operationItem.unitPriceTaxInclusive * operationItem.quantity);
       return {
         ...operationItem,
         id: id("oi"),
@@ -1180,17 +1182,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         businessProfileId: current.businessProfile.id,
         createdBy: current.currentUser.id,
         createdAt,
-        taxAmount: Number(taxAmount.toFixed(2)),
-        lineTotalTaxInclusive: Number(lineTotal.toFixed(2)),
+        taxAmount: 0,
+        lineTotalTaxInclusive: lineTotal,
       };
     });
-    const mergedLocalItems = [...newItems, ...(existingOp?.items || [])];
+    const newItems = applyOperationLineTaxBreakdowns(newItemsRaw);
+    const mergedLocalItems = applyOperationLineTaxBreakdowns([...newItemsRaw, ...(existingOp?.items || [])]);
     const operationToPersist: Operation = existingOp ? {
       ...existingOp,
       walkInDetails: walkInDetails ?? existingOp.walkInDetails,
       items: mergedLocalItems,
       totalTaxInclusive: Number(mergedLocalItems.reduce((sum, opItem) => sum + opItem.lineTotalTaxInclusive, 0).toFixed(2)),
-      totalTax: Number(mergedLocalItems.reduce((sum, opItem) => sum + opItem.taxAmount, 0).toFixed(2)),
+      totalTax: operationLinesTaxTotal(mergedLocalItems),
     } : {
       id: operationId,
       businessProfileId: current.businessProfile.id,
@@ -1201,7 +1204,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       walkInDetails,
       items: newItems,
       totalTaxInclusive: Number(newItems.reduce((sum, opItem) => sum + opItem.lineTotalTaxInclusive, 0).toFixed(2)),
-      totalTax: Number(newItems.reduce((sum, opItem) => sum + opItem.taxAmount, 0).toFixed(2)),
+      totalTax: operationLinesTaxTotal(newItems),
       createdBy: current.currentUser.id,
       createdAt,
       synced: current.isOnline,
@@ -1219,13 +1222,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const snapshot = await transaction.get(opRef);
       const remoteOperation = snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Operation) : null;
       const remoteItems = remoteOperation?.items || [];
-      const mergedItems = [...newItems, ...remoteItems];
+      const mergedItems = applyOperationLineTaxBreakdowns([...newItemsRaw, ...remoteItems]);
       const operationToWrite: Operation = remoteOperation ? {
         ...remoteOperation,
         walkInDetails: walkInDetails ?? remoteOperation.walkInDetails,
         items: mergedItems,
         totalTaxInclusive: Number(mergedItems.reduce((sum, opItem) => sum + opItem.lineTotalTaxInclusive, 0).toFixed(2)),
-        totalTax: Number(mergedItems.reduce((sum, opItem) => sum + opItem.taxAmount, 0).toFixed(2)),
+        totalTax: operationLinesTaxTotal(mergedItems),
       } : operationToPersist;
       transaction.set(opRef, stripUndefined(operationToWrite) as Record<string, unknown>);
     }).catch(error => {
@@ -1244,12 +1247,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const current = stateRef.current;
     const operation = current.operations.find(o => o.items.some(i => i.id === itemId));
     if (!operation) return;
-    const items = operation.items.filter(i => i.id !== itemId);
+    const items = applyOperationLineTaxBreakdowns(operation.items.filter(i => i.id !== itemId));
     const updatedOperation: Operation = {
       ...operation,
       items,
       totalTaxInclusive: Number(items.reduce((sum, i) => sum + i.lineTotalTaxInclusive, 0).toFixed(2)),
-      totalTax: Number(items.reduce((sum, i) => sum + i.taxAmount, 0).toFixed(2)),
+      totalTax: operationLinesTaxTotal(items),
     };
     setState(s => ({
       ...s,
@@ -1262,7 +1265,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const snapshot = await transaction.get(opRef);
         if (!snapshot.exists()) return;
         const remoteOperation = { id: snapshot.id, ...snapshot.data() } as Operation;
-        const remoteItems = remoteOperation.items.filter(i => i.id !== itemId);
+        const remoteItems = applyOperationLineTaxBreakdowns(remoteOperation.items.filter(i => i.id !== itemId));
         if (remoteItems.length === 0) {
           transaction.delete(opRef);
           return;
@@ -1271,7 +1274,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...remoteOperation,
           items: remoteItems,
           totalTaxInclusive: Number(remoteItems.reduce((sum, i) => sum + i.lineTotalTaxInclusive, 0).toFixed(2)),
-          totalTax: Number(remoteItems.reduce((sum, i) => sum + i.taxAmount, 0).toFixed(2)),
+          totalTax: operationLinesTaxTotal(remoteItems),
         }) as Record<string, unknown>);
       }).catch(error => {
         setState(s => ({
@@ -1286,7 +1289,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const snapshot = await transaction.get(opRef);
         if (!snapshot.exists()) return;
         const remoteOperation = { id: snapshot.id, ...snapshot.data() } as Operation;
-        const remoteItems = remoteOperation.items.filter(i => i.id !== itemId);
+        const remoteItems = applyOperationLineTaxBreakdowns(remoteOperation.items.filter(i => i.id !== itemId));
         if (remoteItems.length === 0) {
           transaction.delete(opRef);
           return;
@@ -1295,7 +1298,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...remoteOperation,
           items: remoteItems,
           totalTaxInclusive: Number(remoteItems.reduce((sum, i) => sum + i.lineTotalTaxInclusive, 0).toFixed(2)),
-          totalTax: Number(remoteItems.reduce((sum, i) => sum + i.taxAmount, 0).toFixed(2)),
+          totalTax: operationLinesTaxTotal(remoteItems),
         }) as Record<string, unknown>);
       }).catch(error => {
         setState(s => ({
@@ -1548,17 +1551,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }));
       return;
     }
-    const recalculatedItems = validItems.map(item => {
-      const lineTotal = Number((item.quantity * item.unitPriceTaxInclusive).toFixed(2));
-      const taxAmount = Number((lineTotal - lineTotal / (1 + item.taxRate / 100)).toFixed(2));
+    const recalculatedItems = applyOperationLineTaxBreakdowns(validItems.map(item => {
+      const lineTotal = roundMoney(item.quantity * item.unitPriceTaxInclusive);
       return {
         ...item,
         lineTotalTaxInclusive: lineTotal,
-        taxAmount,
+        taxAmount: 0,
       };
-    });
+    }));
     const grandTotal = Number(recalculatedItems.reduce((sum, item) => sum + item.lineTotalTaxInclusive, 0).toFixed(2));
-    const taxTotal = Number(recalculatedItems.reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2));
+    const taxTotal = operationLinesTaxTotal(recalculatedItems);
     const updatedBill: Bill = {
       ...bill,
       items: recalculatedItems,
@@ -1992,9 +1994,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
           const remoteOperation = { id: opSnapshot.id, ...opSnapshot.data() } as Operation;
           const isOffloadReconciliation = remoteOperation.operationType === "offloading";
-          const mergedItems = isOffloadReconciliation
+          const mergedItems = applyOperationLineTaxBreakdowns(isOffloadReconciliation
             ? (remoteBill.items || [])
-            : mergeOperationItems(remoteOperation.items, remoteBill.items || []);
+            : mergeOperationItems(remoteOperation.items, remoteBill.items || []));
           const mergedOffloadedItems = isOffloadReconciliation
             ? mergeOperationItems(remoteOperation.items, remoteBill.offloadedItems || [])
             : (remoteBill.offloadedItems || []);
@@ -2008,9 +2010,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             subtotalTaxInclusive: isOffloadReconciliation
               ? remoteBill.subtotalTaxInclusive
               : Number((Number(remoteBill.subtotalTaxInclusive || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
-            taxTotal: isOffloadReconciliation
-              ? remoteBill.taxTotal
-              : Number((Number(remoteBill.taxTotal || 0) + remoteOperation.totalTax).toFixed(2)),
+            taxTotal: mergedItems.length ? operationLinesTaxTotal(mergedItems) : remoteBill.taxTotal,
             grandTotal: isOffloadReconciliation
               ? remoteBill.grandTotal
               : Number((Number(remoteBill.grandTotal || 0) + remoteOperation.totalTaxInclusive).toFixed(2)),
@@ -2076,25 +2076,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
           localMaxSequence
         ) + 1;
         const billNumber = formatSequenceNumber(sequenceData, nextSequence, dest?.destinationCode);
+        const remoteOperation = { id: opSnapshot.id, ...opSnapshot.data() } as Operation;
+        const billItems = applyOperationLineTaxBreakdowns(remoteOperation.items || op.items);
+        const grandTotal = Number(billItems.reduce((sum, item) => sum + item.lineTotalTaxInclusive, 0).toFixed(2));
+        const taxTotal = operationLinesTaxTotal(billItems);
         const newBill: Bill = {
           id: billId,
           businessProfileId,
-          tripId: op.tripId,
-          destinationId: op.destinationId,
-          customerId: op.customerId,
-          walkInDetails: op.walkInDetails,
+          tripId: remoteOperation.tripId,
+          destinationId: remoteOperation.destinationId,
+          customerId: remoteOperation.customerId,
+          walkInDetails: remoteOperation.walkInDetails,
           billNumber,
           billType,
           billStatus: "draft",
-          subtotalTaxInclusive: op.totalTaxInclusive,
-          taxTotal: op.totalTax,
-          grandTotal: op.totalTaxInclusive,
+          subtotalTaxInclusive: grandTotal,
+          taxTotal,
+          grandTotal,
           paymentStatus: "unpaid",
           paidAmount: 0,
           createdBy: stateRef.current.currentUser.id,
           createdAt: new Date().toISOString(),
-          itemCount: op.items.length,
-          items: op.items,
+          itemCount: billItems.length,
+          items: billItems,
         };
         const updatedSequence: NumberingSequence & { id: string; businessProfileId: string } = {
           ...sequenceData,
@@ -2252,7 +2256,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
     const oldTotal = bill.grandTotal;
-    const taxTotal = Number((newTotal - newTotal / (1 + current.businessProfile.defaultTaxRate / 100)).toFixed(2));
+    const taxTotal = calculateTaxInclusiveBreakdown(newTotal, current.businessProfile.defaultTaxRate).taxAmount;
     const updatedBill: Bill = {
       ...bill,
       grandTotal: newTotal,

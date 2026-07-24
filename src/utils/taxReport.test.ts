@@ -154,3 +154,22 @@ test("buildQuarterTaxBillRows includes cancelled bills and sorts by trip name th
     ],
   );
 });
+
+test("buildQuarterTaxBillRows extracts GST from tax-inclusive bill totals", () => {
+  const rows = buildQuarterTaxBillRows([
+    {
+      ...bills[0],
+      id: "bill_128",
+      billNumber: "BILL-128",
+      billStatus: "paid",
+      subtotalTaxInclusive: 128,
+      taxTotal: 9.48,
+      grandTotal: 128,
+      createdAt: "2026-01-18T00:00:00.000Z",
+    },
+  ], trips, customers, quarterPeriod("2026-Q1"));
+
+  assert.equal(rows[0].subtotalAmount, 118.52);
+  assert.equal(rows[0].taxAmount, 9.48);
+  assert.equal(rows[0].totalAmount, 128);
+});

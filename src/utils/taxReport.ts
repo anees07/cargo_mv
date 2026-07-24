@@ -1,4 +1,5 @@
 import type { Bill, Customer, Trip } from "../types.js";
+import { calculateBillTaxBreakdown } from "./taxBreakdown.js";
 
 export interface QuarterPeriod {
   id: string;
@@ -63,6 +64,7 @@ export function buildQuarterTaxBillRows(
   trips: Trip[],
   customers: Customer[],
   period: QuarterPeriod,
+  defaultTaxRate = 8,
 ): TaxBillRow[] {
   return bills
     .filter(bill => {
@@ -73,18 +75,20 @@ export function buildQuarterTaxBillRows(
       const trip = trips.find(item => item.id === bill.tripId);
       const customer = customers.find(item => item.id === bill.customerId);
       const isCancelled = bill.billStatus === "cancelled";
-      const subtotalAmount = Number((bill.grandTotal - bill.taxTotal).toFixed(2));
+      const breakdown = calculateBillTaxBreakdown(bill, defaultTaxRate);
+      const subtotalAmount = breakdown.subtotalExcludingTax;
+      const taxAmount = breakdown.taxAmount;
       return {
         billId: bill.id,
         billNumber: bill.billNumber,
         billName: customer?.displayName || bill.billType.replace(/_/g, " "),
         billStatus: bill.billStatus,
         subtotalAmount,
-        taxAmount: bill.taxTotal,
-        totalAmount: bill.grandTotal,
+        taxAmount,
+        totalAmount: breakdown.totalTaxInclusive,
         taxableSubtotalAmount: isCancelled ? 0 : subtotalAmount,
-        taxableTaxAmount: isCancelled ? 0 : bill.taxTotal,
-        taxableTotalAmount: isCancelled ? 0 : bill.grandTotal,
+        taxableTaxAmount: isCancelled ? 0 : taxAmount,
+        taxableTotalAmount: isCancelled ? 0 : breakdown.totalTaxInclusive,
         isCancelled,
         billDate: bill.createdAt,
         tripNumber: trip?.tripNumber || "No trip",

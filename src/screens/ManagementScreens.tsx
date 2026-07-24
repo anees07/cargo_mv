@@ -7,6 +7,7 @@ import { buildQuarterTaxBillRows, quarterPeriod, recentQuarterOptions } from "..
 import { APP_RELEASE_DETAIL } from "../appVersion";
 import { buildCustomerOutstandingMap, getOutstandingCustomerCount, getTotalOutstanding } from "../utils/billingSummary";
 import { unreadNotificationCountForUser } from "../utils/notifications";
+import { billAverageUnitSubtotalExcludingTax, calculateBillTaxBreakdown } from "../utils/taxBreakdown";
 import type { A4DocumentPayload } from "../utils/documentActions";
 import { walkInDisplayName } from "../utils/walkInDetails";
 
@@ -387,9 +388,9 @@ function buildReportA4Document({
         ].filter(Boolean).join(" • "),
         quantity: bill.itemCount || bill.items?.length || 1,
         unitType: "items",
-        unitPrice: bill.itemCount > 0 ? Number((bill.grandTotal / bill.itemCount).toFixed(2)) : bill.grandTotal,
+        unitPrice: billAverageUnitSubtotalExcludingTax(bill, businessProfile.defaultTaxRate),
         taxAmount: bill.taxTotal,
-        total: bill.grandTotal,
+        total: calculateBillTaxBreakdown(bill, businessProfile.defaultTaxRate).subtotalExcludingTax,
       };
     }),
     totals: [
@@ -410,7 +411,7 @@ function GstReportingSuite() {
   const quarterOptions = recentQuarterOptions();
   const [selectedQuarter, setSelectedQuarter] = useState(quarterOptions[0].id);
   const period = quarterPeriod(selectedQuarter);
-  const rows = buildQuarterTaxBillRows(bills, trips, customers, period);
+  const rows = buildQuarterTaxBillRows(bills, trips, customers, period, businessProfile.defaultTaxRate);
   const taxableRows = rows.filter(row => !row.isCancelled);
   const totalSubtotal = rows.reduce((sum, row) => sum + row.taxableSubtotalAmount, 0);
   const totalTax = rows.reduce((sum, row) => sum + row.taxableTaxAmount, 0);

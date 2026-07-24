@@ -18,6 +18,7 @@ import { DEFAULT_CATALOG_CATEGORY_DEFINITIONS, catalogCategoryLabel } from "../d
 import { isSystemOtherItem } from "../data/systemCatalogItems";
 import { filterCustomersForPicker } from "../utils/customerSearch";
 import { catalogIconForItem, DEFAULT_CATALOG_ICON, isCatalogAutoIcon } from "../utils/catalogIcons";
+import { buildOperationLineTaxBreakdowns, calculateTaxInclusiveBreakdown, operationUnitPriceExcludingTax, roundMoney } from "../utils/taxBreakdown";
 import {
   cleanWalkInDetails,
   emptyWalkInDetails,
@@ -84,9 +85,14 @@ export function OperationScreen() {
     () => Number(currentOperations.reduce((sum, operation) => sum + operation.totalTaxInclusive, 0).toFixed(2)),
     [currentOperations]
   );
+  const currentLineBreakdowns = useMemo(() => buildOperationLineTaxBreakdowns(currentItems, businessProfile.defaultTaxRate), [currentItems, businessProfile.defaultTaxRate]);
   const currentTotalTax = useMemo(
-    () => Number(currentOperations.reduce((sum, operation) => sum + operation.totalTax, 0).toFixed(2)),
-    [currentOperations]
+    () => roundMoney(currentLineBreakdowns.reduce((sum, line) => sum + line.taxAmount, 0)),
+    [currentLineBreakdowns]
+  );
+  const currentSubtotalExcludingTax = useMemo(
+    () => roundMoney(currentLineBreakdowns.reduce((sum, line) => sum + line.subtotalExcludingTax, 0)),
+    [currentLineBreakdowns]
   );
   const currentOpHasLockedBill = currentOperations.some(operation => hasLockedBillForOperation(operation, bills));
   const entryCartIds = useMemo(
@@ -363,7 +369,7 @@ export function OperationScreen() {
       toast({ title: "Walk-in details required", body: "Add name and phone number before adding cargo.", variant: "warning" });
       return;
     }
-    const taxRate = businessProfile.defaultTaxRate;
+    const taxRate = Number.isFinite(item.defaultTaxRate) ? item.defaultTaxRate : businessProfile.defaultTaxRate;
     addOperationItem({
       tripId: activeTrip.id,
       operationId: currentOp?.id || "pending",
@@ -534,6 +540,7 @@ export function OperationScreen() {
               <div className="divide-y divide-slate-100">
                 {currentItems.map((it, idx) => {
                   const isOverridden = it.overridePrice && it.overridePrice !== it.originalPrice;
+                  const lineBreakdown = currentLineBreakdowns[idx];
                   return (
                     <div key={it.id} className="p-3">
                       <div className="flex items-start justify-between gap-2">
@@ -543,7 +550,7 @@ export function OperationScreen() {
                             <p className="truncate text-sm font-semibold text-slate-900">{it.itemNameSnapshot}</p>
                           </div>
                           <p className="mt-0.5 text-xs text-slate-500">
-                            {it.quantity} {it.unitType} × {MVR(it.unitPriceTaxInclusive)}
+                            {it.quantity} {it.unitType} x {MVR(lineBreakdown?.unitPriceExcludingTax ?? operationUnitPriceExcludingTax(it))} ex GST
                             {isOverridden && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">OVERRIDE</span>}
                           </p>
                           {it.lineDescription && (
@@ -555,7 +562,7 @@ export function OperationScreen() {
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-slate-900">{MVR(it.lineTotalTaxInclusive)}</p>
-                          <p className="text-xs text-slate-500">tax {MVR(it.taxAmount)}</p>
+                          <p className="text-xs text-slate-500">GST {MVR(lineBreakdown?.taxAmount ?? it.taxAmount)}</p>
                           <button onClick={() => removeOperationItem(it.id)} className="mt-1 text-rose-600 hover:text-rose-700">
                             <Icon name="trash" className="h-3.5 w-3.5" />
                           </button>
@@ -567,15 +574,15 @@ export function OperationScreen() {
               </div>
               <div className="border-t-2 border-dashed border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-center justify-between text-xs text-slate-600">
-                  <span>Subtotal (tax-inclusive)</span>
-                  <span className="font-semibold text-slate-900">{MVR(currentTotalTaxInclusive)}</span>
+                  <span>Subtotal (ex GST)</span>
+                  <span className="font-semibold text-slate-900">{MVR(currentSubtotalExcludingTax)}</span>
                 </div>
                 <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
-                  <span>GST 8% (extracted)</span>
+                  <span>GST extracted</span>
                   <span>{MVR(currentTotalTax)}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
-                  <span className="text-sm font-semibold text-slate-900">Total</span>
+                  <span className="text-sm font-semibold text-slate-900">Total (incl GST)</span>
                   <span className="text-lg font-bold text-ocean-700">{MVR(currentTotalTaxInclusive)}</span>
                 </div>
               </div>
@@ -1164,6 +1171,8 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
     const parsedQty = qty === "" ? 0 : qty;
     const safeQty = maxQty ? Math.min(parsedQty, maxQty) : parsedQty;
     const effectivePrice = price || (isOther ? 0 : defaultPrice);
+    const lineTotal = roundMoney(safeQty * effectivePrice);
+    const lineBreakdown = calculateTaxInclusiveBreakdown(lineTotal, selected.defaultTaxRate);
     const canAddSelected = operationType === "offloading"
       ? Boolean(maxQty) && safeQty > 0
       : isOther
@@ -1236,8 +1245,9 @@ function ItemPicker({ items, catalogCategories, customer, getPrice, operationTyp
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-ocean-200 bg-ocean-50 p-3 text-sm">
-          <div className="flex justify-between"><span className="text-slate-600">Line total (tax-incl)</span><span className="font-semibold text-ocean-700">{MVR(safeQty * effectivePrice)}</span></div>
-          <div className="mt-1 flex justify-between text-xs text-slate-500"><span>GST extracted</span><span>{MVR((safeQty * effectivePrice) - (safeQty * effectivePrice) / 1.08)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-600">Subtotal (ex GST)</span><span className="font-semibold text-ocean-700">{MVR(lineBreakdown.subtotalExcludingTax)}</span></div>
+          <div className="mt-1 flex justify-between text-xs text-slate-500"><span>GST extracted</span><span>{MVR(lineBreakdown.taxAmount)}</span></div>
+          <div className="mt-2 flex justify-between border-t border-ocean-200 pt-2"><span className="text-slate-700">Line total (incl GST)</span><span className="font-semibold text-ocean-800">{MVR(lineTotal)}</span></div>
         </div>
         <Btn fullWidth size="lg" className="mt-4" icon="plus" disabled={!canAddSelected} onClick={() => onPick(selected, safeQty, effectivePrice, isOther ? lineDescription : undefined)}>
           {operationType === "offloading" ? "Confirm offload" : "Add to operation"}

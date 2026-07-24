@@ -1,3 +1,5 @@
+import { calculateTaxInclusiveBreakdown } from "./taxBreakdown";
+
 // Utility helpers — formatting, currency, calculations
 export const MVR = (n: number) =>
   `MVR ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -29,9 +31,8 @@ export const relativeTime = (iso: string) => {
 };
 
 export const calcTaxBreakdown = (taxInclusive: number, taxRate: number) => {
-  const base = taxInclusive / (1 + taxRate / 100);
-  const tax = taxInclusive - base;
-  return { base: Number(base.toFixed(2)), tax: Number(tax.toFixed(2)) };
+  const breakdown = calculateTaxInclusiveBreakdown(taxInclusive, taxRate);
+  return { base: breakdown.subtotalExcludingTax, tax: breakdown.taxAmount };
 };
 
 export const roleLabel = (role: string) => ({

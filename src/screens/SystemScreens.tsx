@@ -2,6 +2,7 @@ import { useApp } from "../useApp";
 import { Btn, Card, Section, TopBar } from "../components/ui";
 import { MVR, formatDate, formatDateTime } from "../utils/format";
 import { shareA4PdfDocument, type A4DocumentPayload } from "../utils/documentActions";
+import { buildOperationLineTaxBreakdowns, calculateBillTaxBreakdown, operationUnitPriceExcludingTax } from "../utils/taxBreakdown";
 import { isWalkInCustomer, walkInDisplayName, walkInPhone } from "../utils/walkInDetails";
 import type { Bill } from "../types";
 
@@ -93,7 +94,10 @@ export function PdfDocumentsScreen() {
     const customerName = walkInDisplayName(customer, bill.walkInDetails);
     const customerPhone = walkInPhone(customer, bill.walkInDetails);
     const routeDescription = bill.routeDescription || bill.notes;
-    const subtotal = Number((bill.subtotalTaxInclusive - bill.taxTotal).toFixed(2));
+    const billItems = bill.items || [];
+    const lineBreakdowns = buildOperationLineTaxBreakdowns(billItems, businessProfile.defaultTaxRate);
+    const billBreakdown = calculateBillTaxBreakdown(bill, businessProfile.defaultTaxRate);
+    const subtotal = billBreakdown.subtotalExcludingTax;
     const balanceDue = Number((bill.grandTotal - bill.paidAmount).toFixed(2));
 
     return {
@@ -125,18 +129,18 @@ export function PdfDocumentsScreen() {
         { label: "Trip", value: trip?.tripNumber },
         { label: "Status", value: bill.finalizedAt ? "Saved" : "Draft" },
       ],
-      items: (bill.items || []).map(item => ({
+      items: billItems.map((item, index) => ({
         name: item.itemNameSnapshot,
         description: item.lineDescription,
         quantity: item.quantity,
         unitType: item.unitType,
-        unitPrice: item.unitPriceTaxInclusive,
-        taxAmount: item.taxAmount,
-        total: item.lineTotalTaxInclusive,
+        unitPrice: lineBreakdowns[index]?.unitPriceExcludingTax ?? operationUnitPriceExcludingTax(item),
+        taxAmount: lineBreakdowns[index]?.taxAmount ?? item.taxAmount,
+        total: lineBreakdowns[index]?.subtotalExcludingTax ?? item.lineTotalTaxInclusive,
       })),
       totals: [
         { label: "Subtotal (excl. tax)", value: MVR(subtotal) },
-        { label: `GST ${businessProfile.defaultTaxRate}% (inclusive)`, value: MVR(bill.taxTotal) },
+        { label: `GST ${businessProfile.defaultTaxRate}% (inclusive)`, value: MVR(billBreakdown.taxAmount) },
         { label: "Grand Total", value: MVR(bill.grandTotal), strong: true },
         { label: "Paid", value: MVR(bill.paidAmount) },
         ...(balanceDue > 0 ? [{ label: "Balance due", value: MVR(balanceDue), strong: true }] : []),
