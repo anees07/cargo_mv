@@ -596,6 +596,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Collection-group queries need a rule that matches every possible parent path.
+    match /{path=**}/summary_reports/{summaryId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
     match /{collectionName}/{docId} {
       allow read, write: if false;
     }
