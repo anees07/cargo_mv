@@ -25,9 +25,13 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     setError(null);
-    const [nextSession, nextSnapshot] = await Promise.all([platformAdminService.getSession(), platformAdminService.getSnapshot()]);
+    const nextSession = await platformAdminService.getSession();
     setSession(nextSession);
-    setSnapshot(nextSnapshot);
+    if (!nextSession) {
+      setSnapshot(null);
+      return;
+    }
+    setSnapshot(await platformAdminService.getSnapshot());
   }, []);
 
   useEffect(() => {
