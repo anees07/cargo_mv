@@ -1,4 +1,4 @@
-export const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+export const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "MVR", currencyDisplay: "code", maximumFractionDigits: 0 }).format(value);
 export const compactNumber = (value: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 export const shortDate = (value: string) => new Intl.DateTimeFormat("en-MV", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 export const dateTime = (value: string) => new Intl.DateTimeFormat("en-MV", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
