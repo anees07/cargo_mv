@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { FieldPath, FieldValue, getFirestore, type CollectionReference, type DocumentData, type DocumentReference, type QueryDocumentSnapshot, type Transaction } from "firebase-admin/firestore";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
@@ -7,6 +8,7 @@ import { setGlobalOptions } from "firebase-functions/v2/options";
 initializeApp();
 setGlobalOptions({
   region: "us-central1",
+  serviceAccount: "cargomv-d41f8@appspot.gserviceaccount.com",
   memory: "512MiB",
   timeoutSeconds: 60,
   maxInstances: 20,
@@ -46,6 +48,50 @@ const activeTripStatuses = new Set(["open", "loading", "sailing", "offloading"])
 
 const num = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 const str = (value: unknown) => typeof value === "string" ? value : "";
+
+type PlatformStatus = "pending" | "active" | "suspended" | "blocked";
+type PlatformCallRequest = {
+  auth?: { uid: string; token: Record<string, unknown> };
+  data?: unknown;
+};
+
+function platformInput(data: unknown): Record<string, unknown> {
+  return data && typeof data === "object" ? data as Record<string, unknown> : {};
+}
+
+function assertPlatformAdmin(request: PlatformCallRequest): { uid: string; name: string } {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in before using platform administration.");
+  if (request.auth.token.platformAdmin !== true || request.auth.token.platformAdminActive === false) {
+    throw new HttpsError("permission-denied", "This account is not authorized for platform administration.");
+  }
+  return {
+    uid: request.auth.uid,
+    name: str(request.auth.token.name) || str(request.auth.token.email) || request.auth.uid,
+  };
+}
+
+function requiredString(input: Record<string, unknown>, key: string, maxLength = 160): string {
+  const value = str(input[key]).trim();
+  if (!value || value.length > maxLength) throw new HttpsError("invalid-argument", `${key} is required.`);
+  return value;
+}
+
+function platformStatus(value: unknown): PlatformStatus {
+  if (value === "pending" || value === "active" || value === "suspended" || value === "blocked") return value;
+  throw new HttpsError("invalid-argument", "Invalid tenant status.");
+}
+
+async function appendPlatformAudit(actor: { uid: string; name: string }, action: string, target: string, description: string, tone: "neutral" | "success" | "warning" | "danger") {
+  await db.collection("platform_audit_logs").add({
+    actorUid: actor.uid,
+    actor: actor.name,
+    action,
+    target,
+    description,
+    tone,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+}
 
 function asBill(data: DocumentData | undefined, id: string): BillSnapshot | null {
   if (!data) return null;
@@ -468,3 +514,171 @@ export const backfillTenantSummaries = onCall({
     cashierDays: cashierDays.size,
   };
 });
+
+export const platformAdminBootstrap = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdminBootstrapRequest(request);
+  const auth = getAuth();
+  const user = await auth.getUser(actor.uid);
+  const existingClaims = user.customClaims || {};
+  await auth.setCustomUserClaims(actor.uid, {
+    ...existingClaims,
+    platformAdmin: true,
+    platformAdminActive: true,
+    platformRole: "platform_owner",
+  });
+  await db.collection("platform_admins").doc(actor.uid).set({
+    uid: actor.uid,
+    name: user.displayName || user.email || actor.uid,
+    email: user.email || "",
+    role: "platform_owner",
+    status: "active",
+    lastActiveAt: FieldValue.serverTimestamp(),
+    twoFactorEnabled: false,
+  }, { merge: true });
+  await appendPlatformAudit({ uid: actor.uid, name: user.displayName || user.email || actor.uid }, "Bootstrapped platform admin", user.email || actor.uid, "Platform-admin claim issued through the configured bootstrap boundary.", "success");
+  return { ok: true, uid: actor.uid };
+});
+
+function assertPlatformAdminBootstrapRequest(request: PlatformCallRequest): { uid: string } {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in before bootstrapping platform administration.");
+  const email = str(request.auth.token.email).toLowerCase();
+  const allowedEmail = str(process.env.PLATFORM_ADMIN_BOOTSTRAP_EMAIL).toLowerCase();
+  const allowedUids = str(process.env.PLATFORM_ADMIN_BOOTSTRAP_UIDS).split(",").map(value => value.trim()).filter(Boolean);
+  if ((!allowedEmail || email !== allowedEmail) && !allowedUids.includes(request.auth.uid)) {
+    throw new HttpsError("permission-denied", "This account is not configured for platform-admin bootstrap.");
+  }
+  return { uid: request.auth.uid };
+}
+
+export const platformAdminUpdateTenantStatus = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdmin(request);
+  const input = platformInput(request.data);
+  const tenantId = requiredString(input, "tenantId", 80);
+  const status = platformStatus(input.status);
+  const tenantRef = db.collection("business_profiles").doc(tenantId);
+  const tenantSnapshot = await tenantRef.get();
+  if (!tenantSnapshot.exists) throw new HttpsError("not-found", "Tenant business profile not found.");
+  const tenantName = str(tenantSnapshot.data()?.businessName) || tenantId;
+  await tenantRef.set({
+    platformStatus: status,
+    activeStatus: status === "active",
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+  await appendPlatformAudit(actor, `${status === "active" ? "Approved or reactivated" : titleForPlatformStatus(status)} tenant`, tenantName, `Tenant ${tenantId} changed to ${status}.`, status === "blocked" ? "danger" : status === "suspended" ? "warning" : "success");
+  return { tenantId, status };
+});
+
+export const platformAdminAssignPlan = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdmin(request);
+  const input = platformInput(request.data);
+  const tenantId = requiredString(input, "tenantId", 80);
+  const planId = requiredString(input, "planId", 80);
+  const planSnapshot = await db.collection("platform_plans").doc(planId).get();
+  if (!planSnapshot.exists) throw new HttpsError("not-found", "Subscription plan not found.");
+  const tenantRef = db.collection("business_profiles").doc(tenantId);
+  const tenantSnapshot = await tenantRef.get();
+  if (!tenantSnapshot.exists) throw new HttpsError("not-found", "Tenant business profile not found.");
+  const plan = planSnapshot.data() || {};
+  const existingSubscription = await db.collection("platform_subscriptions").doc(tenantId).get();
+  await db.runTransaction(async transaction => {
+    transaction.set(tenantRef, {
+      subscriptionPlanId: planId,
+      mrr: num(plan.price),
+      subscriptionStatus: "active",
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(db.collection("platform_subscriptions").doc(tenantId), {
+      id: tenantId,
+      tenantId,
+      planId,
+      status: "active",
+      amount: num(plan.price),
+      startedAt: existingSubscription.data()?.startedAt || FieldValue.serverTimestamp(),
+      renewalDate: existingSubscription.data()?.renewalDate || FieldValue.serverTimestamp(),
+      paymentMethod: existingSubscription.data()?.paymentMethod || "Not added",
+      lastPayment: existingSubscription.data()?.lastPayment || "Pending",
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+  await appendPlatformAudit(actor, "Changed subscription", str(tenantSnapshot.data()?.businessName) || tenantId, `Assigned the ${str(plan.name) || planId} plan.`, "neutral");
+  return { tenantId, planId };
+});
+
+export const platformAdminUpdateModuleEntitlement = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdmin(request);
+  const input = platformInput(request.data);
+  const tenantId = requiredString(input, "tenantId", 80);
+  const moduleId = requiredString(input, "moduleId", 80);
+  if (typeof input.enabled !== "boolean") throw new HttpsError("invalid-argument", "enabled must be boolean.");
+  const tenantRef = db.collection("business_profiles").doc(tenantId);
+  const tenantSnapshot = await tenantRef.get();
+  if (!tenantSnapshot.exists) throw new HttpsError("not-found", "Tenant business profile not found.");
+  const rawModules = tenantSnapshot.data()?.enabledModules;
+  const currentModules: string[] = Array.isArray(rawModules) ? rawModules.filter((value: unknown): value is string => typeof value === "string") : [];
+  const enabledModules = input.enabled ? Array.from(new Set([...currentModules, moduleId])) : currentModules.filter((value: string) => value !== moduleId);
+  await tenantRef.set({ enabledModules, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  const moduleSnapshot = await db.collection("platform_modules").doc(moduleId).get();
+  await appendPlatformAudit(actor, input.enabled ? "Enabled module" : "Disabled module", str(tenantSnapshot.data()?.businessName) || tenantId, `${str(moduleSnapshot.data()?.name) || moduleId} ${input.enabled ? "enabled" : "disabled"}.`, input.enabled ? "success" : "warning");
+  return { tenantId, moduleId, enabled: input.enabled };
+});
+
+export const platformAdminCreatePlan = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdmin(request);
+  const input = platformInput(request.data);
+  const name = requiredString(input, "name", 80);
+  const description = requiredString(input, "description", 240);
+  const price = num(input.price);
+  if (price < 0) throw new HttpsError("invalid-argument", "price must be zero or greater.");
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "plan";
+  const planId = `plan_${slug}_${Date.now()}`;
+  await db.collection("platform_plans").doc(planId).set({ id: planId, name, description, price, billingPeriod: input.billingPeriod === "annual" ? "annual" : "monthly", trialDays: Math.max(0, num(input.trialDays)), features: Array.isArray(input.features) ? input.features.filter((value): value is string => typeof value === "string").slice(0, 20) : [], active: input.active !== false, subscribers: 0, accent: input.accent === "mint" || input.accent === "amber" ? input.accent : "blue", createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+  await appendPlatformAudit(actor, "Created plan", name, "A new subscription plan was created.", "success");
+  return { id: planId, name, description, price, billingPeriod: input.billingPeriod === "annual" ? "annual" : "monthly", trialDays: Math.max(0, num(input.trialDays)), features: [], active: input.active !== false, subscribers: 0, accent: input.accent === "mint" || input.accent === "amber" ? input.accent : "blue" };
+});
+
+export const platformAdminInviteAdmin = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdmin(request);
+  const input = platformInput(request.data);
+  const name = requiredString(input, "name", 120);
+  const email = requiredString(input, "email", 160).toLowerCase();
+  const role = ["platform_admin", "support", "billing"].includes(str(input.role)) ? str(input.role) : "support";
+  const id = `invite_${Date.now()}`;
+  await db.collection("platform_admins").doc(id).set({ id, name, email, role, status: "invited", lastActiveAt: FieldValue.serverTimestamp(), twoFactorEnabled: false, invitedBy: actor.uid, createdAt: FieldValue.serverTimestamp() });
+  await appendPlatformAudit(actor, "Invited admin", name, "A platform administrator invitation was recorded.", "neutral");
+  return { id, name, email, role, status: "invited", lastActiveAt: new Date().toISOString(), twoFactorEnabled: false };
+});
+
+export const platformAdminUpdateAdminStatus = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdmin(request);
+  const input = platformInput(request.data);
+  const adminId = requiredString(input, "adminId", 120);
+  const status = ["active", "invited", "suspended"].includes(str(input.status)) ? str(input.status) : "suspended";
+  const adminRef = db.collection("platform_admins").doc(adminId);
+  const adminSnapshot = await adminRef.get();
+  if (!adminSnapshot.exists) throw new HttpsError("not-found", "Platform admin not found.");
+  await adminRef.set({ status, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  if (adminId !== actor.uid) {
+    try {
+      const target = await getAuth().getUser(adminId);
+      const claims = target.customClaims || {};
+      await getAuth().setCustomUserClaims(adminId, { ...claims, platformAdmin: status === "active", platformAdminActive: status === "active" });
+    } catch (error) {
+      if ((error as { code?: string }).code !== "auth/user-not-found") throw error;
+    }
+  }
+  await appendPlatformAudit(actor, "Updated admin status", str(adminSnapshot.data()?.name) || adminId, `Admin status changed to ${status}.`, status === "suspended" ? "warning" : "success");
+  return { ...adminSnapshot.data(), id: adminId, status };
+});
+
+export const platformAdminUpdateSettings = onCall({ region: "us-central1" }, async request => {
+  const actor = assertPlatformAdmin(request);
+  const input = platformInput(request.data);
+  const settings = { requireApproval: input.requireApproval === true, allowTrials: input.allowTrials !== false, requireTwoFactor: input.requireTwoFactor !== false, maintenanceMode: input.maintenanceMode === true, defaultTrialDays: Math.max(0, num(input.defaultTrialDays)), supportEmail: requiredString(input, "supportEmail", 160) };
+  await db.collection("platform_settings").doc("config").set({ ...settings, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid }, { merge: true });
+  await appendPlatformAudit(actor, "Updated platform settings", "Platform settings", "Approval and security settings were updated.", "neutral");
+  return settings;
+});
+
+function titleForPlatformStatus(status: PlatformStatus): string {
+  return status === "suspended" ? "Suspended" : status === "blocked" ? "Blocked" : "Updated";
+}

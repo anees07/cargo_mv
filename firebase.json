@@ -49,6 +49,14 @@
     ],
     "rewrites": [
       {
+        "source": "/platform-admin",
+        "destination": "/platform-admin/index.html"
+      },
+      {
+        "source": "/platform-admin/**",
+        "destination": "/platform-admin/index.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

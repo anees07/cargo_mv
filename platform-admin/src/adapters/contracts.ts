@@ -12,11 +12,13 @@ import type {
 export interface PlatformAdminAuthAdapter {
   getSession(): Promise<PlatformAdminSession | null>;
   signIn(email: string, password: string): Promise<PlatformAdminSession>;
+  bootstrap(): Promise<void>;
   signOut(): Promise<void>;
 }
 
 export interface PlatformAdminQueryAdapter {
   getSnapshot(): Promise<PlatformSnapshot>;
+  subscribeSnapshot(onSnapshot: (snapshot: PlatformSnapshot) => void, onError: (error: Error) => void): () => void;
 }
 
 export interface PlatformAdminMutationAdapter {

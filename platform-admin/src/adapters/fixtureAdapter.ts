@@ -17,12 +17,21 @@ export class FixturePlatformAdminService implements PlatformAdminService {
     return session;
   }
 
+  async bootstrap(): Promise<void> {
+    return Promise.resolve();
+  }
+
   async signOut(): Promise<void> {
     return Promise.resolve();
   }
 
   async getSnapshot(): Promise<PlatformSnapshot> {
     return clone(this.snapshot);
+  }
+
+  subscribeSnapshot(onSnapshot: (snapshot: PlatformSnapshot) => void): () => void {
+    onSnapshot(clone(this.snapshot));
+    return () => undefined;
   }
 
   async getEvents(): Promise<PlatformSnapshot["auditEvents"]> {
