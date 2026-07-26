@@ -34,6 +34,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isPlatformAdmin() {
+      return isAuthenticated()
+        && request.auth.token.platformAdmin == true;
+    }
+
     function signedInUser() {
       return get(/databases/$(database)/documents/business_users/$(request.auth.uid));
     }
@@ -41,7 +46,11 @@ service cloud.firestore {
     function isBusinessMember(businessProfileId) {
       return isAuthenticated()
         && signedInUser().data.businessProfileId == businessProfileId
-        && signedInUser().data.activeStatus == true;
+        && signedInUser().data.activeStatus == true
+        && (
+          !('platformStatus' in get(/databases/$(database)/documents/business_profiles/$(businessProfileId)).data)
+          || get(/databases/$(database)/documents/business_profiles/$(businessProfileId)).data.platformStatus == 'active'
+        );
     }
 
     function isManagerOrAbove() {
@@ -78,7 +87,10 @@ service cloud.firestore {
           'companyRegistrationNumber', 'gstNumber',
           'taxRegistrationStatus', 'phone', 'email', 'address', 'logoEmoji',
           'defaultCurrency', 'defaultTaxRate',
-          'taxInclusivePricingEnabled', 'activeStatus', 'createdAt', 'updatedAt'
+          'taxInclusivePricingEnabled', 'activeStatus', 'createdAt', 'updatedAt',
+          'platformStatus', 'subscriptionPlanId', 'subscriptionStatus',
+          'enabledModules', 'renewalDate', 'mrr', 'island', 'slug',
+          'contactName', 'ownerName', 'risk', 'shipmentCount'
         ])
         && data.id == businessProfileId
         && data.ownerUserId is string
@@ -90,7 +102,19 @@ service cloud.firestore {
         && data.defaultTaxRate >= 0
         && data.defaultTaxRate <= 100
         && data.taxInclusivePricingEnabled is bool
-        && data.activeStatus is bool;
+        && data.activeStatus is bool
+        && (!('platformStatus' in data) || data.platformStatus in ['pending', 'active', 'suspended', 'blocked'])
+        && (!('subscriptionPlanId' in data) || validString(data.subscriptionPlanId, 1, 80))
+        && (!('subscriptionStatus' in data) || validString(data.subscriptionStatus, 1, 40))
+        && (!('enabledModules' in data) || data.enabledModules is list)
+        && (!('renewalDate' in data) || data.renewalDate is timestamp || data.renewalDate is string)
+        && (!('mrr' in data) || data.mrr is number)
+        && (!('island' in data) || validString(data.island, 1, 120))
+        && (!('slug' in data) || validString(data.slug, 1, 120))
+        && (!('contactName' in data) || validString(data.contactName, 1, 120))
+        && (!('ownerName' in data) || validString(data.ownerName, 1, 120))
+        && (!('risk' in data) || data.risk in ['low', 'medium', 'high'])
+        && (!('shipmentCount' in data) || data.shipmentCount is number);
     }
 
     function hasOnlyAllowedFields(fields) {
@@ -255,7 +279,7 @@ service cloud.firestore {
     }
 
     match /business_profiles/{businessProfileId} {
-      allow read: if isBusinessMember(businessProfileId);
+      allow read: if isPlatformAdmin() || isBusinessMember(businessProfileId);
       allow create: if isAuthenticated()
         && request.resource.data.ownerUserId == request.auth.uid
         && validBusinessProfile(request.resource.data, businessProfileId);
@@ -266,7 +290,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /business_users/{uid} {
-        allow read: if isBusinessMember(businessProfileId);
+        allow read: if isPlatformAdmin() || isBusinessMember(businessProfileId);
         allow create: if isBusinessMember(businessProfileId)
           && validBusinessUser(request.resource.data, uid)
           && request.resource.data.businessProfileId == businessProfileId
@@ -459,7 +483,7 @@ service cloud.firestore {
       }
 
       match /summary_reports/{summaryId} {
-        allow read: if isBusinessMember(businessProfileId);
+        allow read: if isPlatformAdmin() || isBusinessMember(businessProfileId);
         allow write: if false;
       }
 
@@ -495,10 +519,14 @@ service cloud.firestore {
           && resource.data.businessProfileId == businessProfileId
           && isOwnerOrAdmin();
       }
+
+      match /{document=**} {
+        allow read: if isPlatformAdmin();
+      }
     }
 
     match /business_users/{uid} {
-      allow read: if isAuthenticated()
+      allow read: if isPlatformAdmin() || isAuthenticated()
         && (
           request.auth.uid == uid
           || isBusinessMember(resource.data.businessProfileId)
@@ -536,6 +564,42 @@ service cloud.firestore {
         && request.auth.uid != uid
         && resource.data.role != 'owner'
         && resource.data.businessProfileId == signedInUser().data.businessProfileId;
+    }
+
+    match /platform_admins/{uid} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
+    match /platform_plans/{planId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
+    match /platform_modules/{moduleId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
+    match /platform_subscriptions/{subscriptionId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
+    match /platform_audit_logs/{eventId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
+    match /platform_settings/{settingId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
+    // Collection-group queries need a rule that matches every possible parent path.
+    match /{path=**}/summary_reports/{summaryId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
     }
 
     match /{collectionName}/{docId} {

@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.backfillTenantSummaries = exports.aggregateTripSummary = exports.aggregatePaymentSummary = exports.aggregateBillSummary = void 0;
+exports.platformAdminUpdateSettings = exports.platformAdminUpdateAdminStatus = exports.platformAdminInviteAdmin = exports.platformAdminCreatePlan = exports.platformAdminUpdateModuleEntitlement = exports.platformAdminAssignPlan = exports.platformAdminUpdateTenantStatus = exports.platformAdminBootstrap = exports.backfillTenantSummaries = exports.aggregateTripSummary = exports.aggregatePaymentSummary = exports.aggregateBillSummary = void 0;
 const app_1 = require("firebase-admin/app");
+const auth_1 = require("firebase-admin/auth");
 const firestore_1 = require("firebase-admin/firestore");
 const firestore_2 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
@@ -9,6 +10,7 @@ const options_1 = require("firebase-functions/v2/options");
 (0, app_1.initializeApp)();
 (0, options_1.setGlobalOptions)({
     region: "us-central1",
+    serviceAccount: "cargomv-d41f8@appspot.gserviceaccount.com",
     memory: "512MiB",
     timeoutSeconds: 60,
     maxInstances: 20,
@@ -18,6 +20,42 @@ const backfillPageSize = 500;
 const activeTripStatuses = new Set(["open", "loading", "sailing", "offloading"]);
 const num = (value) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 const str = (value) => typeof value === "string" ? value : "";
+function platformInput(data) {
+    return data && typeof data === "object" ? data : {};
+}
+function assertPlatformAdmin(request) {
+    if (!request.auth?.uid)
+        throw new https_1.HttpsError("unauthenticated", "Sign in before using platform administration.");
+    if (request.auth.token.platformAdmin !== true || request.auth.token.platformAdminActive === false) {
+        throw new https_1.HttpsError("permission-denied", "This account is not authorized for platform administration.");
+    }
+    return {
+        uid: request.auth.uid,
+        name: str(request.auth.token.name) || str(request.auth.token.email) || request.auth.uid,
+    };
+}
+function requiredString(input, key, maxLength = 160) {
+    const value = str(input[key]).trim();
+    if (!value || value.length > maxLength)
+        throw new https_1.HttpsError("invalid-argument", `${key} is required.`);
+    return value;
+}
+function platformStatus(value) {
+    if (value === "pending" || value === "active" || value === "suspended" || value === "blocked")
+        return value;
+    throw new https_1.HttpsError("invalid-argument", "Invalid tenant status.");
+}
+async function appendPlatformAudit(actor, action, target, description, tone) {
+    await db.collection("platform_audit_logs").add({
+        actorUid: actor.uid,
+        actor: actor.name,
+        action,
+        target,
+        description,
+        tone,
+        timestamp: firestore_1.FieldValue.serverTimestamp(),
+    });
+}
 function asBill(data, id) {
     if (!data)
         return null;
@@ -418,3 +456,171 @@ exports.backfillTenantSummaries = (0, https_1.onCall)({
         cashierDays: cashierDays.size,
     };
 });
+exports.platformAdminBootstrap = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdminBootstrapRequest(request);
+    const auth = (0, auth_1.getAuth)();
+    const user = await auth.getUser(actor.uid);
+    const existingClaims = user.customClaims || {};
+    await auth.setCustomUserClaims(actor.uid, {
+        ...existingClaims,
+        platformAdmin: true,
+        platformAdminActive: true,
+        platformRole: "platform_owner",
+    });
+    await db.collection("platform_admins").doc(actor.uid).set({
+        uid: actor.uid,
+        name: user.displayName || user.email || actor.uid,
+        email: user.email || "",
+        role: "platform_owner",
+        status: "active",
+        lastActiveAt: firestore_1.FieldValue.serverTimestamp(),
+        twoFactorEnabled: false,
+    }, { merge: true });
+    await appendPlatformAudit({ uid: actor.uid, name: user.displayName || user.email || actor.uid }, "Bootstrapped platform admin", user.email || actor.uid, "Platform-admin claim issued through the configured bootstrap boundary.", "success");
+    return { ok: true, uid: actor.uid };
+});
+function assertPlatformAdminBootstrapRequest(request) {
+    if (!request.auth?.uid)
+        throw new https_1.HttpsError("unauthenticated", "Sign in before bootstrapping platform administration.");
+    const email = str(request.auth.token.email).toLowerCase();
+    const allowedEmail = str(process.env.PLATFORM_ADMIN_BOOTSTRAP_EMAIL).toLowerCase();
+    const allowedUids = str(process.env.PLATFORM_ADMIN_BOOTSTRAP_UIDS).split(",").map(value => value.trim()).filter(Boolean);
+    if ((!allowedEmail || email !== allowedEmail) && !allowedUids.includes(request.auth.uid)) {
+        throw new https_1.HttpsError("permission-denied", "This account is not configured for platform-admin bootstrap.");
+    }
+    return { uid: request.auth.uid };
+}
+exports.platformAdminUpdateTenantStatus = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdmin(request);
+    const input = platformInput(request.data);
+    const tenantId = requiredString(input, "tenantId", 80);
+    const status = platformStatus(input.status);
+    const tenantRef = db.collection("business_profiles").doc(tenantId);
+    const tenantSnapshot = await tenantRef.get();
+    if (!tenantSnapshot.exists)
+        throw new https_1.HttpsError("not-found", "Tenant business profile not found.");
+    const tenantName = str(tenantSnapshot.data()?.businessName) || tenantId;
+    await tenantRef.set({
+        platformStatus: status,
+        activeStatus: status === "active",
+        updatedAt: firestore_1.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await appendPlatformAudit(actor, `${status === "active" ? "Approved or reactivated" : titleForPlatformStatus(status)} tenant`, tenantName, `Tenant ${tenantId} changed to ${status}.`, status === "blocked" ? "danger" : status === "suspended" ? "warning" : "success");
+    return { tenantId, status };
+});
+exports.platformAdminAssignPlan = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdmin(request);
+    const input = platformInput(request.data);
+    const tenantId = requiredString(input, "tenantId", 80);
+    const planId = requiredString(input, "planId", 80);
+    const planSnapshot = await db.collection("platform_plans").doc(planId).get();
+    if (!planSnapshot.exists)
+        throw new https_1.HttpsError("not-found", "Subscription plan not found.");
+    const tenantRef = db.collection("business_profiles").doc(tenantId);
+    const tenantSnapshot = await tenantRef.get();
+    if (!tenantSnapshot.exists)
+        throw new https_1.HttpsError("not-found", "Tenant business profile not found.");
+    const plan = planSnapshot.data() || {};
+    const existingSubscription = await db.collection("platform_subscriptions").doc(tenantId).get();
+    await db.runTransaction(async (transaction) => {
+        transaction.set(tenantRef, {
+            subscriptionPlanId: planId,
+            mrr: num(plan.price),
+            subscriptionStatus: "active",
+            updatedAt: firestore_1.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        transaction.set(db.collection("platform_subscriptions").doc(tenantId), {
+            id: tenantId,
+            tenantId,
+            planId,
+            status: "active",
+            amount: num(plan.price),
+            startedAt: existingSubscription.data()?.startedAt || firestore_1.FieldValue.serverTimestamp(),
+            renewalDate: existingSubscription.data()?.renewalDate || firestore_1.FieldValue.serverTimestamp(),
+            paymentMethod: existingSubscription.data()?.paymentMethod || "Not added",
+            lastPayment: existingSubscription.data()?.lastPayment || "Pending",
+            updatedAt: firestore_1.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
+    await appendPlatformAudit(actor, "Changed subscription", str(tenantSnapshot.data()?.businessName) || tenantId, `Assigned the ${str(plan.name) || planId} plan.`, "neutral");
+    return { tenantId, planId };
+});
+exports.platformAdminUpdateModuleEntitlement = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdmin(request);
+    const input = platformInput(request.data);
+    const tenantId = requiredString(input, "tenantId", 80);
+    const moduleId = requiredString(input, "moduleId", 80);
+    if (typeof input.enabled !== "boolean")
+        throw new https_1.HttpsError("invalid-argument", "enabled must be boolean.");
+    const tenantRef = db.collection("business_profiles").doc(tenantId);
+    const tenantSnapshot = await tenantRef.get();
+    if (!tenantSnapshot.exists)
+        throw new https_1.HttpsError("not-found", "Tenant business profile not found.");
+    const rawModules = tenantSnapshot.data()?.enabledModules;
+    const currentModules = Array.isArray(rawModules) ? rawModules.filter((value) => typeof value === "string") : [];
+    const enabledModules = input.enabled ? Array.from(new Set([...currentModules, moduleId])) : currentModules.filter((value) => value !== moduleId);
+    await tenantRef.set({ enabledModules, updatedAt: firestore_1.FieldValue.serverTimestamp() }, { merge: true });
+    const moduleSnapshot = await db.collection("platform_modules").doc(moduleId).get();
+    await appendPlatformAudit(actor, input.enabled ? "Enabled module" : "Disabled module", str(tenantSnapshot.data()?.businessName) || tenantId, `${str(moduleSnapshot.data()?.name) || moduleId} ${input.enabled ? "enabled" : "disabled"}.`, input.enabled ? "success" : "warning");
+    return { tenantId, moduleId, enabled: input.enabled };
+});
+exports.platformAdminCreatePlan = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdmin(request);
+    const input = platformInput(request.data);
+    const name = requiredString(input, "name", 80);
+    const description = requiredString(input, "description", 240);
+    const price = num(input.price);
+    if (price < 0)
+        throw new https_1.HttpsError("invalid-argument", "price must be zero or greater.");
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "plan";
+    const planId = `plan_${slug}_${Date.now()}`;
+    await db.collection("platform_plans").doc(planId).set({ id: planId, name, description, price, billingPeriod: input.billingPeriod === "annual" ? "annual" : "monthly", trialDays: Math.max(0, num(input.trialDays)), features: Array.isArray(input.features) ? input.features.filter((value) => typeof value === "string").slice(0, 20) : [], active: input.active !== false, subscribers: 0, accent: input.accent === "mint" || input.accent === "amber" ? input.accent : "blue", createdAt: firestore_1.FieldValue.serverTimestamp(), updatedAt: firestore_1.FieldValue.serverTimestamp() });
+    await appendPlatformAudit(actor, "Created plan", name, "A new subscription plan was created.", "success");
+    return { id: planId, name, description, price, billingPeriod: input.billingPeriod === "annual" ? "annual" : "monthly", trialDays: Math.max(0, num(input.trialDays)), features: [], active: input.active !== false, subscribers: 0, accent: input.accent === "mint" || input.accent === "amber" ? input.accent : "blue" };
+});
+exports.platformAdminInviteAdmin = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdmin(request);
+    const input = platformInput(request.data);
+    const name = requiredString(input, "name", 120);
+    const email = requiredString(input, "email", 160).toLowerCase();
+    const role = ["platform_admin", "support", "billing"].includes(str(input.role)) ? str(input.role) : "support";
+    const id = `invite_${Date.now()}`;
+    await db.collection("platform_admins").doc(id).set({ id, name, email, role, status: "invited", lastActiveAt: firestore_1.FieldValue.serverTimestamp(), twoFactorEnabled: false, invitedBy: actor.uid, createdAt: firestore_1.FieldValue.serverTimestamp() });
+    await appendPlatformAudit(actor, "Invited admin", name, "A platform administrator invitation was recorded.", "neutral");
+    return { id, name, email, role, status: "invited", lastActiveAt: new Date().toISOString(), twoFactorEnabled: false };
+});
+exports.platformAdminUpdateAdminStatus = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdmin(request);
+    const input = platformInput(request.data);
+    const adminId = requiredString(input, "adminId", 120);
+    const status = ["active", "invited", "suspended"].includes(str(input.status)) ? str(input.status) : "suspended";
+    const adminRef = db.collection("platform_admins").doc(adminId);
+    const adminSnapshot = await adminRef.get();
+    if (!adminSnapshot.exists)
+        throw new https_1.HttpsError("not-found", "Platform admin not found.");
+    await adminRef.set({ status, updatedAt: firestore_1.FieldValue.serverTimestamp() }, { merge: true });
+    if (adminId !== actor.uid) {
+        try {
+            const target = await (0, auth_1.getAuth)().getUser(adminId);
+            const claims = target.customClaims || {};
+            await (0, auth_1.getAuth)().setCustomUserClaims(adminId, { ...claims, platformAdmin: status === "active", platformAdminActive: status === "active" });
+        }
+        catch (error) {
+            if (error.code !== "auth/user-not-found")
+                throw error;
+        }
+    }
+    await appendPlatformAudit(actor, "Updated admin status", str(adminSnapshot.data()?.name) || adminId, `Admin status changed to ${status}.`, status === "suspended" ? "warning" : "success");
+    return { ...adminSnapshot.data(), id: adminId, status };
+});
+exports.platformAdminUpdateSettings = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    const actor = assertPlatformAdmin(request);
+    const input = platformInput(request.data);
+    const settings = { requireApproval: input.requireApproval === true, allowTrials: input.allowTrials !== false, requireTwoFactor: input.requireTwoFactor !== false, maintenanceMode: input.maintenanceMode === true, defaultTrialDays: Math.max(0, num(input.defaultTrialDays)), supportEmail: requiredString(input, "supportEmail", 160) };
+    await db.collection("platform_settings").doc("config").set({ ...settings, updatedAt: firestore_1.FieldValue.serverTimestamp(), updatedBy: actor.uid }, { merge: true });
+    await appendPlatformAudit(actor, "Updated platform settings", "Platform settings", "Approval and security settings were updated.", "neutral");
+    return settings;
+});
+function titleForPlatformStatus(status) {
+    return status === "suspended" ? "Suspended" : status === "blocked" ? "Blocked" : "Updated";
+}

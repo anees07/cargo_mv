@@ -49,6 +49,14 @@
     ],
     "rewrites": [
       {
+        "source": "/platform-admin",
+        "destination": "/platform-admin/index.html"
+      },
+      {
+        "source": "/platform-admin/**",
+        "destination": "/platform-admin/index.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -56,6 +64,18 @@
   },
   "functions": {
     "source": "functions"
+  },
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "AtollCargo",
+        "supportEmail": "mohamedanees902@gmail.com",
+        "authorizedRedirectUris": [
+          "https://cargomv-d41f8.web.app/__/auth/handler"
+        ]
+      }
+    }
   },
   "firestore": {
     "rules": "firestore.rules",
