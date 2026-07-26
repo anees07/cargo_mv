@@ -12,6 +12,7 @@ import type {
 export interface PlatformAdminAuthAdapter {
   getSession(): Promise<PlatformAdminSession | null>;
   signIn(email: string, password: string): Promise<PlatformAdminSession>;
+  signInWithGoogle(): Promise<PlatformAdminSession>;
   bootstrap(): Promise<void>;
   signOut(): Promise<void>;
 }

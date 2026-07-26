@@ -38,6 +38,9 @@ that document. The platform-admin UI will display the tenant automatically when
 the document is present in the configured project; it does not synthesize
 missing tenant records.
 
+The six root `business_users` records also reference only the three existing
+business profiles; none references the requested tenant ID.
+
 The first platform administrator must be bootstrapped with the deployed
 `platformAdminBootstrap` callable. Its runtime allowlist is configured through
 `PLATFORM_ADMIN_BOOTSTRAP_EMAIL` or `PLATFORM_ADMIN_BOOTSTRAP_UIDS`; no user can

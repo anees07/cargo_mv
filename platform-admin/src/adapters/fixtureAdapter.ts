@@ -17,6 +17,12 @@ export class FixturePlatformAdminService implements PlatformAdminService {
     return session;
   }
 
+  async signInWithGoogle(): Promise<PlatformAdminSession> {
+    const session = await this.getSession();
+    if (!session) throw new Error("Unable to start the fixture session.");
+    return session;
+  }
+
   async bootstrap(): Promise<void> {
     return Promise.resolve();
   }

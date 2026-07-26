@@ -17,6 +17,7 @@ This directory contains an independent web-only platform administration console 
 - `src/adapters/contracts.ts` defines the backend boundary
 - Fixture adapter is available by setting `VITE_PLATFORM_ADMIN_DATA_MODE=fixtures`
 - Live adapter uses Firebase Auth with a `platformAdmin` claim, realtime Firestore listeners, and authenticated callable Functions
+- Live sign-in supports Firebase email/password and Google Sign-In; the first configured Google administrator can use the bootstrap action once authenticated
 - No direct client-side privileged Firestore writes
 
 Set `VITE_PLATFORM_ADMIN_DATA_MODE=live` plus the Firebase configuration to connect the live adapter. The live adapter listens to `business_profiles`, root `business_users`, tenant `summary_reports`, and platform collections in the same Firestore database.

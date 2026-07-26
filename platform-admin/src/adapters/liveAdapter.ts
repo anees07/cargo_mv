@@ -1,5 +1,5 @@
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword, signOut, type Auth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut, type Auth } from "firebase/auth";
 import { collection, collectionGroup, doc, getDoc, getDocs, getFirestore, onSnapshot, type DocumentData, type DocumentReference, type DocumentSnapshot, type Firestore, type Query, type QuerySnapshot, type Unsubscribe } from "firebase/firestore";
 import { getFunctions, httpsCallable, type Functions } from "firebase/functions";
 import { fixtureSnapshot } from "../data/fixtures";
@@ -130,6 +130,7 @@ export class LivePlatformAdminService implements PlatformAdminService {
   }
 
   async signIn(email: string, password: string): Promise<PlatformAdminSession> { await signInWithEmailAndPassword(getFirebaseAuth(), email.trim(), password); const session = await this.getSession(); if (!session) throw new Error("Platform admin session could not be established."); return session; }
+  async signInWithGoogle(): Promise<PlatformAdminSession> { await signInWithPopup(getFirebaseAuth(), new GoogleAuthProvider()); const session = await this.getSession(); if (!session) throw new Error("Platform admin session could not be established."); return session; }
   async bootstrap(): Promise<void> { await call("platformAdminBootstrap", {}); await getFirebaseAuth().currentUser?.getIdToken(true); }
   async signOut(): Promise<void> { await signOut(getFirebaseAuth()); }
 
