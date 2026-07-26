@@ -24,6 +24,6 @@ Set `VITE_PLATFORM_ADMIN_DATA_MODE=live` plus the Firebase configuration to conn
 
 Configure `PLATFORM_ADMIN_BOOTSTRAP_EMAIL` or `PLATFORM_ADMIN_BOOTSTRAP_UIDS` on the Functions runtime before issuing the first platform-admin claim through `platformAdminBootstrap`.
 
-For the same Firebase Hosting site, build the existing web app first, then run `npm run build:hosting` in this directory. The output is placed at `dist/platform-admin` and is served at `/platform-admin/` by the root Hosting rewrites.
+For the same Firebase Hosting site, build the existing web app first, then run `npm run build:hosting` in this directory. The Vite config loads the parent app's Firebase environment and the hosting script explicitly selects live mode. The output is placed at `dist/platform-admin` and is served at `/platform-admin/` by the root Hosting rewrites.
 
 The existing application source remains separate from this app. Live mode requires the platform-admin callable Functions, Firestore claim rules, and Hosting rewrites that are maintained outside this directory; fixture mode remains available without those backend prerequisites.

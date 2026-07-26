@@ -8,6 +8,9 @@
 - Tenant operational data: nested collections below each business profile
 - Existing client realtime pattern: Firebase Web SDK `onSnapshot`
 
+`cargomv-d41f8` is the Firebase project ID, not a `business_profiles` document
+ID. The current tenant documents use IDs beginning with `bp_`.
+
 ## Access boundary
 
 Existing Firestore rules only authorize a matching tenant member. The supplied

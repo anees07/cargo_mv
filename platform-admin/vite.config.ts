@@ -6,6 +6,7 @@ export default defineConfig(() => {
   const hostingBuild = process.env.VITE_PLATFORM_ADMIN_HOSTING === "1";
   return {
     base: hostingBuild ? "/platform-admin/" : "/",
+    envDir: "..",
     plugins: [react(), tailwindcss()],
     server: { port: 4180 },
     build: { outDir: hostingBuild ? "../dist/platform-admin" : "dist" },

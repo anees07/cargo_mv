@@ -2,7 +2,6 @@ import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut, type Auth } from "firebase/auth";
 import { collection, collectionGroup, doc, getDoc, getDocs, getFirestore, onSnapshot, type DocumentData, type DocumentReference, type DocumentSnapshot, type Firestore, type Query, type QuerySnapshot, type Unsubscribe } from "firebase/firestore";
 import { getFunctions, httpsCallable, type Functions } from "firebase/functions";
-import { fixtureSnapshot } from "../data/fixtures";
 import type { PlatformAdminService } from "./contracts";
 import type { AdminStatus, PlatformAdminSession, PlatformAdminUser, PlatformModule, PlatformSettings, PlatformSnapshot, Subscription, SubscriptionPlan, Tenant, TenantStatus } from "../types";
 
@@ -96,12 +95,10 @@ function mapModule(item: { id: string; data: DocumentData }): PlatformModule { c
 function mapAdmin(item: { id: string; data: DocumentData }): PlatformAdminUser { const data = item.data; const role = ["platform_owner", "platform_admin", "support", "billing"].includes(asString(data.role)) ? asString(data.role) as PlatformAdminUser["role"] : "support"; const status = ["active", "invited", "suspended"].includes(asString(data.status)) ? asString(data.status) as AdminStatus : "invited"; return { id: item.id, name: asString(data.name) || asString(data.email), email: asString(data.email), role, status, lastActiveAt: asIso(data.lastActiveAt), twoFactorEnabled: data.twoFactorEnabled === true }; }
 
 function buildSnapshot(state: LiveState): PlatformSnapshot {
-  const fallbackPlans = state.plans.length ? state.plans.map(mapPlan) : fixtureSnapshot.plans.map((plan) => ({ ...plan, subscribers: 0 }));
-  const fallbackModules = state.modules.length ? state.modules.map(mapModule) : fixtureSnapshot.modules.map((module) => ({ ...module, enabledFor: 0, adoption: 0, monthlyValue: 0 }));
   const tenants = state.profiles.map((profile) => mapTenant(profile, state));
   const subscriptions = state.subscriptions.map(mapSubscription);
-  const plans = fallbackPlans.map((plan) => ({ ...plan, subscribers: subscriptions.filter((subscription) => subscription.planId === plan.id && subscription.status === "active").length }));
-  const modules = fallbackModules.map((module) => {
+  const plans = state.plans.map(mapPlan).map((plan) => ({ ...plan, subscribers: subscriptions.filter((subscription) => subscription.planId === plan.id && subscription.status === "active").length }));
+  const modules = state.modules.map(mapModule).map((module) => {
     const enabledFor = tenants.filter((tenant) => tenant.enabledModules.includes(module.id)).length;
     return { ...module, enabledFor, adoption: tenants.length ? Math.round((enabledFor / tenants.length) * 100) : module.adoption };
   });
@@ -112,7 +109,14 @@ function buildSnapshot(state: LiveState): PlatformSnapshot {
     modules,
     admins: state.admins.map(mapAdmin),
     auditEvents: state.auditEvents.map((item) => ({ id: item.id, actor: asString(item.data.actor), action: asString(item.data.action), target: asString(item.data.target), description: asString(item.data.description), timestamp: asIso(item.data.timestamp), tone: item.data.tone === "danger" || item.data.tone === "warning" || item.data.tone === "success" ? item.data.tone : "neutral" })),
-    settings: { ...fixtureSnapshot.settings, ...state.settings } as PlatformSettings,
+    settings: {
+      requireApproval: state.settings.requireApproval === true,
+      allowTrials: state.settings.allowTrials === true,
+      requireTwoFactor: state.settings.requireTwoFactor === true,
+      maintenanceMode: state.settings.maintenanceMode === true,
+      defaultTrialDays: asNumber(state.settings.defaultTrialDays),
+      supportEmail: asString(state.settings.supportEmail),
+    },
   };
 }
 
